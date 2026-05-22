@@ -1,8 +1,4 @@
-export type WorkspaceEntry = {
-  name: string;
-  path: string;
-  type: "directory" | "file";
-};
+import type { WorkspaceEntry, WorkspaceStore } from "./workspace-store";
 
 type DirectoryNode = {
   type: "directory";
@@ -16,7 +12,7 @@ type FileNode = {
 
 type TreeNode = DirectoryNode | FileNode;
 
-export class MemoryWorkspace {
+export class MemoryWorkspace implements WorkspaceStore {
   readonly #root: DirectoryNode = { type: "directory", children: new Map() };
 
   async writeFile(path: string, contents: Uint8Array): Promise<void> {
