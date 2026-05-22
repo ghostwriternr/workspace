@@ -1,3 +1,4 @@
+import { WorkspaceError } from "./workspace-error";
 import type { WorkspaceEntry, WorkspaceStore } from "./workspace-store";
 
 type DirectoryNode = {
@@ -29,7 +30,7 @@ export class MemoryWorkspace implements WorkspaceStore {
   async readFile(path: string): Promise<Uint8Array> {
     const node = this.#getNode(path);
     if (node.type === "directory") {
-      throw new Error("Path is a directory");
+      throw new WorkspaceError("is_directory", "Path is a directory");
     }
 
     return new Uint8Array(node.contents);
@@ -38,7 +39,7 @@ export class MemoryWorkspace implements WorkspaceStore {
   async list(path: string): Promise<WorkspaceEntry[]> {
     const node = this.#getNode(path);
     if (node.type === "file") {
-      throw new Error("Path is a file");
+      throw new WorkspaceError("not_directory", "Path is a file");
     }
 
     return Array.from(node.children.entries())
@@ -58,10 +59,10 @@ export class MemoryWorkspace implements WorkspaceStore {
     const node = parent.children.get(fileName);
 
     if (!node) {
-      throw new Error("Path not found");
+      throw new WorkspaceError("not_found", "Path not found");
     }
     if (node.type === "directory") {
-      throw new Error("Path is a directory");
+      throw new WorkspaceError("is_directory", "Path is a directory");
     }
 
     parent.children.delete(fileName);
@@ -80,7 +81,7 @@ export class MemoryWorkspace implements WorkspaceStore {
         continue;
       }
       if (child.type === "file") {
-        throw new Error("Path is a file");
+        throw new WorkspaceError("not_directory", "Path is a file");
       }
       current = child;
     }
@@ -97,12 +98,12 @@ export class MemoryWorkspace implements WorkspaceStore {
 
     for (const segment of segments) {
       if (current.type === "file") {
-        throw new Error("Path is a file");
+        throw new WorkspaceError("not_directory", "Path is a file");
       }
 
       const child = current.children.get(segment);
       if (!child) {
-        throw new Error("Path not found");
+        throw new WorkspaceError("not_found", "Path not found");
       }
       current = child;
     }
@@ -113,7 +114,7 @@ export class MemoryWorkspace implements WorkspaceStore {
   #getDirectory(segments: string[]): DirectoryNode {
     const node = this.#getNodeFromSegments(segments);
     if (node.type === "file") {
-      throw new Error("Path is a file");
+      throw new WorkspaceError("not_directory", "Path is a file");
     }
     return node;
   }
@@ -134,24 +135,24 @@ export class MemoryWorkspace implements WorkspaceStore {
 
 function parseWorkspacePath(path: string, options: { allowRoot: boolean }): string[] {
   if (!path.startsWith("/")) {
-    throw new Error("Workspace paths must be absolute");
+    throw new WorkspaceError("invalid_path", "Workspace paths must be absolute");
   }
   if (path.includes("\0")) {
-    throw new Error("Workspace paths must not contain NUL bytes");
+    throw new WorkspaceError("invalid_path", "Workspace paths must not contain NUL bytes");
   }
   if (path === "/") {
     if (options.allowRoot) {
       return [];
     }
-    throw new Error("Workspace path must not be root");
+    throw new WorkspaceError("invalid_path", "Workspace path must not be root");
   }
 
   const segments = path.slice(1).split("/");
   if (segments.some((segment) => segment.length === 0)) {
-    throw new Error("Workspace paths must not contain empty segments");
+    throw new WorkspaceError("invalid_path", "Workspace paths must not contain empty segments");
   }
   if (segments.some((segment) => segment === "." || segment === "..")) {
-    throw new Error("Workspace paths must not contain traversal segments");
+    throw new WorkspaceError("invalid_path", "Workspace paths must not contain traversal segments");
   }
 
   return segments;
