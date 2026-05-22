@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 import { MemoryWorkspace } from "../src/core/memory-workspace";
 import type { WorkspaceStore } from "../src/core/workspace-store";
@@ -14,8 +15,13 @@ function text(value: Uint8Array): string {
 }
 
 async function writeAndRead(store: WorkspaceStore): Promise<string> {
-  await store.writeFile("/message.txt", bytes("hello"));
-  return text(await store.readFile("/message.txt"));
+  const write = await store.writeFile("/message.txt", bytes("hello"));
+  if (Result.isError(write)) {
+    return write.error.message;
+  }
+
+  const read = await store.readFile("/message.txt");
+  return read.match({ ok: text, err: (error) => error.message });
 }
 
 describe("WorkspaceStore", () => {

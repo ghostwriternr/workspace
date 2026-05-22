@@ -1,3 +1,11 @@
+import type { Result } from "better-result";
+import type {
+  WorkspaceDeleteError,
+  WorkspaceListError,
+  WorkspaceReadError,
+  WorkspaceWriteError,
+} from "./workspace-error";
+
 export type WorkspaceEntry = {
   name: string;
   path: string;
@@ -5,8 +13,8 @@ export type WorkspaceEntry = {
 };
 
 export interface WorkspaceStore {
-  writeFile(path: string, contents: Uint8Array): Promise<void>;
-  readFile(path: string): Promise<Uint8Array>;
-  list(path: string): Promise<WorkspaceEntry[]>;
-  delete(path: string): Promise<void>;
+  writeFile(path: string, contents: Uint8Array): Promise<Result<void, WorkspaceWriteError>>;
+  readFile(path: string): Promise<Result<Uint8Array, WorkspaceReadError>>;
+  list(path: string): Promise<Result<WorkspaceEntry[], WorkspaceListError>>;
+  delete(path: string): Promise<Result<void, WorkspaceDeleteError>>;
 }

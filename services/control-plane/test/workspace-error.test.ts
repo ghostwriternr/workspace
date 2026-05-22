@@ -1,6 +1,12 @@
+import { matchError } from "better-result";
 import { describe, expect, it } from "vitest";
 import { MemoryWorkspace } from "../src/core/memory-workspace";
-import { WorkspaceError } from "../src/core/workspace-error";
+import {
+  InvalidPathError,
+  IsDirectoryError,
+  NotDirectoryError,
+  PathNotFoundError,
+} from "../src/core/workspace-error";
 
 const textEncoder = new TextEncoder();
 
@@ -8,42 +14,61 @@ function bytes(value: string): Uint8Array {
   return textEncoder.encode(value);
 }
 
-describe("WorkspaceError", () => {
-  it("classifies invalid paths", async () => {
+describe("Workspace errors", () => {
+  it("are tagged structured errors", async () => {
     const workspace = new MemoryWorkspace();
+    const result = await workspace.readFile("relative.txt");
 
-    await expect(workspace.readFile("relative.txt")).rejects.toMatchObject({
-      code: "invalid_path",
+    expect(result).toMatchObject({
+      status: "error",
+      error: {
+        _tag: "InvalidPathError",
+        path: "relative.txt",
+        reason: "must_be_absolute",
+      },
     });
+    if (result.status === "error") {
+      expect(InvalidPathError.is(result.error)).toBe(true);
+      expect(result.error).toBeInstanceOf(Error);
+    }
   });
 
-  it("classifies missing paths", async () => {
-    const workspace = new MemoryWorkspace();
-
-    await expect(workspace.readFile("/missing.txt")).rejects.toMatchObject({
-      code: "not_found",
-    });
-  });
-
-  it("classifies file and directory type mismatches", async () => {
+  it("can be exhaustively matched", async () => {
     const workspace = new MemoryWorkspace();
     await workspace.writeFile("/src/index.ts", bytes("export {};"));
 
-    await expect(workspace.readFile("/src")).rejects.toMatchObject({
-      code: "is_directory",
-    });
-    await expect(workspace.list("/src/index.ts")).rejects.toMatchObject({
-      code: "not_directory",
-    });
+    const errors = [
+      await workspace.readFile("relative.txt"),
+      await workspace.readFile("/missing.txt"),
+      await workspace.readFile("/src"),
+      await workspace.list("/src/index.ts"),
+    ].flatMap((result) => (result.status === "error" ? [result.error] : []));
+
+    expect(
+      errors.map((error) =>
+        matchError(error, {
+          InvalidPathError: (e) => `invalid:${e.reason}`,
+          PathNotFoundError: (e) => `missing:${e.path}`,
+          IsDirectoryError: (e) => `directory:${e.path}`,
+          NotDirectoryError: (e) => `not-directory:${e.path}`,
+        }),
+      ),
+    ).toEqual([
+      "invalid:must_be_absolute",
+      "missing:/missing.txt",
+      "directory:/src",
+      "not-directory:/src/index.ts",
+    ]);
   });
 
-  it("uses Error semantics for catch blocks", async () => {
-    const workspace = new MemoryWorkspace();
-
-    await workspace.readFile("relative.txt").catch((error: unknown) => {
-      expect(error).toBeInstanceOf(Error);
-      expect(error).toBeInstanceOf(WorkspaceError);
-      expect(String(error)).toContain("Workspace paths must be absolute");
-    });
+  it("provides class guards for each error variant", () => {
+    expect(
+      InvalidPathError.is(
+        new InvalidPathError({ path: "relative", reason: "must_be_absolute" }),
+      ),
+    ).toBe(true);
+    expect(PathNotFoundError.is(new PathNotFoundError({ path: "/missing" }))).toBe(true);
+    expect(IsDirectoryError.is(new IsDirectoryError({ path: "/src" }))).toBe(true);
+    expect(NotDirectoryError.is(new NotDirectoryError({ path: "/src/index.ts" }))).toBe(true);
   });
 });
