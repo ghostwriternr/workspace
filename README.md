@@ -8,7 +8,7 @@ See [`docs/product-boundaries.md`](./docs/product-boundaries.md) for the current
 
 ## Status
 
-This repository is a structural skeleton. It intentionally has no implementation code, protocol definitions, generated code, language packages, Dockerfiles, CI, or service configuration yet.
+This repository has a minimal TypeScript control-plane package with an in-memory Workspace core for iterating on file-tree semantics. It intentionally has no protocol definitions, generated code, Dockerfiles, CI, or Cloudflare service configuration yet.
 
 ## Layout
 

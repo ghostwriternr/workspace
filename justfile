@@ -5,13 +5,13 @@ default:
     @just --list
 
 setup:
-    @echo "No setup steps configured yet."
+    cd services/control-plane && npm install
 
 check:
-    @echo "No checks configured yet."
+    cd services/control-plane && npm run check
 
 test:
-    @echo "No tests configured yet."
+    cd services/control-plane && npm test
 
 fmt:
     @echo "No formatters configured yet."
