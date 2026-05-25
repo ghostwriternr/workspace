@@ -7,6 +7,8 @@
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
 
 # Logs and temporary files
 *.log
@@ -18,3 +20,4 @@ build/
 dist/
 coverage/
 node_modules/
+.wrangler/

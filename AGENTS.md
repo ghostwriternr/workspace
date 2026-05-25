@@ -10,7 +10,7 @@ Do not add broad scaffolding, placeholder files, or speculative config.
 
 ## Map
 
-- `services/control-plane/` — TypeScript control-plane package and core.
+- `services/control-plane/` — TypeScript Worker/Durable Object control plane.
 - `workspacefs/` — future container-facing filesystem component.
 - `proto/` — future shared schemas; do not add until deliberately designed.
 - `docs/product-boundaries.md` — product boundary reference.
@@ -20,12 +20,14 @@ Do not add broad scaffolding, placeholder files, or speculative config.
 ```bash
 just check
 just test
+just typegen
 just check && just test
 ```
 
 ## Core conventions
 
 - Expected Workspace failures are `Result` values, not thrown exceptions.
-- Use `better-result` tagged errors for domain failures.
+- Use `better-result` tagged errors for internal domain failures.
+- Durable Object RPC returns serializable Result-shaped DTOs, not error classes.
 - Use operation-specific error unions.
 - Do not use `unwrap()` in production code.

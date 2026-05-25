@@ -1,0 +1,155 @@
+import { TaggedError } from "better-result";
+
+export type InvalidPathReason =
+  | "contains_nul"
+  | "empty_segment"
+  | "must_be_absolute"
+  | "root_not_allowed"
+  | "traversal_segment";
+
+export class InvalidPathError extends TaggedError("InvalidPathError")<{
+  path: string;
+  reason: InvalidPathReason;
+  message: string;
+}>() {
+  constructor(args: { path: string; reason: InvalidPathReason }) {
+    super({
+      ...args,
+      message: invalidPathMessage(args.path, args.reason),
+    });
+  }
+}
+
+export class PathNotFoundError extends TaggedError("PathNotFoundError")<{
+  path: string;
+  message: string;
+}>() {
+  constructor(args: { path: string }) {
+    super({
+      ...args,
+      message: `Workspace path not found: ${args.path}`,
+    });
+  }
+}
+
+export class IsDirectoryError extends TaggedError("IsDirectoryError")<{
+  path: string;
+  message: string;
+}>() {
+  constructor(args: { path: string }) {
+    super({
+      ...args,
+      message: `Workspace path is a directory: ${args.path}`,
+    });
+  }
+}
+
+export class NotDirectoryError extends TaggedError("NotDirectoryError")<{
+  path: string;
+  message: string;
+}>() {
+  constructor(args: { path: string }) {
+    super({
+      ...args,
+      message: `Workspace path is not a directory: ${args.path}`,
+    });
+  }
+}
+
+export type WorkspaceError =
+  | InvalidPathError
+  | IsDirectoryError
+  | NotDirectoryError
+  | PathNotFoundError;
+
+export type WorkspaceWriteError = InvalidPathError | IsDirectoryError | NotDirectoryError;
+export type WorkspaceReadError = InvalidPathError | IsDirectoryError | PathNotFoundError;
+export type WorkspaceListError = InvalidPathError | NotDirectoryError | PathNotFoundError;
+export type WorkspaceDeleteError = InvalidPathError | IsDirectoryError | PathNotFoundError;
+
+export type InvalidPathErrorDto = {
+  tag: "InvalidPathError";
+  path: string;
+  reason: InvalidPathReason;
+  message: string;
+};
+
+export type IsDirectoryErrorDto = {
+  tag: "IsDirectoryError";
+  path: string;
+  message: string;
+};
+
+export type NotDirectoryErrorDto = {
+  tag: "NotDirectoryError";
+  path: string;
+  message: string;
+};
+
+export type PathNotFoundErrorDto = {
+  tag: "PathNotFoundError";
+  path: string;
+  message: string;
+};
+
+export type WorkspaceErrorDto =
+  | InvalidPathErrorDto
+  | IsDirectoryErrorDto
+  | NotDirectoryErrorDto
+  | PathNotFoundErrorDto;
+
+export type ErrorDtoFor<E extends WorkspaceError> = E extends InvalidPathError
+  ? InvalidPathErrorDto
+  : E extends IsDirectoryError
+    ? IsDirectoryErrorDto
+    : E extends NotDirectoryError
+      ? NotDirectoryErrorDto
+      : E extends PathNotFoundError
+        ? PathNotFoundErrorDto
+        : never;
+
+export function workspaceErrorToDto<E extends WorkspaceError>(error: E): ErrorDtoFor<E> {
+  if (InvalidPathError.is(error)) {
+    return {
+      tag: "InvalidPathError",
+      path: error.path,
+      reason: error.reason,
+      message: error.message,
+    } as ErrorDtoFor<E>;
+  }
+  if (IsDirectoryError.is(error)) {
+    return {
+      tag: "IsDirectoryError",
+      path: error.path,
+      message: error.message,
+    } as ErrorDtoFor<E>;
+  }
+  if (NotDirectoryError.is(error)) {
+    return {
+      tag: "NotDirectoryError",
+      path: error.path,
+      message: error.message,
+    } as ErrorDtoFor<E>;
+  }
+
+  return {
+    tag: "PathNotFoundError",
+    path: error.path,
+    message: error.message,
+  } as ErrorDtoFor<E>;
+}
+
+function invalidPathMessage(path: string, reason: InvalidPathReason): string {
+  switch (reason) {
+    case "contains_nul":
+      return "Workspace path must not contain NUL bytes";
+    case "empty_segment":
+      return `Workspace path must not contain empty segments: ${path}`;
+    case "must_be_absolute":
+      return `Workspace path must be absolute: ${path}`;
+    case "root_not_allowed":
+      return "Workspace path must not be root";
+    case "traversal_segment":
+      return `Workspace path must not contain traversal segments: ${path}`;
+  }
+}

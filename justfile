@@ -13,5 +13,8 @@ check:
 test:
     cd services/control-plane && npm test
 
+typegen:
+    cd services/control-plane && npm run typegen
+
 fmt:
     @echo "No formatters configured yet."
