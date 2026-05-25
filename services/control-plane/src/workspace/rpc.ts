@@ -1,14 +1,18 @@
 import { Result, type Result as BetterResult } from "better-result";
 import {
+  type DirectoryNotEmptyErrorDto,
   type ErrorDtoFor,
   type InvalidPathErrorDto,
   type IsDirectoryErrorDto,
   type NotDirectoryErrorDto,
+  type PathAlreadyExistsErrorDto,
   type PathNotFoundErrorDto,
   type WorkspaceDeleteError,
   type WorkspaceError,
   type WorkspaceListError,
+  type WorkspaceMkdirError,
   type WorkspaceReadError,
+  type WorkspaceStatError,
   type WorkspaceWriteError,
   workspaceErrorToDto,
 } from "./errors";
@@ -30,9 +34,22 @@ export type WorkspaceEntry = {
   type: "directory" | "file";
 };
 
+export type WorkspaceStat = {
+  path: string;
+  type: "directory" | "file";
+  size: number | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type WorkspaceMkdirRpcResult =
+  | WorkspaceOk
+  | WorkspaceRpcError<
+      InvalidPathErrorDto | NotDirectoryErrorDto | PathAlreadyExistsErrorDto | PathNotFoundErrorDto
+    >;
 export type WorkspaceWriteRpcResult =
   | WorkspaceOk
-  | WorkspaceRpcError<InvalidPathErrorDto | IsDirectoryErrorDto | NotDirectoryErrorDto>;
+  | WorkspaceRpcError<InvalidPathErrorDto | IsDirectoryErrorDto | NotDirectoryErrorDto | PathNotFoundErrorDto>;
 export type WorkspaceReadRpcResult =
   | WorkspaceOk<Uint8Array>
   | WorkspaceRpcError<InvalidPathErrorDto | IsDirectoryErrorDto | PathNotFoundErrorDto>;
@@ -41,7 +58,10 @@ export type WorkspaceListRpcResult =
   | WorkspaceRpcError<InvalidPathErrorDto | NotDirectoryErrorDto | PathNotFoundErrorDto>;
 export type WorkspaceDeleteRpcResult =
   | WorkspaceOk
-  | WorkspaceRpcError<InvalidPathErrorDto | IsDirectoryErrorDto | PathNotFoundErrorDto>;
+  | WorkspaceRpcError<InvalidPathErrorDto | DirectoryNotEmptyErrorDto | PathNotFoundErrorDto>;
+export type WorkspaceStatRpcResult =
+  | WorkspaceOk<WorkspaceStat>
+  | WorkspaceRpcError<InvalidPathErrorDto | PathNotFoundErrorDto>;
 
 export function toRpcResult<T, E extends WorkspaceError>(
   result: BetterResult<T, E>,
@@ -57,7 +77,9 @@ export function toRpcResult<T, E extends WorkspaceError>(
   return { status: "ok", value: result.value } as WorkspaceRpcResult<T, E>;
 }
 
+export type WorkspaceMkdirResult = BetterResult<void, WorkspaceMkdirError>;
 export type WorkspaceWriteResult = BetterResult<void, WorkspaceWriteError>;
 export type WorkspaceReadResult = BetterResult<Uint8Array, WorkspaceReadError>;
 export type WorkspaceListResult = BetterResult<WorkspaceEntry[], WorkspaceListError>;
 export type WorkspaceDeleteResult = BetterResult<void, WorkspaceDeleteError>;
+export type WorkspaceStatResult = BetterResult<WorkspaceStat, WorkspaceStatError>;

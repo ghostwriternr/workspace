@@ -32,6 +32,18 @@ export class PathNotFoundError extends TaggedError("PathNotFoundError")<{
   }
 }
 
+export class PathAlreadyExistsError extends TaggedError("PathAlreadyExistsError")<{
+  path: string;
+  message: string;
+}>() {
+  constructor(args: { path: string }) {
+    super({
+      ...args,
+      message: `Workspace path already exists: ${args.path}`,
+    });
+  }
+}
+
 export class IsDirectoryError extends TaggedError("IsDirectoryError")<{
   path: string;
   message: string;
@@ -56,21 +68,53 @@ export class NotDirectoryError extends TaggedError("NotDirectoryError")<{
   }
 }
 
+export class DirectoryNotEmptyError extends TaggedError("DirectoryNotEmptyError")<{
+  path: string;
+  message: string;
+}>() {
+  constructor(args: { path: string }) {
+    super({
+      ...args,
+      message: `Workspace directory is not empty: ${args.path}`,
+    });
+  }
+}
+
 export type WorkspaceError =
+  | DirectoryNotEmptyError
   | InvalidPathError
   | IsDirectoryError
   | NotDirectoryError
+  | PathAlreadyExistsError
   | PathNotFoundError;
 
-export type WorkspaceWriteError = InvalidPathError | IsDirectoryError | NotDirectoryError;
+export type WorkspaceMkdirError =
+  | InvalidPathError
+  | NotDirectoryError
+  | PathAlreadyExistsError
+  | PathNotFoundError;
+export type WorkspaceWriteError = InvalidPathError | IsDirectoryError | NotDirectoryError | PathNotFoundError;
 export type WorkspaceReadError = InvalidPathError | IsDirectoryError | PathNotFoundError;
 export type WorkspaceListError = InvalidPathError | NotDirectoryError | PathNotFoundError;
-export type WorkspaceDeleteError = InvalidPathError | IsDirectoryError | PathNotFoundError;
+export type WorkspaceDeleteError = InvalidPathError | DirectoryNotEmptyError | PathNotFoundError;
+export type WorkspaceStatError = InvalidPathError | PathNotFoundError;
 
 export type InvalidPathErrorDto = {
   tag: "InvalidPathError";
   path: string;
   reason: InvalidPathReason;
+  message: string;
+};
+
+export type PathNotFoundErrorDto = {
+  tag: "PathNotFoundError";
+  path: string;
+  message: string;
+};
+
+export type PathAlreadyExistsErrorDto = {
+  tag: "PathAlreadyExistsError";
+  path: string;
   message: string;
 };
 
@@ -86,29 +130,42 @@ export type NotDirectoryErrorDto = {
   message: string;
 };
 
-export type PathNotFoundErrorDto = {
-  tag: "PathNotFoundError";
+export type DirectoryNotEmptyErrorDto = {
+  tag: "DirectoryNotEmptyError";
   path: string;
   message: string;
 };
 
 export type WorkspaceErrorDto =
+  | DirectoryNotEmptyErrorDto
   | InvalidPathErrorDto
   | IsDirectoryErrorDto
   | NotDirectoryErrorDto
+  | PathAlreadyExistsErrorDto
   | PathNotFoundErrorDto;
 
-export type ErrorDtoFor<E extends WorkspaceError> = E extends InvalidPathError
-  ? InvalidPathErrorDto
-  : E extends IsDirectoryError
-    ? IsDirectoryErrorDto
-    : E extends NotDirectoryError
-      ? NotDirectoryErrorDto
-      : E extends PathNotFoundError
-        ? PathNotFoundErrorDto
-        : never;
+export type ErrorDtoFor<E extends WorkspaceError> = E extends DirectoryNotEmptyError
+  ? DirectoryNotEmptyErrorDto
+  : E extends InvalidPathError
+    ? InvalidPathErrorDto
+    : E extends IsDirectoryError
+      ? IsDirectoryErrorDto
+      : E extends NotDirectoryError
+        ? NotDirectoryErrorDto
+        : E extends PathAlreadyExistsError
+          ? PathAlreadyExistsErrorDto
+          : E extends PathNotFoundError
+            ? PathNotFoundErrorDto
+            : never;
 
 export function workspaceErrorToDto<E extends WorkspaceError>(error: E): ErrorDtoFor<E> {
+  if (DirectoryNotEmptyError.is(error)) {
+    return {
+      tag: "DirectoryNotEmptyError",
+      path: error.path,
+      message: error.message,
+    } as ErrorDtoFor<E>;
+  }
   if (InvalidPathError.is(error)) {
     return {
       tag: "InvalidPathError",
@@ -127,6 +184,13 @@ export function workspaceErrorToDto<E extends WorkspaceError>(error: E): ErrorDt
   if (NotDirectoryError.is(error)) {
     return {
       tag: "NotDirectoryError",
+      path: error.path,
+      message: error.message,
+    } as ErrorDtoFor<E>;
+  }
+  if (PathAlreadyExistsError.is(error)) {
+    return {
+      tag: "PathAlreadyExistsError",
       path: error.path,
       message: error.message,
     } as ErrorDtoFor<E>;

@@ -26,9 +26,44 @@ describe("WorkspaceObject", () => {
     }
   });
 
+  it("creates explicit directories that can be listed and statted", async () => {
+    const workspace = env.WORKSPACES.getByName("explicit-directories");
+
+    await expect(workspace.mkdir("/src")).resolves.toEqual({ status: "ok" });
+    await expect(workspace.list("/")).resolves.toEqual({
+      status: "ok",
+      value: [{ name: "src", path: "/src", type: "directory" }],
+    });
+    await expect(workspace.stat("/src")).resolves.toMatchObject({
+      status: "ok",
+      value: {
+        path: "/src",
+        type: "directory",
+        size: null,
+        createdAt: expect.any(Number),
+        updatedAt: expect.any(Number),
+      },
+    });
+  });
+
+  it("requires parent directories to exist before writing nested files", async () => {
+    const workspace = env.WORKSPACES.getByName("parent-required");
+
+    await expect(workspace.writeFile("/src/index.ts", bytes("export {};"))).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "PathNotFoundError", path: "/src" },
+    });
+
+    await workspace.mkdir("/src");
+    await expect(workspace.writeFile("/src/index.ts", bytes("export {};"))).resolves.toEqual({
+      status: "ok",
+    });
+  });
+
   it("lists immediate children from Durable Object metadata", async () => {
     const workspace = env.WORKSPACES.getByName("list-children");
 
+    await workspace.mkdir("/src");
     await workspace.writeFile("/src/index.ts", bytes("export {};"));
     await workspace.writeFile("/README.md", bytes("# Workspace"));
 
@@ -45,9 +80,27 @@ describe("WorkspaceObject", () => {
     });
   });
 
-  it("deletes file metadata without requiring immediate blob cleanup", async () => {
+  it("stats files with durable metadata", async () => {
+    const workspace = env.WORKSPACES.getByName("stat-file");
+
+    await workspace.writeFile("/README.md", bytes("# Workspace"));
+
+    await expect(workspace.stat("/README.md")).resolves.toMatchObject({
+      status: "ok",
+      value: {
+        path: "/README.md",
+        type: "file",
+        size: 11,
+        createdAt: expect.any(Number),
+        updatedAt: expect.any(Number),
+      },
+    });
+  });
+
+  it("deletes files without pruning explicit parent directories", async () => {
     const workspace = env.WORKSPACES.getByName("delete-file");
 
+    await workspace.mkdir("/src");
     await workspace.writeFile("/src/index.ts", bytes("export {};"));
 
     await expect(workspace.delete("/src/index.ts")).resolves.toEqual({ status: "ok" });
@@ -55,7 +108,29 @@ describe("WorkspaceObject", () => {
       status: "error",
       error: { tag: "PathNotFoundError", path: "/src/index.ts" },
     });
-    await expect(workspace.list("/")).resolves.toEqual({ status: "ok", value: [] });
+    await expect(workspace.list("/")).resolves.toEqual({
+      status: "ok",
+      value: [{ name: "src", path: "/src", type: "directory" }],
+    });
+  });
+
+  it("deletes empty directories and rejects non-empty directory deletes", async () => {
+    const workspace = env.WORKSPACES.getByName("delete-directories");
+
+    await workspace.mkdir("/src");
+    await workspace.writeFile("/src/index.ts", bytes("export {};"));
+
+    await expect(workspace.delete("/src")).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "DirectoryNotEmptyError", path: "/src" },
+    });
+
+    await workspace.delete("/src/index.ts");
+    await expect(workspace.delete("/src")).resolves.toEqual({ status: "ok" });
+    await expect(workspace.stat("/src")).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "PathNotFoundError", path: "/src" },
+    });
   });
 
   it("returns serializable errors for invalid workspace paths", async () => {
@@ -65,11 +140,11 @@ describe("WorkspaceObject", () => {
       status: "error",
       error: { tag: "InvalidPathError", path: "relative.txt", reason: "must_be_absolute" },
     });
-    await expect(workspace.writeFile("/src//index.ts", bytes("no"))).resolves.toMatchObject({
+    await expect(workspace.mkdir("/src//nested")).resolves.toMatchObject({
       status: "error",
-      error: { tag: "InvalidPathError", path: "/src//index.ts", reason: "empty_segment" },
+      error: { tag: "InvalidPathError", path: "/src//nested", reason: "empty_segment" },
     });
-    await expect(workspace.writeFile("/../secret.txt", bytes("no"))).resolves.toMatchObject({
+    await expect(workspace.stat("/../secret.txt")).resolves.toMatchObject({
       status: "error",
       error: { tag: "InvalidPathError", path: "/../secret.txt", reason: "traversal_segment" },
     });
@@ -80,6 +155,10 @@ describe("WorkspaceObject", () => {
 
     await workspace.writeFile("/src", bytes("not a directory"));
 
+    await expect(workspace.mkdir("/src/nested")).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "NotDirectoryError", path: "/src" },
+    });
     await expect(workspace.writeFile("/src/index.ts", bytes("export {};"))).resolves.toMatchObject({
       status: "error",
       error: { tag: "NotDirectoryError", path: "/src" },
@@ -87,6 +166,22 @@ describe("WorkspaceObject", () => {
     await expect(workspace.list("/src")).resolves.toMatchObject({
       status: "error",
       error: { tag: "NotDirectoryError", path: "/src" },
+    });
+  });
+
+  it("does not let mkdir replace existing entries", async () => {
+    const workspace = env.WORKSPACES.getByName("mkdir-existing-entry");
+
+    await workspace.mkdir("/src");
+    await workspace.writeFile("/README.md", bytes("# Workspace"));
+
+    await expect(workspace.mkdir("/src")).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "PathAlreadyExistsError", path: "/src" },
+    });
+    await expect(workspace.mkdir("/README.md")).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "PathAlreadyExistsError", path: "/README.md" },
     });
   });
 });
