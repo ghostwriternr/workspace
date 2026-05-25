@@ -4,7 +4,7 @@ Workspace is durable file state for Cloudflare execution environments.
 
 Workers should be able to manipulate a Workspace through a direct file-tree API. Containers should be able to use the same Workspace through a normal local working copy, such as `/workspace`. Local container changes become durable only when explicitly committed.
 
-See [`docs/product-boundaries.md`](./docs/product-boundaries.md) for the current product boundary.
+See [`docs/product-boundaries.md`](./docs/product-boundaries.md) for the current product boundary and [`docs/known-limitations.md`](./docs/known-limitations.md) for accepted prototype limitations.
 
 ## Status
 

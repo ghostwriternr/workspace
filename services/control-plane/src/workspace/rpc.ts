@@ -7,6 +7,7 @@ import {
   type NotDirectoryErrorDto,
   type PathAlreadyExistsErrorDto,
   type PathNotFoundErrorDto,
+  type RevisionNotFoundErrorDto,
   type WorkspaceDeleteError,
   type WorkspaceError,
   type WorkspaceListError,
@@ -42,6 +43,16 @@ export type WorkspaceStat = {
   updatedAt: number;
 };
 
+export type WorkspaceRevision = {
+  revisionId: string;
+  createdAt: number;
+};
+
+export type WorkspaceReadOptions = {
+  revisionId?: string;
+};
+
+export type WorkspaceCommitRpcResult = WorkspaceRpcResult<WorkspaceRevision, never>;
 export type WorkspaceMkdirRpcResult =
   | WorkspaceOk
   | WorkspaceRpcError<
@@ -52,16 +63,18 @@ export type WorkspaceWriteRpcResult =
   | WorkspaceRpcError<InvalidPathErrorDto | IsDirectoryErrorDto | NotDirectoryErrorDto | PathNotFoundErrorDto>;
 export type WorkspaceReadRpcResult =
   | WorkspaceOk<Uint8Array>
-  | WorkspaceRpcError<InvalidPathErrorDto | IsDirectoryErrorDto | PathNotFoundErrorDto>;
+  | WorkspaceRpcError<InvalidPathErrorDto | IsDirectoryErrorDto | PathNotFoundErrorDto | RevisionNotFoundErrorDto>;
 export type WorkspaceListRpcResult =
   | WorkspaceOk<WorkspaceEntry[]>
-  | WorkspaceRpcError<InvalidPathErrorDto | NotDirectoryErrorDto | PathNotFoundErrorDto>;
+  | WorkspaceRpcError<
+      InvalidPathErrorDto | NotDirectoryErrorDto | PathNotFoundErrorDto | RevisionNotFoundErrorDto
+    >;
 export type WorkspaceDeleteRpcResult =
   | WorkspaceOk
   | WorkspaceRpcError<InvalidPathErrorDto | DirectoryNotEmptyErrorDto | PathNotFoundErrorDto>;
 export type WorkspaceStatRpcResult =
   | WorkspaceOk<WorkspaceStat>
-  | WorkspaceRpcError<InvalidPathErrorDto | PathNotFoundErrorDto>;
+  | WorkspaceRpcError<InvalidPathErrorDto | PathNotFoundErrorDto | RevisionNotFoundErrorDto>;
 
 export function toRpcResult<T, E extends WorkspaceError>(
   result: BetterResult<T, E>,
@@ -77,6 +90,7 @@ export function toRpcResult<T, E extends WorkspaceError>(
   return { status: "ok", value: result.value } as WorkspaceRpcResult<T, E>;
 }
 
+export type WorkspaceCommitResult = BetterResult<WorkspaceRevision, never>;
 export type WorkspaceMkdirResult = BetterResult<void, WorkspaceMkdirError>;
 export type WorkspaceWriteResult = BetterResult<void, WorkspaceWriteError>;
 export type WorkspaceReadResult = BetterResult<Uint8Array, WorkspaceReadError>;

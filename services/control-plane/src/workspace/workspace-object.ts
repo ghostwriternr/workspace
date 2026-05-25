@@ -6,11 +6,14 @@ import {
   NotDirectoryError,
   PathAlreadyExistsError,
   PathNotFoundError,
+  RevisionNotFoundError,
   type WorkspaceWriteError,
 } from "./errors";
 import { nameFromPath, parentPath, parseWorkspacePath } from "./path";
 import {
   toRpcResult,
+  type WorkspaceCommitResult,
+  type WorkspaceCommitRpcResult,
   type WorkspaceDeleteResult,
   type WorkspaceDeleteRpcResult,
   type WorkspaceEntry,
@@ -18,8 +21,10 @@ import {
   type WorkspaceListRpcResult,
   type WorkspaceMkdirResult,
   type WorkspaceMkdirRpcResult,
+  type WorkspaceReadOptions,
   type WorkspaceReadResult,
   type WorkspaceReadRpcResult,
+  type WorkspaceRevision,
   type WorkspaceStat,
   type WorkspaceStatResult,
   type WorkspaceStatRpcResult,
@@ -40,12 +45,21 @@ type EntryRow = {
   updated_at: number;
 };
 
+type RevisionRow = {
+  id: string;
+  created_at: number;
+};
+
 export class WorkspaceObject extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
       this.initializeSchema();
     });
+  }
+
+  async commit(): Promise<WorkspaceCommitRpcResult> {
+    return toRpcResult(this.commitInternal());
   }
 
   async mkdir(path: string): Promise<WorkspaceMkdirRpcResult> {
@@ -56,20 +70,42 @@ export class WorkspaceObject extends DurableObject<Env> {
     return toRpcResult(await this.writeFileInternal(path, contents));
   }
 
-  async readFile(path: string): Promise<WorkspaceReadRpcResult> {
-    return toRpcResult(await this.readFileInternal(path));
+  async readFile(path: string, options: WorkspaceReadOptions = {}): Promise<WorkspaceReadRpcResult> {
+    return toRpcResult(await this.readFileInternal(path, options));
   }
 
-  async list(path: string): Promise<WorkspaceListRpcResult> {
-    return toRpcResult(this.listInternal(path));
+  async list(path: string, options: WorkspaceReadOptions = {}): Promise<WorkspaceListRpcResult> {
+    return toRpcResult(this.listInternal(path, options));
   }
 
   async delete(path: string): Promise<WorkspaceDeleteRpcResult> {
     return toRpcResult(this.deleteInternal(path));
   }
 
-  async stat(path: string): Promise<WorkspaceStatRpcResult> {
-    return toRpcResult(this.statInternal(path));
+  async stat(path: string, options: WorkspaceReadOptions = {}): Promise<WorkspaceStatRpcResult> {
+    return toRpcResult(this.statInternal(path, options));
+  }
+
+  private commitInternal(): WorkspaceCommitResult {
+    const revision: WorkspaceRevision = {
+      revisionId: crypto.randomUUID(),
+      createdAt: Date.now(),
+    };
+
+    this.ctx.storage.sql.exec(
+      "INSERT INTO revisions (id, created_at) VALUES (?, ?)",
+      revision.revisionId,
+      revision.createdAt,
+    );
+    this.ctx.storage.sql.exec(
+      `INSERT INTO revision_entries
+       (revision_id, path, parent_path, name, type, blob_key, size, created_at, updated_at)
+       SELECT ?, path, parent_path, name, type, blob_key, size, created_at, updated_at
+       FROM entries`,
+      revision.revisionId,
+    );
+
+    return Result.ok(revision);
   }
 
   private mkdirInternal(path: string): WorkspaceMkdirResult {
@@ -83,7 +119,7 @@ export class WorkspaceObject extends DurableObject<Env> {
       return Result.err(parent.error);
     }
 
-    if (this.getEntry(path)) {
+    if (this.getHeadEntry(path)) {
       return Result.err(new PathAlreadyExistsError({ path }));
     }
 
@@ -137,13 +173,18 @@ export class WorkspaceObject extends DurableObject<Env> {
     return Result.ok();
   }
 
-  private async readFileInternal(path: string): Promise<WorkspaceReadResult> {
+  private async readFileInternal(path: string, options: WorkspaceReadOptions): Promise<WorkspaceReadResult> {
     const parsed = parseWorkspacePath(path, { allowRoot: true });
     if (Result.isError(parsed)) {
       return Result.err(parsed.error);
     }
 
-    const entry = this.getEntry(path);
+    const revision = this.resolveRevision(options);
+    if (Result.isError(revision)) {
+      return Result.err(revision.error);
+    }
+
+    const entry = this.getEntry(path, revision.value);
     if (!entry) {
       return Result.err(new PathNotFoundError({ path }));
     }
@@ -159,13 +200,18 @@ export class WorkspaceObject extends DurableObject<Env> {
     return Result.ok(new Uint8Array(await object.arrayBuffer()));
   }
 
-  private listInternal(path: string): WorkspaceListResult {
+  private listInternal(path: string, options: WorkspaceReadOptions): WorkspaceListResult {
     const parsed = parseWorkspacePath(path, { allowRoot: true });
     if (Result.isError(parsed)) {
       return Result.err(parsed.error);
     }
 
-    const entry = this.getEntry(path);
+    const revision = this.resolveRevision(options);
+    if (Result.isError(revision)) {
+      return Result.err(revision.error);
+    }
+
+    const entry = this.getEntry(path, revision.value);
     if (!entry) {
       return Result.err(new PathNotFoundError({ path }));
     }
@@ -173,18 +219,7 @@ export class WorkspaceObject extends DurableObject<Env> {
       return Result.err(new NotDirectoryError({ path }));
     }
 
-    const entries = this.ctx.storage.sql
-      .exec<WorkspaceEntry>(
-        `SELECT name, path, type
-         FROM entries
-         WHERE parent_path = ? AND path != ?
-         ORDER BY name`,
-        path,
-        path,
-      )
-      .toArray();
-
-    return Result.ok(entries);
+    return Result.ok(this.listEntries(path, revision.value));
   }
 
   private deleteInternal(path: string): WorkspaceDeleteResult {
@@ -193,11 +228,11 @@ export class WorkspaceObject extends DurableObject<Env> {
       return Result.err(parsed.error);
     }
 
-    const entry = this.getEntry(path);
+    const entry = this.getHeadEntry(path);
     if (!entry) {
       return Result.err(new PathNotFoundError({ path }));
     }
-    if (entry.type === "directory" && this.hasChildren(path)) {
+    if (entry.type === "directory" && this.hasHeadChildren(path)) {
       return Result.err(new DirectoryNotEmptyError({ path }));
     }
 
@@ -205,13 +240,18 @@ export class WorkspaceObject extends DurableObject<Env> {
     return Result.ok();
   }
 
-  private statInternal(path: string): WorkspaceStatResult {
+  private statInternal(path: string, options: WorkspaceReadOptions): WorkspaceStatResult {
     const parsed = parseWorkspacePath(path, { allowRoot: true });
     if (Result.isError(parsed)) {
       return Result.err(parsed.error);
     }
 
-    const entry = this.getEntry(path);
+    const revision = this.resolveRevision(options);
+    if (Result.isError(revision)) {
+      return Result.err(revision.error);
+    }
+
+    const entry = this.getEntry(path, revision.value);
     if (!entry) {
       return Result.err(new PathNotFoundError({ path }));
     }
@@ -236,6 +276,30 @@ export class WorkspaceObject extends DurableObject<Env> {
       CREATE INDEX IF NOT EXISTS entries_parent_name
       ON entries(parent_path, name)
     `);
+    this.ctx.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS revisions (
+        id TEXT PRIMARY KEY,
+        created_at INTEGER NOT NULL
+      )
+    `);
+    this.ctx.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS revision_entries (
+        revision_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        parent_path TEXT NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL CHECK (type IN ('directory', 'file')),
+        blob_key TEXT,
+        size INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (revision_id, path)
+      )
+    `);
+    this.ctx.storage.sql.exec(`
+      CREATE INDEX IF NOT EXISTS revision_entries_parent_name
+      ON revision_entries(revision_id, parent_path, name)
+    `);
 
     const now = Date.now();
     this.ctx.storage.sql.exec(
@@ -253,7 +317,7 @@ export class WorkspaceObject extends DurableObject<Env> {
       return parent;
     }
 
-    const existingEntry = this.getEntry(path);
+    const existingEntry = this.getHeadEntry(path);
     if (existingEntry?.type === "directory") {
       return Result.err(new IsDirectoryError({ path }));
     }
@@ -263,7 +327,7 @@ export class WorkspaceObject extends DurableObject<Env> {
 
   private requireParentDirectory(path: string): Result<void, PathNotFoundError | NotDirectoryError> {
     const parent = parentPath(path);
-    const entry = this.getEntry(parent);
+    const entry = this.getHeadEntry(parent);
     if (!entry) {
       return Result.err(new PathNotFoundError({ path: parent }));
     }
@@ -287,7 +351,53 @@ export class WorkspaceObject extends DurableObject<Env> {
     );
   }
 
-  private hasChildren(path: string): boolean {
+  private resolveRevision(options: WorkspaceReadOptions): Result<string | undefined, RevisionNotFoundError> {
+    if (!options.revisionId) {
+      return Result.ok(undefined);
+    }
+    if (!this.getRevision(options.revisionId)) {
+      return Result.err(new RevisionNotFoundError({ revisionId: options.revisionId }));
+    }
+
+    return Result.ok(options.revisionId);
+  }
+
+  private getRevision(revisionId: string): RevisionRow | null {
+    return (
+      this.ctx.storage.sql
+        .exec<RevisionRow>("SELECT id, created_at FROM revisions WHERE id = ?", revisionId)
+        .toArray()[0] ?? null
+    );
+  }
+
+  private listEntries(path: string, revisionId: string | undefined): WorkspaceEntry[] {
+    if (revisionId) {
+      return this.ctx.storage.sql
+        .exec<WorkspaceEntry>(
+          `SELECT name, path, type
+           FROM revision_entries
+           WHERE revision_id = ? AND parent_path = ? AND path != ?
+           ORDER BY name`,
+          revisionId,
+          path,
+          path,
+        )
+        .toArray();
+    }
+
+    return this.ctx.storage.sql
+      .exec<WorkspaceEntry>(
+        `SELECT name, path, type
+         FROM entries
+         WHERE parent_path = ? AND path != ?
+         ORDER BY name`,
+        path,
+        path,
+      )
+      .toArray();
+  }
+
+  private hasHeadChildren(path: string): boolean {
     return (
       this.ctx.storage.sql
         .exec<{ count: number }>(
@@ -299,7 +409,25 @@ export class WorkspaceObject extends DurableObject<Env> {
     );
   }
 
-  private getEntry(path: string): EntryRow | null {
+  private getEntry(path: string, revisionId: string | undefined): EntryRow | null {
+    if (revisionId) {
+      return (
+        this.ctx.storage.sql
+          .exec<EntryRow>(
+            `SELECT path, type, blob_key, size, created_at, updated_at
+             FROM revision_entries
+             WHERE revision_id = ? AND path = ?`,
+            revisionId,
+            path,
+          )
+          .toArray()[0] ?? null
+      );
+    }
+
+    return this.getHeadEntry(path);
+  }
+
+  private getHeadEntry(path: string): EntryRow | null {
     return (
       this.ctx.storage.sql
         .exec<EntryRow>(

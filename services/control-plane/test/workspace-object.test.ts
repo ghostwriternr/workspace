@@ -184,4 +184,97 @@ describe("WorkspaceObject", () => {
       error: { tag: "PathAlreadyExistsError", path: "/README.md" },
     });
   });
+
+  it("commits immutable revisions that list point-in-time trees", async () => {
+    const workspace = env.WORKSPACES.getByName("commit-list-revisions");
+
+    await workspace.writeFile("/a.txt", bytes("a"));
+    const firstCommit = await workspace.commit();
+    expect(firstCommit.status).toBe("ok");
+    if (firstCommit.status !== "ok") {
+      throw new Error("commit failed");
+    }
+
+    await workspace.writeFile("/b.txt", bytes("b"));
+    const secondCommit = await workspace.commit();
+    expect(secondCommit.status).toBe("ok");
+    if (secondCommit.status !== "ok") {
+      throw new Error("commit failed");
+    }
+
+    await expect(workspace.list("/", { revisionId: firstCommit.value.revisionId })).resolves.toEqual({
+      status: "ok",
+      value: [{ name: "a.txt", path: "/a.txt", type: "file" }],
+    });
+    await expect(workspace.list("/", { revisionId: secondCommit.value.revisionId })).resolves.toEqual({
+      status: "ok",
+      value: [
+        { name: "a.txt", path: "/a.txt", type: "file" },
+        { name: "b.txt", path: "/b.txt", type: "file" },
+      ],
+    });
+  });
+
+  it("reads and stats revision entries independently from the mutable head", async () => {
+    const workspace = env.WORKSPACES.getByName("commit-read-stat-revisions");
+
+    await workspace.writeFile("/README.md", bytes("one"));
+    const firstCommit = await workspace.commit();
+    expect(firstCommit.status).toBe("ok");
+    if (firstCommit.status !== "ok") {
+      throw new Error("commit failed");
+    }
+
+    await workspace.writeFile("/README.md", bytes("longer"));
+
+    const revisionRead = await workspace.readFile("/README.md", {
+      revisionId: firstCommit.value.revisionId,
+    });
+    expect(revisionRead.status).toBe("ok");
+    if (revisionRead.status === "ok") {
+      expect(text(revisionRead.value)).toBe("one");
+    }
+
+    const headRead = await workspace.readFile("/README.md");
+    expect(headRead.status).toBe("ok");
+    if (headRead.status === "ok") {
+      expect(text(headRead.value)).toBe("longer");
+    }
+
+    await expect(workspace.stat("/README.md", { revisionId: firstCommit.value.revisionId })).resolves.toMatchObject({
+      status: "ok",
+      value: {
+        path: "/README.md",
+        type: "file",
+        size: 3,
+        createdAt: expect.any(Number),
+        updatedAt: expect.any(Number),
+      },
+    });
+    await expect(workspace.stat("/README.md")).resolves.toMatchObject({
+      status: "ok",
+      value: {
+        path: "/README.md",
+        type: "file",
+        size: 6,
+      },
+    });
+  });
+
+  it("returns a serializable error for unknown revisions", async () => {
+    const workspace = env.WORKSPACES.getByName("missing-revision");
+
+    await expect(workspace.list("/", { revisionId: "missing" })).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "RevisionNotFoundError", revisionId: "missing" },
+    });
+    await expect(workspace.stat("/README.md", { revisionId: "missing" })).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "RevisionNotFoundError", revisionId: "missing" },
+    });
+    await expect(workspace.readFile("/README.md", { revisionId: "missing" })).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "RevisionNotFoundError", revisionId: "missing" },
+    });
+  });
 });

@@ -80,13 +80,26 @@ export class DirectoryNotEmptyError extends TaggedError("DirectoryNotEmptyError"
   }
 }
 
+export class RevisionNotFoundError extends TaggedError("RevisionNotFoundError")<{
+  revisionId: string;
+  message: string;
+}>() {
+  constructor(args: { revisionId: string }) {
+    super({
+      ...args,
+      message: `Workspace revision not found: ${args.revisionId}`,
+    });
+  }
+}
+
 export type WorkspaceError =
   | DirectoryNotEmptyError
   | InvalidPathError
   | IsDirectoryError
   | NotDirectoryError
   | PathAlreadyExistsError
-  | PathNotFoundError;
+  | PathNotFoundError
+  | RevisionNotFoundError;
 
 export type WorkspaceMkdirError =
   | InvalidPathError
@@ -94,10 +107,10 @@ export type WorkspaceMkdirError =
   | PathAlreadyExistsError
   | PathNotFoundError;
 export type WorkspaceWriteError = InvalidPathError | IsDirectoryError | NotDirectoryError | PathNotFoundError;
-export type WorkspaceReadError = InvalidPathError | IsDirectoryError | PathNotFoundError;
-export type WorkspaceListError = InvalidPathError | NotDirectoryError | PathNotFoundError;
+export type WorkspaceReadError = InvalidPathError | IsDirectoryError | PathNotFoundError | RevisionNotFoundError;
+export type WorkspaceListError = InvalidPathError | NotDirectoryError | PathNotFoundError | RevisionNotFoundError;
 export type WorkspaceDeleteError = InvalidPathError | DirectoryNotEmptyError | PathNotFoundError;
-export type WorkspaceStatError = InvalidPathError | PathNotFoundError;
+export type WorkspaceStatError = InvalidPathError | PathNotFoundError | RevisionNotFoundError;
 
 export type InvalidPathErrorDto = {
   tag: "InvalidPathError";
@@ -136,13 +149,20 @@ export type DirectoryNotEmptyErrorDto = {
   message: string;
 };
 
+export type RevisionNotFoundErrorDto = {
+  tag: "RevisionNotFoundError";
+  revisionId: string;
+  message: string;
+};
+
 export type WorkspaceErrorDto =
   | DirectoryNotEmptyErrorDto
   | InvalidPathErrorDto
   | IsDirectoryErrorDto
   | NotDirectoryErrorDto
   | PathAlreadyExistsErrorDto
-  | PathNotFoundErrorDto;
+  | PathNotFoundErrorDto
+  | RevisionNotFoundErrorDto;
 
 export type ErrorDtoFor<E extends WorkspaceError> = E extends DirectoryNotEmptyError
   ? DirectoryNotEmptyErrorDto
@@ -156,7 +176,9 @@ export type ErrorDtoFor<E extends WorkspaceError> = E extends DirectoryNotEmptyE
           ? PathAlreadyExistsErrorDto
           : E extends PathNotFoundError
             ? PathNotFoundErrorDto
-            : never;
+            : E extends RevisionNotFoundError
+              ? RevisionNotFoundErrorDto
+              : never;
 
 export function workspaceErrorToDto<E extends WorkspaceError>(error: E): ErrorDtoFor<E> {
   if (DirectoryNotEmptyError.is(error)) {
@@ -195,12 +217,23 @@ export function workspaceErrorToDto<E extends WorkspaceError>(error: E): ErrorDt
       message: error.message,
     } as ErrorDtoFor<E>;
   }
+  if (PathNotFoundError.is(error)) {
+    return {
+      tag: "PathNotFoundError",
+      path: error.path,
+      message: error.message,
+    } as ErrorDtoFor<E>;
+  }
+  if (RevisionNotFoundError.is(error)) {
+    return {
+      tag: "RevisionNotFoundError",
+      revisionId: error.revisionId,
+      message: error.message,
+    } as ErrorDtoFor<E>;
+  }
 
-  return {
-    tag: "PathNotFoundError",
-    path: error.path,
-    message: error.message,
-  } as ErrorDtoFor<E>;
+  const exhaustive: never = error;
+  return exhaustive;
 }
 
 function invalidPathMessage(path: string, reason: InvalidPathReason): string {
