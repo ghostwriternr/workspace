@@ -104,6 +104,20 @@ export class SessionNotFoundError extends TaggedError("SessionNotFoundError")<{
   }
 }
 
+export class SessionConflictError extends TaggedError("SessionConflictError")<{
+  sessionId: string;
+  baseHeadVersion: number;
+  currentHeadVersion: number;
+  message: string;
+}>() {
+  constructor(args: { sessionId: string; baseHeadVersion: number; currentHeadVersion: number }) {
+    super({
+      ...args,
+      message: `Workspace session ${args.sessionId} is based on head version ${args.baseHeadVersion}, but current head is version ${args.currentHeadVersion}`,
+    });
+  }
+}
+
 export type WorkspaceError =
   | DirectoryNotEmptyError
   | InvalidPathError
@@ -112,6 +126,7 @@ export type WorkspaceError =
   | PathAlreadyExistsError
   | PathNotFoundError
   | RevisionNotFoundError
+  | SessionConflictError
   | SessionNotFoundError;
 
 export type WorkspaceMkdirError =
@@ -131,7 +146,7 @@ export type WorkspaceSessionReadError = WorkspaceReadError | SessionNotFoundErro
 export type WorkspaceSessionListError = WorkspaceListError | SessionNotFoundError;
 export type WorkspaceSessionDeleteError = WorkspaceDeleteError | SessionNotFoundError;
 export type WorkspaceSessionStatError = WorkspaceStatError | SessionNotFoundError;
-export type WorkspaceSessionCommitError = SessionNotFoundError;
+export type WorkspaceSessionCommitError = SessionConflictError | SessionNotFoundError;
 export type WorkspaceSessionDiscardError = SessionNotFoundError;
 
 export type InvalidPathErrorDto = {
@@ -183,6 +198,14 @@ export type SessionNotFoundErrorDto = {
   message: string;
 };
 
+export type SessionConflictErrorDto = {
+  tag: "SessionConflictError";
+  sessionId: string;
+  baseHeadVersion: number;
+  currentHeadVersion: number;
+  message: string;
+};
+
 export type WorkspaceErrorDto =
   | DirectoryNotEmptyErrorDto
   | InvalidPathErrorDto
@@ -191,6 +214,7 @@ export type WorkspaceErrorDto =
   | PathAlreadyExistsErrorDto
   | PathNotFoundErrorDto
   | RevisionNotFoundErrorDto
+  | SessionConflictErrorDto
   | SessionNotFoundErrorDto;
 
 export type ErrorDtoFor<E extends WorkspaceError> = E extends DirectoryNotEmptyError
@@ -207,9 +231,11 @@ export type ErrorDtoFor<E extends WorkspaceError> = E extends DirectoryNotEmptyE
             ? PathNotFoundErrorDto
             : E extends RevisionNotFoundError
               ? RevisionNotFoundErrorDto
-              : E extends SessionNotFoundError
-                ? SessionNotFoundErrorDto
-                : never;
+              : E extends SessionConflictError
+                ? SessionConflictErrorDto
+                : E extends SessionNotFoundError
+                  ? SessionNotFoundErrorDto
+                  : never;
 
 export function workspaceErrorToDto<E extends WorkspaceError>(error: E): ErrorDtoFor<E> {
   if (DirectoryNotEmptyError.is(error)) {
@@ -259,6 +285,15 @@ export function workspaceErrorToDto<E extends WorkspaceError>(error: E): ErrorDt
     return {
       tag: "RevisionNotFoundError",
       revisionId: error.revisionId,
+      message: error.message,
+    } as ErrorDtoFor<E>;
+  }
+  if (SessionConflictError.is(error)) {
+    return {
+      tag: "SessionConflictError",
+      sessionId: error.sessionId,
+      baseHeadVersion: error.baseHeadVersion,
+      currentHeadVersion: error.currentHeadVersion,
       message: error.message,
     } as ErrorDtoFor<E>;
   }

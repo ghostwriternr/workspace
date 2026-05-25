@@ -1,6 +1,6 @@
 import { Result } from "better-result";
 import { RevisionNotFoundError } from "./errors";
-import type { WorkspaceCommitResult, WorkspaceRevision } from "./rpc";
+import type { WorkspaceRevision, WorkspaceSnapshotResult } from "./rpc";
 
 type SqlStorage = DurableObjectStorage["sql"];
 
@@ -9,7 +9,7 @@ type RevisionRow = {
   created_at: number;
 };
 
-export function createRevisionFromHead(sql: SqlStorage): WorkspaceCommitResult {
+export function createRevisionFromHead(sql: SqlStorage): WorkspaceSnapshotResult {
   const revision: WorkspaceRevision = {
     revisionId: crypto.randomUUID(),
     createdAt: Date.now(),

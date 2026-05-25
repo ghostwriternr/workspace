@@ -185,28 +185,28 @@ describe("WorkspaceObject", () => {
     });
   });
 
-  it("commits immutable revisions that list point-in-time trees", async () => {
-    const workspace = env.WORKSPACES.getByName("commit-list-revisions");
+  it("snapshots immutable revisions that list point-in-time trees", async () => {
+    const workspace = env.WORKSPACES.getByName("snapshot-list-revisions");
 
     await workspace.writeFile("/a.txt", bytes("a"));
-    const firstCommit = await workspace.commit();
-    expect(firstCommit.status).toBe("ok");
-    if (firstCommit.status !== "ok") {
-      throw new Error("commit failed");
+    const firstSnapshot = await workspace.snapshot();
+    expect(firstSnapshot.status).toBe("ok");
+    if (firstSnapshot.status !== "ok") {
+      throw new Error("snapshot failed");
     }
 
     await workspace.writeFile("/b.txt", bytes("b"));
-    const secondCommit = await workspace.commit();
-    expect(secondCommit.status).toBe("ok");
-    if (secondCommit.status !== "ok") {
-      throw new Error("commit failed");
+    const secondSnapshot = await workspace.snapshot();
+    expect(secondSnapshot.status).toBe("ok");
+    if (secondSnapshot.status !== "ok") {
+      throw new Error("snapshot failed");
     }
 
-    await expect(workspace.list("/", { revisionId: firstCommit.value.revisionId })).resolves.toEqual({
+    await expect(workspace.list("/", { revisionId: firstSnapshot.value.revisionId })).resolves.toEqual({
       status: "ok",
       value: [{ name: "a.txt", path: "/a.txt", type: "file" }],
     });
-    await expect(workspace.list("/", { revisionId: secondCommit.value.revisionId })).resolves.toEqual({
+    await expect(workspace.list("/", { revisionId: secondSnapshot.value.revisionId })).resolves.toEqual({
       status: "ok",
       value: [
         { name: "a.txt", path: "/a.txt", type: "file" },
@@ -216,19 +216,19 @@ describe("WorkspaceObject", () => {
   });
 
   it("reads and stats revision entries independently from the mutable head", async () => {
-    const workspace = env.WORKSPACES.getByName("commit-read-stat-revisions");
+    const workspace = env.WORKSPACES.getByName("snapshot-read-stat-revisions");
 
     await workspace.writeFile("/README.md", bytes("one"));
-    const firstCommit = await workspace.commit();
-    expect(firstCommit.status).toBe("ok");
-    if (firstCommit.status !== "ok") {
-      throw new Error("commit failed");
+    const firstSnapshot = await workspace.snapshot();
+    expect(firstSnapshot.status).toBe("ok");
+    if (firstSnapshot.status !== "ok") {
+      throw new Error("snapshot failed");
     }
 
     await workspace.writeFile("/README.md", bytes("longer"));
 
     const revisionRead = await workspace.readFile("/README.md", {
-      revisionId: firstCommit.value.revisionId,
+      revisionId: firstSnapshot.value.revisionId,
     });
     expect(revisionRead.status).toBe("ok");
     if (revisionRead.status === "ok") {
@@ -241,7 +241,7 @@ describe("WorkspaceObject", () => {
       expect(text(headRead.value)).toBe("longer");
     }
 
-    await expect(workspace.stat("/README.md", { revisionId: firstCommit.value.revisionId })).resolves.toMatchObject({
+    await expect(workspace.stat("/README.md", { revisionId: firstSnapshot.value.revisionId })).resolves.toMatchObject({
       status: "ok",
       value: {
         path: "/README.md",
@@ -429,6 +429,81 @@ describe("WorkspaceObject", () => {
     if (secondAfterCommit.status === "ok") {
       expect(text(secondAfterCommit.value)).toBe("second");
     }
+    await expect(second.discard()).resolves.toEqual({ status: "ok" });
+  });
+
+  it("allows sessions to commit after head snapshots", async () => {
+    const workspace = env.WORKSPACES.getByName("session-after-head-snapshot");
+
+    await workspace.writeFile("/README.md", bytes("base"));
+    const session = await workspace.beginSession();
+    await session.writeFile("/README.md", bytes("session"));
+    await workspace.snapshot();
+
+    await expect(session.commit()).resolves.toMatchObject({ status: "ok" });
+
+    const headRead = await workspace.readFile("/README.md");
+    expect(headRead.status).toBe("ok");
+    if (headRead.status === "ok") {
+      expect(text(headRead.value)).toBe("session");
+    }
+  });
+
+  it("rejects session commits when head changed after the session began", async () => {
+    const workspace = env.WORKSPACES.getByName("session-head-conflict");
+
+    await workspace.writeFile("/README.md", bytes("base"));
+    const session = await workspace.beginSession();
+    await session.writeFile("/README.md", bytes("session"));
+
+    await workspace.writeFile("/README.md", bytes("head"));
+
+    await expect(session.commit()).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "SessionConflictError" },
+    });
+    await expect(session.commit()).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "SessionConflictError" },
+    });
+
+    const headRead = await workspace.readFile("/README.md");
+    expect(headRead.status).toBe("ok");
+    if (headRead.status === "ok") {
+      expect(text(headRead.value)).toBe("head");
+    }
+
+    const sessionRead = await session.readFile("/README.md");
+    expect(sessionRead.status).toBe("ok");
+    if (sessionRead.status === "ok") {
+      expect(text(sessionRead.value)).toBe("session");
+    }
+
+    await expect(session.discard()).resolves.toEqual({ status: "ok" });
+  });
+
+  it("rejects later concurrent session commits without closing the conflicted session", async () => {
+    const workspace = env.WORKSPACES.getByName("session-session-conflict");
+
+    await workspace.writeFile("/README.md", bytes("base"));
+    const first = await workspace.beginSession();
+    const second = await workspace.beginSession();
+
+    await first.writeFile("/README.md", bytes("first"));
+    await second.writeFile("/README.md", bytes("second"));
+
+    await expect(first.commit()).resolves.toMatchObject({ status: "ok" });
+    await expect(second.commit()).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "SessionConflictError" },
+    });
+
+    const secondRead = await second.readFile("/README.md");
+    expect(secondRead.status).toBe("ok");
+    if (secondRead.status === "ok") {
+      expect(text(secondRead.value)).toBe("second");
+    }
+    await expect(second.discard()).resolves.toEqual({ status: "ok" });
   });
 
   it("rejects operations on terminal sessions", async () => {

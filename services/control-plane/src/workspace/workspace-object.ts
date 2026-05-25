@@ -2,6 +2,7 @@ import { Result } from "better-result";
 import { DurableObject } from "cloudflare:workers";
 import { WorkspaceBlobStore } from "./blob-store";
 import type { RevisionNotFoundError } from "./errors";
+import { bumpHeadVersion } from "./head-state";
 import {
   deleteFromTree,
   listTree,
@@ -15,8 +16,8 @@ import { createRevisionFromHead, requireRevision } from "./revisions";
 import {
   toRpcError,
   toRpcResult,
-  type WorkspaceCommitResult,
-  type WorkspaceCommitRpcResult,
+  type WorkspaceSnapshotResult,
+  type WorkspaceSnapshotRpcResult,
   type WorkspaceDeleteRpcResult,
   type WorkspaceListRpcResult,
   type WorkspaceMkdirRpcResult,
@@ -44,8 +45,8 @@ export class WorkspaceObject extends DurableObject<Env> {
     });
   }
 
-  async commit(): Promise<WorkspaceCommitRpcResult> {
-    return toRpcResult(this.commitInternal());
+  async snapshot(): Promise<WorkspaceSnapshotRpcResult> {
+    return toRpcResult(this.snapshotInternal());
   }
 
   async beginSession(): Promise<WorkspaceSession> {
@@ -65,7 +66,15 @@ export class WorkspaceObject extends DurableObject<Env> {
   }
 
   async mkdir(path: string): Promise<WorkspaceMkdirRpcResult> {
-    return toRpcResult(mkdirInTree(this.head(), path));
+    return toRpcResult(
+      this.ctx.storage.transactionSync(() => {
+        const result = mkdirInTree(this.head(), path);
+        if (!Result.isError(result)) {
+          bumpHeadVersion(this.ctx.storage.sql);
+        }
+        return result;
+      }),
+    );
   }
 
   async writeFile(path: string, contents: Uint8Array): Promise<WorkspaceWriteRpcResult> {
@@ -76,7 +85,15 @@ export class WorkspaceObject extends DurableObject<Env> {
     }
 
     const blob = await this.blobs().put(contents);
-    return toRpcResult(writeBlobRefToTree(tree, path, blob));
+    return toRpcResult(
+      this.ctx.storage.transactionSync(() => {
+        const result = writeBlobRefToTree(this.head(), path, blob);
+        if (!Result.isError(result)) {
+          bumpHeadVersion(this.ctx.storage.sql);
+        }
+        return result;
+      }),
+    );
   }
 
   async readFile(path: string, options: WorkspaceReadOptions = {}): Promise<WorkspaceReadRpcResult> {
@@ -98,7 +115,15 @@ export class WorkspaceObject extends DurableObject<Env> {
   }
 
   async delete(path: string): Promise<WorkspaceDeleteRpcResult> {
-    return toRpcResult(deleteFromTree(this.head(), path));
+    return toRpcResult(
+      this.ctx.storage.transactionSync(() => {
+        const result = deleteFromTree(this.head(), path);
+        if (!Result.isError(result)) {
+          bumpHeadVersion(this.ctx.storage.sql);
+        }
+        return result;
+      }),
+    );
   }
 
   async stat(path: string, options: WorkspaceReadOptions = {}): Promise<WorkspaceStatRpcResult> {
@@ -110,7 +135,7 @@ export class WorkspaceObject extends DurableObject<Env> {
     return toRpcResult(statTree(tree.value, path));
   }
 
-  private commitInternal(): WorkspaceCommitResult {
+  private snapshotInternal(): WorkspaceSnapshotResult {
     return this.ctx.storage.transactionSync(() => createRevisionFromHead(this.ctx.storage.sql));
   }
 

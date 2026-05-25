@@ -8,6 +8,7 @@ import {
   type PathAlreadyExistsErrorDto,
   type PathNotFoundErrorDto,
   type RevisionNotFoundErrorDto,
+  type SessionConflictErrorDto,
   type SessionNotFoundErrorDto,
   type WorkspaceDeleteError,
   type WorkspaceError,
@@ -68,7 +69,7 @@ export type WorkspaceReadOptions = {
   revisionId?: string;
 };
 
-export type WorkspaceCommitRpcResult = WorkspaceRpcResult<WorkspaceRevision, never>;
+export type WorkspaceSnapshotRpcResult = WorkspaceRpcResult<WorkspaceRevision, never>;
 export type WorkspaceMkdirRpcResult =
   | WorkspaceOk
   | WorkspaceRpcError<
@@ -121,7 +122,7 @@ export type WorkspaceSessionStatRpcResult =
   | WorkspaceRpcError<InvalidPathErrorDto | PathNotFoundErrorDto | SessionNotFoundErrorDto>;
 export type WorkspaceSessionCommitRpcResult =
   | WorkspaceOk<WorkspaceRevision>
-  | WorkspaceRpcError<SessionNotFoundErrorDto>;
+  | WorkspaceRpcError<SessionConflictErrorDto | SessionNotFoundErrorDto>;
 export type WorkspaceSessionDiscardRpcResult = WorkspaceOk | WorkspaceRpcError<SessionNotFoundErrorDto>;
 
 export function toRpcResult<T, E extends WorkspaceError>(
@@ -142,7 +143,7 @@ export function toRpcError<E extends WorkspaceError>(error: E): WorkspaceRpcErro
   return { status: "error", error: workspaceErrorToDto(error) };
 }
 
-export type WorkspaceCommitResult = BetterResult<WorkspaceRevision, never>;
+export type WorkspaceSnapshotResult = BetterResult<WorkspaceRevision, never>;
 export type WorkspaceMkdirResult = BetterResult<void, WorkspaceMkdirError>;
 export type WorkspaceWriteResult = BetterResult<void, WorkspaceWriteError>;
 export type WorkspaceReadResult = BetterResult<Uint8Array, WorkspaceReadError>;

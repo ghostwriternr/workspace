@@ -42,10 +42,18 @@ export function initializeWorkspaceSchema(sql: SqlStorage, now = Date.now()): vo
     ON revision_entries(revision_id, parent_path, name)
   `);
   sql.exec(`
+    CREATE TABLE IF NOT EXISTS workspace_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      head_version INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+  sql.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       created_at INTEGER NOT NULL,
-      state TEXT NOT NULL CHECK (state IN ('open', 'committed', 'discarded'))
+      state TEXT NOT NULL CHECK (state IN ('open', 'committed', 'discarded')),
+      base_head_version INTEGER NOT NULL
     )
   `);
   sql.exec(`
@@ -72,6 +80,10 @@ export function initializeWorkspaceSchema(sql: SqlStorage, now = Date.now()): vo
      (path, parent_path, name, type, blob_key, size, created_at, updated_at)
      VALUES ('/', '/', '', 'directory', NULL, NULL, ?, ?)`,
     now,
+    now,
+  );
+  sql.exec(
+    "INSERT OR IGNORE INTO workspace_state (id, head_version, updated_at) VALUES (1, 0, ?)",
     now,
   );
 }

@@ -4,9 +4,9 @@ These are accepted limitations of the current Workspace prototype. Keep this fil
 
 ## Revisions are full metadata copies
 
-`commit()` copies the current `entries` table into `revision_entries`.
+`snapshot()` copies the current `entries` table into `revision_entries`.
 
-This is correct for proving immutable revision semantics, but it is O(N) Durable Object SQLite storage per commit. Long-term, Workspace may need delta revisions, chunked tree snapshots, or immutable tree objects stored outside Durable Object SQLite.
+This is correct for proving immutable revision semantics, but it is O(N) Durable Object SQLite storage per snapshot. Long-term, Workspace may need delta revisions, chunked tree snapshots, or immutable tree objects stored outside Durable Object SQLite.
 
 Revisit when:
 
@@ -39,11 +39,11 @@ Sessions left open indefinitely retain `session_entries` rows indefinitely.
 
 There is no TTL, sweep, list, or purge API yet. Callers must explicitly `commit()` or `discard()` sessions. Long-term, Workspace needs session expiration or garbage collection before supporting high-volume or untrusted session creation.
 
-## No base-revision conflict model
+## No merge or rebase model
 
-Workers currently mutate one current head, and sessions publish by replacing that head.
+Sessions record the head version they started from, and `commit()` rejects stale sessions instead of silently overwriting newer head changes.
 
-Session commits can overwrite direct head writes or other session commits that happened after the session began. Long-term, Workspace needs a base revision and conflict handling so a working copy can explicitly commit changes without silently overwriting concurrent writes.
+That proves the safety boundary, but there is no merge, rebase, or conflict-detail model yet. Callers can inspect and discard a conflicted session, but Workspace does not yet help reconcile it with the newer head.
 
 ## No revision pruning
 
