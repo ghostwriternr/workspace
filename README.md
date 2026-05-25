@@ -8,7 +8,7 @@ See [`docs/product-boundaries.md`](./docs/product-boundaries.md) for the current
 
 ## Status
 
-This repository has a minimal TypeScript control-plane package with a first durable Workspace slice: a SQLite-backed Durable Object owns file-tree metadata, and R2 stores file bytes as content-addressed blobs.
+This repository has a minimal TypeScript control-plane package with a first durable Workspace slice: a SQLite-backed Durable Object owns file-tree metadata, R2 stores file bytes as content-addressed blobs, and live RPC session handles provide isolated working trees that can be committed or discarded.
 
 ## Layout
 

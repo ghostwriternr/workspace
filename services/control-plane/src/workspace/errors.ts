@@ -92,6 +92,18 @@ export class RevisionNotFoundError extends TaggedError("RevisionNotFoundError")<
   }
 }
 
+export class SessionNotFoundError extends TaggedError("SessionNotFoundError")<{
+  sessionId: string;
+  message: string;
+}>() {
+  constructor(args: { sessionId: string }) {
+    super({
+      ...args,
+      message: `Workspace session not found: ${args.sessionId}`,
+    });
+  }
+}
+
 export type WorkspaceError =
   | DirectoryNotEmptyError
   | InvalidPathError
@@ -99,7 +111,8 @@ export type WorkspaceError =
   | NotDirectoryError
   | PathAlreadyExistsError
   | PathNotFoundError
-  | RevisionNotFoundError;
+  | RevisionNotFoundError
+  | SessionNotFoundError;
 
 export type WorkspaceMkdirError =
   | InvalidPathError
@@ -107,10 +120,19 @@ export type WorkspaceMkdirError =
   | PathAlreadyExistsError
   | PathNotFoundError;
 export type WorkspaceWriteError = InvalidPathError | IsDirectoryError | NotDirectoryError | PathNotFoundError;
-export type WorkspaceReadError = InvalidPathError | IsDirectoryError | PathNotFoundError | RevisionNotFoundError;
-export type WorkspaceListError = InvalidPathError | NotDirectoryError | PathNotFoundError | RevisionNotFoundError;
+export type WorkspaceReadError = InvalidPathError | IsDirectoryError | PathNotFoundError;
+export type WorkspaceListError = InvalidPathError | NotDirectoryError | PathNotFoundError;
 export type WorkspaceDeleteError = InvalidPathError | DirectoryNotEmptyError | PathNotFoundError;
-export type WorkspaceStatError = InvalidPathError | PathNotFoundError | RevisionNotFoundError;
+export type WorkspaceStatError = InvalidPathError | PathNotFoundError;
+export type WorkspaceSessionInfoError = SessionNotFoundError;
+export type WorkspaceSessionMkdirError = WorkspaceMkdirError | SessionNotFoundError;
+export type WorkspaceSessionWriteError = WorkspaceWriteError | SessionNotFoundError;
+export type WorkspaceSessionReadError = WorkspaceReadError | SessionNotFoundError;
+export type WorkspaceSessionListError = WorkspaceListError | SessionNotFoundError;
+export type WorkspaceSessionDeleteError = WorkspaceDeleteError | SessionNotFoundError;
+export type WorkspaceSessionStatError = WorkspaceStatError | SessionNotFoundError;
+export type WorkspaceSessionCommitError = SessionNotFoundError;
+export type WorkspaceSessionDiscardError = SessionNotFoundError;
 
 export type InvalidPathErrorDto = {
   tag: "InvalidPathError";
@@ -155,6 +177,12 @@ export type RevisionNotFoundErrorDto = {
   message: string;
 };
 
+export type SessionNotFoundErrorDto = {
+  tag: "SessionNotFoundError";
+  sessionId: string;
+  message: string;
+};
+
 export type WorkspaceErrorDto =
   | DirectoryNotEmptyErrorDto
   | InvalidPathErrorDto
@@ -162,7 +190,8 @@ export type WorkspaceErrorDto =
   | NotDirectoryErrorDto
   | PathAlreadyExistsErrorDto
   | PathNotFoundErrorDto
-  | RevisionNotFoundErrorDto;
+  | RevisionNotFoundErrorDto
+  | SessionNotFoundErrorDto;
 
 export type ErrorDtoFor<E extends WorkspaceError> = E extends DirectoryNotEmptyError
   ? DirectoryNotEmptyErrorDto
@@ -178,7 +207,9 @@ export type ErrorDtoFor<E extends WorkspaceError> = E extends DirectoryNotEmptyE
             ? PathNotFoundErrorDto
             : E extends RevisionNotFoundError
               ? RevisionNotFoundErrorDto
-              : never;
+              : E extends SessionNotFoundError
+                ? SessionNotFoundErrorDto
+                : never;
 
 export function workspaceErrorToDto<E extends WorkspaceError>(error: E): ErrorDtoFor<E> {
   if (DirectoryNotEmptyError.is(error)) {
@@ -228,6 +259,13 @@ export function workspaceErrorToDto<E extends WorkspaceError>(error: E): ErrorDt
     return {
       tag: "RevisionNotFoundError",
       revisionId: error.revisionId,
+      message: error.message,
+    } as ErrorDtoFor<E>;
+  }
+  if (SessionNotFoundError.is(error)) {
+    return {
+      tag: "SessionNotFoundError",
+      sessionId: error.sessionId,
       message: error.message,
     } as ErrorDtoFor<E>;
   }

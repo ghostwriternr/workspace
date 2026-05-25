@@ -277,4 +277,179 @@ describe("WorkspaceObject", () => {
       error: { tag: "RevisionNotFoundError", revisionId: "missing" },
     });
   });
+
+  it("keeps session edits isolated from the mutable head", async () => {
+    const workspace = env.WORKSPACES.getByName("session-isolation");
+
+    const session = await workspace.beginSession();
+    await expect(session.mkdir("/src")).resolves.toEqual({ status: "ok" });
+    await expect(session.writeFile("/src/index.ts", bytes("export {};"))).resolves.toEqual({
+      status: "ok",
+    });
+
+    await expect(workspace.stat("/src")).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "PathNotFoundError", path: "/src" },
+    });
+
+    const sessionRead = await session.readFile("/src/index.ts");
+    expect(sessionRead.status).toBe("ok");
+    if (sessionRead.status === "ok") {
+      expect(text(sessionRead.value)).toBe("export {};");
+    }
+  });
+
+  it("commits session edits to head and creates a readable revision", async () => {
+    const workspace = env.WORKSPACES.getByName("session-commit");
+
+    await workspace.writeFile("/README.md", bytes("head"));
+    const session = await workspace.beginSession();
+    await session.writeFile("/README.md", bytes("session"));
+
+    const commit = await session.commit();
+    expect(commit.status).toBe("ok");
+    if (commit.status !== "ok") {
+      throw new Error("commit failed");
+    }
+
+    const headRead = await workspace.readFile("/README.md");
+    expect(headRead.status).toBe("ok");
+    if (headRead.status === "ok") {
+      expect(text(headRead.value)).toBe("session");
+    }
+
+    const revisionRead = await workspace.readFile("/README.md", {
+      revisionId: commit.value.revisionId,
+    });
+    expect(revisionRead.status).toBe("ok");
+    if (revisionRead.status === "ok") {
+      expect(text(revisionRead.value)).toBe("session");
+    }
+
+    await expect(session.stat("/README.md")).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "SessionNotFoundError" },
+    });
+  });
+
+  it("discards session edits without changing head", async () => {
+    const workspace = env.WORKSPACES.getByName("session-discard");
+
+    await workspace.writeFile("/README.md", bytes("head"));
+    const session = await workspace.beginSession();
+    await session.writeFile("/README.md", bytes("session"));
+
+    await expect(session.discard()).resolves.toEqual({ status: "ok" });
+
+    const headRead = await workspace.readFile("/README.md");
+    expect(headRead.status).toBe("ok");
+    if (headRead.status === "ok") {
+      expect(text(headRead.value)).toBe("head");
+    }
+    await expect(session.readFile("/README.md")).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "SessionNotFoundError" },
+    });
+  });
+
+  it("uses explicit directory semantics inside sessions", async () => {
+    const workspace = env.WORKSPACES.getByName("session-explicit-directories");
+    const session = await workspace.beginSession();
+
+    await expect(session.writeFile("/src/index.ts", bytes("export {};"))).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "PathNotFoundError", path: "/src" },
+    });
+
+    await expect(session.mkdir("/src")).resolves.toEqual({ status: "ok" });
+    await expect(session.writeFile("/src/index.ts", bytes("export {};"))).resolves.toEqual({
+      status: "ok",
+    });
+    await expect(session.delete("/src")).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "DirectoryNotEmptyError", path: "/src" },
+    });
+  });
+
+  it("can look up open sessions by durable session id", async () => {
+    const workspace = env.WORKSPACES.getByName("session-lookup");
+
+    const session = await workspace.beginSession();
+    const info = await session.info();
+    expect(info.status).toBe("ok");
+    if (info.status !== "ok") {
+      throw new Error("session info failed");
+    }
+
+    await session.writeFile("/README.md", bytes("session"));
+
+    const lookup = await workspace.getSession(info.value.sessionId);
+    expect(lookup.status).toBe("ok");
+    if (lookup.status !== "ok") {
+      throw new Error("session lookup failed");
+    }
+
+    const lookedUpRead = await lookup.value.readFile("/README.md");
+    expect(lookedUpRead.status).toBe("ok");
+    if (lookedUpRead.status === "ok") {
+      expect(text(lookedUpRead.value)).toBe("session");
+    }
+
+    await expect(workspace.getSession("missing-session")).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "SessionNotFoundError", sessionId: "missing-session" },
+    });
+  });
+
+  it("keeps concurrently open sessions isolated from each other", async () => {
+    const workspace = env.WORKSPACES.getByName("concurrent-sessions");
+
+    await workspace.writeFile("/README.md", bytes("head"));
+    const first = await workspace.beginSession();
+    const second = await workspace.beginSession();
+
+    await first.writeFile("/README.md", bytes("first"));
+    await second.writeFile("/README.md", bytes("second"));
+
+    const firstRead = await first.readFile("/README.md");
+    const secondRead = await second.readFile("/README.md");
+    expect(firstRead.status).toBe("ok");
+    expect(secondRead.status).toBe("ok");
+    if (firstRead.status === "ok") {
+      expect(text(firstRead.value)).toBe("first");
+    }
+    if (secondRead.status === "ok") {
+      expect(text(secondRead.value)).toBe("second");
+    }
+
+    await first.commit();
+
+    const secondAfterCommit = await second.readFile("/README.md");
+    expect(secondAfterCommit.status).toBe("ok");
+    if (secondAfterCommit.status === "ok") {
+      expect(text(secondAfterCommit.value)).toBe("second");
+    }
+  });
+
+  it("rejects operations on terminal sessions", async () => {
+    const workspace = env.WORKSPACES.getByName("terminal-sessions");
+
+    const committed = await workspace.beginSession();
+    await committed.commit();
+    await expect(committed.commit()).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "SessionNotFoundError" },
+    });
+    await expect(committed.discard()).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "SessionNotFoundError" },
+    });
+
+    const discarded = await workspace.beginSession();
+    await discarded.discard();
+    await expect(discarded.discard()).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "SessionNotFoundError" },
+    });
+  });
 });

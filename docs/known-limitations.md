@@ -27,11 +27,23 @@ If metadata points at a missing R2 blob, `readFile()` currently returns `PathNot
 
 That is sufficient for the prototype, but long-term this is storage corruption or an internal consistency failure and should likely have a distinct error and observability path.
 
+## Sessions copy full metadata
+
+`beginSession()` copies the current `entries` table into `session_entries`, and `commit()` on a session replaces `entries` from that full copy.
+
+This is correct for proving isolated working-session semantics, but it is O(N) Durable Object SQLite storage per open session and O(N) metadata work at begin/commit time. Long-term, sessions may need copy-on-write metadata, deltas, or immutable tree objects.
+
+## No session garbage collection
+
+Sessions left open indefinitely retain `session_entries` rows indefinitely.
+
+There is no TTL, sweep, list, or purge API yet. Callers must explicitly `commit()` or `discard()` sessions. Long-term, Workspace needs session expiration or garbage collection before supporting high-volume or untrusted session creation.
+
 ## No base-revision conflict model
 
-Workers currently mutate one current head, and `commit()` snapshots that head.
+Workers currently mutate one current head, and sessions publish by replacing that head.
 
-Container working-copy commits will likely need a base revision and conflict handling so a working copy can explicitly commit changes without silently overwriting concurrent writes.
+Session commits can overwrite direct head writes or other session commits that happened after the session began. Long-term, Workspace needs a base revision and conflict handling so a working copy can explicitly commit changes without silently overwriting concurrent writes.
 
 ## No revision pruning
 
