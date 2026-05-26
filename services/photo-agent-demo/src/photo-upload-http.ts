@@ -2,11 +2,16 @@ import { uploadOriginalPhoto } from "./photo-upload";
 
 type WorkspaceNamespace = Parameters<typeof uploadOriginalPhoto>[0]["workspaces"];
 
+type PhotoAgentNamespace = {
+  getByName(name: string): { refreshPhotoState(): Promise<unknown> };
+};
+
 const uploadRoutePattern = /^\/api\/workspaces\/([^/]+)\/photos\/original$/;
 
 export async function handlePhotoUploadRequest(
   request: Request,
   workspaces: WorkspaceNamespace,
+  photoAgents?: PhotoAgentNamespace,
 ): Promise<Response | undefined> {
   const url = new URL(request.url);
   const match = uploadRoutePattern.exec(url.pathname);
@@ -29,6 +34,10 @@ export async function handlePhotoUploadRequest(
       contents,
       contentType,
     });
+
+    if (photoAgents) {
+      await photoAgents.getByName(workspaceName).refreshPhotoState();
+    }
 
     return Response.json(upload, { status: 201 });
   } catch (error) {

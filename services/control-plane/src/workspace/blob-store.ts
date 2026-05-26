@@ -30,8 +30,12 @@ export class WorkspaceBlobStore {
 }
 
 async function blobKeyFor(contents: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", contents);
+  const digest = await crypto.subtle.digest("SHA-256", arrayBufferFor(contents));
   return `blobs/sha256/${hex(new Uint8Array(digest))}`;
+}
+
+function arrayBufferFor(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
 function hex(bytes: Uint8Array): string {

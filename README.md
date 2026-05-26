@@ -10,7 +10,7 @@ See [`docs/product-boundaries.md`](./docs/product-boundaries.md) for the current
 
 This repository has a minimal TypeScript control-plane package with a first durable Workspace slice: a SQLite-backed Durable Object owns file-tree metadata, R2 stores file bytes as content-addressed blobs, and live RPC session handles provide isolated working trees that can be committed or discarded.
 
-It also has an initial photo agent demo Worker scaffold that will validate Workspace as durable state for AI-assisted image editing, with Think for the chat agent and Sandbox/ImageMagick for native image transformations.
+It also has a photo agent demo Worker that validates Workspace as durable state for AI-assisted image editing, with Think for chat and Sandbox for native image transformations.
 
 ## Layout
 

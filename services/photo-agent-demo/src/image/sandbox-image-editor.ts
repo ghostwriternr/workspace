@@ -1,15 +1,19 @@
-import { buildDemoImageCommand, buildGrayscaleCommand } from "./imagemagick";
+export type SandboxCommandEdit = {
+  command: string;
+  input: Uint8Array;
+  inputFilename: string;
+};
 
-export type DemoImageOperation = "grayscale";
-
-export type DemoImageEdit = {
-  operation: DemoImageOperation;
-  contents: Uint8Array;
+export type SandboxCommandResult = {
+  command: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
 };
 
 export interface DemoImageEditor {
-  createOriginal(): Promise<Uint8Array>;
-  makeDraftEdit(input: Uint8Array): Promise<DemoImageEdit>;
+  runSandboxCommand(edit: SandboxCommandEdit): Promise<SandboxCommandResult>;
+  readSandboxFile(filename: string): Promise<Uint8Array>;
 }
 
 type ExecResult = {
@@ -26,7 +30,7 @@ type ReadFileStreamResult = {
 
 type SandboxClient = {
   mkdir(path: string, options: { recursive: boolean }): Promise<unknown>;
-  exec(command: string): Promise<ExecResult>;
+  exec(command: string, options?: { cwd?: string }): Promise<ExecResult>;
   writeFile(path: string, content: ReadableStream<Uint8Array>): Promise<unknown>;
   readFile(path: string, options: { encoding: "none" }): Promise<ReadFileStreamResult>;
 };
@@ -41,35 +45,34 @@ export class SandboxImageEditor implements DemoImageEditor {
     this.root = `/workspace/${workspaceName}`;
   }
 
-  async createOriginal(): Promise<Uint8Array> {
+  async runSandboxCommand(edit: SandboxCommandEdit): Promise<SandboxCommandResult> {
     await this.sandbox.mkdir(this.root, { recursive: true });
 
-    const outputPath = `${this.root}/original.png`;
-    await this.execImageMagick(buildDemoImageCommand(outputPath));
-    return this.readBytes(outputPath);
-  }
-
-  async makeDraftEdit(input: Uint8Array): Promise<DemoImageEdit> {
-    await this.sandbox.mkdir(this.root, { recursive: true });
-
-    const inputPath = `${this.root}/input.png`;
-    const outputPath = `${this.root}/current.png`;
-
-    await this.sandbox.writeFile(inputPath, bytesToStream(input));
-    await this.execImageMagick(buildGrayscaleCommand(inputPath, outputPath));
+    await this.sandbox.writeFile(this.pathFor(edit.inputFilename), bytesToStream(edit.input));
+    const result = await this.sandbox.exec(edit.command, { cwd: this.root });
+    if (!result.success) {
+      const detail = result.stderr.trim() || result.stdout.trim() || `exit ${result.exitCode}`;
+      throw new Error(`Sandbox command failed: ${detail}`);
+    }
 
     return {
-      operation: "grayscale",
-      contents: await this.readBytes(outputPath),
+      command: edit.command,
+      exitCode: result.exitCode,
+      stdout: result.stdout,
+      stderr: result.stderr,
     };
   }
 
-  private async execImageMagick(command: string): Promise<void> {
-    const result = await this.sandbox.exec(command);
-    if (!result.success) {
-      const detail = result.stderr.trim() || result.stdout.trim() || `exit ${result.exitCode}`;
-      throw new Error(`ImageMagick command failed: ${detail}`);
+  async readSandboxFile(filename: string): Promise<Uint8Array> {
+    return this.readBytes(this.pathFor(filename));
+  }
+
+  private pathFor(filename: string): string {
+    if (filename.length === 0 || filename.includes("/") || filename.includes("\\")) {
+      throw new Error("Sandbox filenames must be relative file names");
     }
+
+    return `${this.root}/${filename}`;
   }
 
   private async readBytes(path: string): Promise<Uint8Array> {

@@ -2,63 +2,73 @@ import { describe, expect, it } from "vitest";
 
 import { SandboxImageEditor } from "../src/image/sandbox-image-editor";
 
-const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
-const grayscaleBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 9, 8, 7]);
+const inputBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+const editedBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 9, 8, 7]);
 
 describe("SandboxImageEditor", () => {
-  it("generates an original PNG with ImageMagick", async () => {
-    const sandbox = new FakeSandbox({
-      "/workspace/photo-demo/original.png": pngBytes,
-    });
+  it("hydrates input bytes and runs a freeform command in the sandbox workspace", async () => {
+    const sandbox = new FakeSandbox({});
     const editor = new SandboxImageEditor(sandbox, "photo-demo");
 
-    const original = await editor.createOriginal();
+    const result = await editor.runSandboxCommand({
+      input: inputBytes,
+      inputFilename: "original.png",
+      command: "identify original.png && convert original.png -colorspace Gray square.png",
+    });
 
-    expect(original).toEqual(pngBytes);
+    expect(result).toEqual({
+      command: "identify original.png && convert original.png -colorspace Gray square.png",
+      exitCode: 0,
+      stdout: "ok",
+      stderr: "",
+    });
+    expect(sandbox.writes["/workspace/photo-demo/original.png"]).toEqual(inputBytes);
     expect(sandbox.commands).toEqual([
-      "convert -size '96x64' 'gradient:#5b8cff-#111827' '/workspace/photo-demo/original.png'",
+      {
+        command: "identify original.png && convert original.png -colorspace Gray square.png",
+        options: { cwd: "/workspace/photo-demo" },
+      },
     ]);
   });
 
-  it("hydrates input bytes and produces a grayscale draft", async () => {
+  it("reads any sandbox file the agent chooses to import", async () => {
     const sandbox = new FakeSandbox({
-      "/workspace/photo-demo/current.png": grayscaleBytes,
+      "/workspace/photo-demo/square.png": editedBytes,
     });
     const editor = new SandboxImageEditor(sandbox, "photo-demo");
 
-    const result = await editor.makeDraftEdit(pngBytes);
-
-    expect(result).toEqual({ operation: "grayscale", contents: grayscaleBytes });
-    expect(sandbox.writes["/workspace/photo-demo/input.png"]).toEqual(pngBytes);
-    expect(sandbox.commands).toEqual([
-      "convert '/workspace/photo-demo/input.png' -colorspace Gray '/workspace/photo-demo/current.png'",
-    ]);
+    await expect(editor.readSandboxFile("square.png")).resolves.toEqual(editedBytes);
   });
 
-  it("throws when ImageMagick exits unsuccessfully", async () => {
-    const sandbox = new FakeSandbox({}, { success: false, exitCode: 1, stderr: "bad image" });
+  it("throws when a sandbox command exits unsuccessfully", async () => {
+    const sandbox = new FakeSandbox({}, { success: false, exitCode: 1, stdout: "", stderr: "bad image" });
     const editor = new SandboxImageEditor(sandbox, "photo-demo");
 
-    await expect(editor.createOriginal()).rejects.toThrow("ImageMagick command failed: bad image");
+    await expect(
+      editor.runSandboxCommand({
+        input: inputBytes,
+        inputFilename: "original.png",
+        command: "convert original.png square.png",
+      }),
+    ).rejects.toThrow("Sandbox command failed: bad image");
   });
 });
 
 class FakeSandbox {
-  readonly commands: string[] = [];
+  readonly commands: Array<{ command: string; options: { cwd: string } | undefined }> = [];
   readonly writes: Record<string, Uint8Array> = {};
 
   constructor(
     private readonly reads: Record<string, Uint8Array>,
-    private readonly execResult = { success: true, exitCode: 0, stderr: "" },
+    private readonly execResult = { success: true, exitCode: 0, stdout: "ok", stderr: "" },
   ) {}
 
   async mkdir(_path: string, _options: { recursive: boolean }) {}
 
-  async exec(command: string) {
-    this.commands.push(command);
+  async exec(command: string, options?: { cwd?: string }) {
+    this.commands.push({ command, options: options?.cwd ? { cwd: options.cwd } : undefined });
     return {
       ...this.execResult,
-      stdout: "",
       command,
       duration: 1,
       timestamp: new Date(0).toISOString(),

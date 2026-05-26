@@ -1,6 +1,3 @@
-# Repo-level task placeholders.
-# Add real commands only when the corresponding project pieces exist.
-
 default:
     @just --list
 
@@ -15,7 +12,6 @@ check:
 test:
     cd services/control-plane && npm test
     cd services/photo-agent-demo && npm test
-    cd services/photo-agent-demo && npm run test:workspace
 
 typegen:
     cd services/control-plane && npm run typegen

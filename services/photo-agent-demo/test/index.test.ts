@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { fileURLToPath, URL } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { handleDemoRequest } from "../src/http";
@@ -10,6 +12,16 @@ describe("photo agent demo worker", () => {
 
     expect(response?.status).toBe(200);
     await expect(response?.json()).resolves.toEqual({ ok: true });
+  });
+
+  it("routes demo endpoints ahead of agent requests", async () => {
+    const source = await readFile(fileURLToPath(new URL("../src/index.ts", import.meta.url)), "utf8");
+
+    const demoRouteIndex = source.indexOf("const demoResponse = handleDemoRequest(request)");
+    const agentRouteIndex = source.indexOf("routeAgentRequest(request, env)");
+
+    expect(demoRouteIndex).toBeGreaterThan(-1);
+    expect(agentRouteIndex).toBeGreaterThan(demoRouteIndex);
   });
 
   it("describes the wired demo capabilities", async () => {

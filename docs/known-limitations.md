@@ -19,7 +19,7 @@ Revisit when:
 
 R2 file contents are content-addressed and retained even after files are deleted or overwritten.
 
-This avoids metadata/blob atomicity problems for now. Long-term, Workspace needs blob reachability and garbage collection across mutable head and immutable revisions.
+This keeps metadata and blob writes independent during the prototype. Long-term, Workspace needs blob reachability and garbage collection across mutable head and immutable revisions.
 
 ## Missing blob references are not distinct errors
 
@@ -41,7 +41,7 @@ There is no TTL, sweep, list, or purge API yet. Callers must explicitly `commit(
 
 ## No merge or rebase model
 
-Sessions record the head version they started from, and `commit()` rejects stale sessions instead of silently overwriting newer head changes.
+Sessions record the head version they started from, and `commit()` rejects stale sessions when the head has newer changes.
 
 That proves the safety boundary, but there is no merge, rebase, or conflict-detail model yet. Callers can inspect and discard a conflicted session, but Workspace does not yet help reconcile it with the newer head.
 

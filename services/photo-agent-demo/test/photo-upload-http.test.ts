@@ -13,7 +13,9 @@ describe("photo upload HTTP route", () => {
       body: pngBytes,
     });
 
-    const response = await handlePhotoUploadRequest(request, workspaces.asNamespace());
+    const photoAgents = new FakePhotoAgents();
+
+    const response = await handlePhotoUploadRequest(request, workspaces.asNamespace(), photoAgents.asNamespace());
 
     expect(response?.status).toBe(201);
     await expect(response?.json()).resolves.toEqual({
@@ -23,6 +25,7 @@ describe("photo upload HTTP route", () => {
       bytes: pngBytes.byteLength,
     });
     expect(workspaces.workspace("demo").files["/photos/original.png"]).toEqual(pngBytes);
+    expect(photoAgents.agent("demo").refreshes).toBe(1);
   });
 
   it("returns 415 for unsupported content types", async () => {
@@ -67,6 +70,33 @@ class FakeWorkspaces {
       this.byName.set(name, workspace);
     }
     return workspace;
+  }
+}
+
+class FakePhotoAgents {
+  private readonly byName = new Map<string, FakePhotoAgent>();
+
+  asNamespace() {
+    return {
+      getByName: (name: string) => this.agent(name),
+    };
+  }
+
+  agent(name: string): FakePhotoAgent {
+    let agent = this.byName.get(name);
+    if (!agent) {
+      agent = new FakePhotoAgent();
+      this.byName.set(name, agent);
+    }
+    return agent;
+  }
+}
+
+class FakePhotoAgent {
+  refreshes = 0;
+
+  async refreshPhotoState() {
+    this.refreshes += 1;
   }
 }
 
