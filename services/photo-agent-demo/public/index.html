@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Workspace Photo Agent Demo</title>
+    <style>
+      body {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        margin: 2rem;
+        max-width: 960px;
+        background: #101114;
+        color: #f4f4f5;
+      }
+      button,
+      input {
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+        padding: 0.55rem 0.8rem;
+      }
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+      label {
+        display: block;
+        margin-block: 1rem 0.35rem;
+      }
+      .row {
+        align-items: end;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .panel {
+        border: 1px solid #3f3f46;
+        margin-block: 1rem;
+        padding: 1rem;
+      }
+      .images {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      }
+      img {
+        background: #27272a;
+        border: 1px solid #52525b;
+        display: block;
+        max-height: 420px;
+        max-width: 100%;
+        object-fit: contain;
+      }
+      pre {
+        background: #18181b;
+        border: 1px solid #3f3f46;
+        overflow: auto;
+        padding: 1rem;
+        white-space: pre-wrap;
+      }
+      .status {
+        color: #a1a1aa;
+        min-height: 1.5rem;
+      }
+      .error {
+        color: #fca5a5;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Workspace Photo Agent Demo</h1>
+    <p>
+      Manual checkpoint: upload an image into Workspace, run Sandbox/ImageMagick grayscale,
+      commit the Workspace session, then preview the committed image.
+    </p>
+
+    <section class="panel">
+      <label for="workspace-name">Workspace name</label>
+      <input id="workspace-name" value="manual-demo" />
+
+      <label for="photo-file">Photo upload</label>
+      <div class="row">
+        <input id="photo-file" type="file" accept="image/png,image/jpeg" />
+        <button id="upload-button">Upload original</button>
+        <button id="grayscale-button">Make grayscale</button>
+      </div>
+      <p id="status" class="status">Idle.</p>
+    </section>
+
+    <section class="images">
+      <div class="panel">
+        <h2>Original</h2>
+        <img id="original-preview" alt="Uploaded original preview" />
+      </div>
+      <div class="panel">
+        <h2>Current</h2>
+        <img id="current-preview" alt="Committed current preview" />
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Last report</h2>
+      <pre id="report">No report yet.</pre>
+    </section>
+
+    <script type="module">
+      const workspaceInput = document.querySelector("#workspace-name");
+      const fileInput = document.querySelector("#photo-file");
+      const uploadButton = document.querySelector("#upload-button");
+      const grayscaleButton = document.querySelector("#grayscale-button");
+      const status = document.querySelector("#status");
+      const report = document.querySelector("#report");
+      const originalPreview = document.querySelector("#original-preview");
+      const currentPreview = document.querySelector("#current-preview");
+
+      uploadButton.addEventListener("click", async () => {
+        await run("Uploading original...", async () => {
+          const file = fileInput.files?.[0];
+          if (!file) throw new Error("Choose a PNG or JPEG first.");
+
+          const workspaceName = workspaceInput.value.trim() || "manual-demo";
+          const response = await fetch(originalUrl(workspaceName), {
+            method: "POST",
+            headers: { "content-type": file.type || "application/octet-stream" },
+            body: await file.arrayBuffer(),
+          });
+          const body = await readJson(response);
+          if (!response.ok) throw new Error(body.error || `Upload failed: ${response.status}`);
+
+          report.textContent = JSON.stringify(body, null, 2);
+          refreshPreview(originalPreview, originalUrl(workspaceName));
+          currentPreview.removeAttribute("src");
+          return "Uploaded original.";
+        });
+      });
+
+      grayscaleButton.addEventListener("click", async () => {
+        await run("Running Sandbox/ImageMagick grayscale...", async () => {
+          const workspaceName = workspaceInput.value.trim() || "manual-demo";
+          const response = await fetch(grayscaleUrl(workspaceName), { method: "POST" });
+          const body = await readJson(response);
+          if (!response.ok) throw new Error(body.error || `Edit failed: ${response.status}`);
+
+          report.textContent = JSON.stringify(body, null, 2);
+          refreshPreview(currentPreview, currentUrl(workspaceName));
+          return "Committed grayscale edit.";
+        });
+      });
+
+      async function run(message, fn) {
+        setBusy(true);
+        status.classList.remove("error");
+        status.textContent = message;
+        try {
+          status.textContent = await fn();
+        } catch (error) {
+          status.classList.add("error");
+          status.textContent = error instanceof Error ? error.message : String(error);
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      function setBusy(isBusy) {
+        uploadButton.disabled = isBusy;
+        grayscaleButton.disabled = isBusy;
+      }
+
+      async function readJson(response) {
+        const text = await response.text();
+        return text ? JSON.parse(text) : {};
+      }
+
+      function refreshPreview(img, url) {
+        img.src = `${url}?t=${Date.now()}`;
+      }
+
+      function originalUrl(workspaceName) {
+        return `/api/workspaces/${encodeURIComponent(workspaceName)}/photos/original`;
+      }
+
+      function currentUrl(workspaceName) {
+        return `/api/workspaces/${encodeURIComponent(workspaceName)}/photos/current`;
+      }
+
+      function grayscaleUrl(workspaceName) {
+        return `/api/workspaces/${encodeURIComponent(workspaceName)}/demo/grayscale`;
+      }
+    </script>
+  </body>
+</html>

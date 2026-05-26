@@ -11,6 +11,7 @@ Do not add broad scaffolding, placeholder files, or speculative config.
 ## Map
 
 - `services/control-plane/` — TypeScript Worker/Durable Object control plane.
+- `services/photo-agent-demo/` — Think/Sandbox demo app; keep agent/execution concerns here.
 - `workspacefs/` — future container-facing filesystem component.
 - `proto/` — future shared schemas; do not add until deliberately designed.
 - `docs/product-boundaries.md` — product boundary reference.
