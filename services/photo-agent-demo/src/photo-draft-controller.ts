@@ -1,5 +1,7 @@
+import type { ScopedWorkspaceFileCapability } from "../../control-plane/src/workspace/scoped-file-capability";
 import type { WorkspaceMountFlushSummary, WorkspaceMountWorkingCopy } from "../../control-plane/src/workspace/working-copy-mount";
 import type { DemoWorkspaceCommandRunner } from "./workspace/sandbox-workspace-command-runner";
+import type { DemoDynamicWorkerRunner, DynamicWorkerResult } from "./workspace/dynamic-worker-runner";
 
 const ORIGINAL_CANDIDATES = [
   { path: "/photos/original.png", contentType: "image/png" },
@@ -75,6 +77,8 @@ export type PhotoDraftControllerDependencies = {
   workspaceName: string;
   workspaces: WorkspaceNamespace;
   commandRunner: Pick<DemoWorkspaceCommandRunner, "runWorkspaceCommand">;
+  dynamicWorkerRunner: Pick<DemoDynamicWorkerRunner, "runDynamicWorker">;
+  dynamicWorkspaceBinding(draftEditId: string): Pick<ScopedWorkspaceFileCapability, "readFile" | "writeFile" | "list" | "stat">;
   getDraftEditId(): string | undefined;
   setDraftEditId(draftEditId: string | undefined): void;
 };
@@ -158,6 +162,26 @@ export class PhotoDraftController {
     });
   }
 
+  async runDynamicWorker({ code }: { code: string }): Promise<{
+    status: "dynamic-worker-completed";
+    summary: string;
+    result: DynamicWorkerResult;
+  }> {
+    return this.withDraftSession(async (session) => {
+      const info = await expectOk(session.info(), "read draft edit info");
+      const result = await this.dependencies.dynamicWorkerRunner.runDynamicWorker({
+        workspace: this.dependencies.dynamicWorkspaceBinding(info.sessionId),
+        code,
+      });
+
+      return {
+        status: "dynamic-worker-completed",
+        summary: "Dynamic Worker finished.",
+        result,
+      };
+    });
+  }
+
   async previewDraft(): Promise<{
     status: "draft-preview-ready";
     draftEditId: string;
@@ -235,7 +259,31 @@ export class PhotoDraftController {
   }
 
   async listWorkspaceFiles(): Promise<WorkspaceEntry[]> {
-    const result = await this.workspace().list("/photos");
+    const draftEditId = this.dependencies.getDraftEditId();
+    if (!draftEditId) {
+      return this.listWorkspaceRoots(this.workspace());
+    }
+
+    const result = await this.workspace().getSession(draftEditId);
+    try {
+      if (result.status === "error") {
+        this.dependencies.setDraftEditId(undefined);
+        return this.listWorkspaceRoots(this.workspace());
+      }
+
+      return this.listWorkspaceRoots(result.value!);
+    } finally {
+      disposeRpc(result);
+    }
+  }
+
+  private async listWorkspaceRoots(source: Pick<WorkspaceForDrafts, "list">): Promise<WorkspaceEntry[]> {
+    const entries = await Promise.all([this.listWorkspaceRoot(source, "/notes"), this.listWorkspaceRoot(source, "/photos")]);
+    return entries.flat().sort((left, right) => left.path.localeCompare(right.path));
+  }
+
+  private async listWorkspaceRoot(source: Pick<WorkspaceForDrafts, "list">, path: string): Promise<WorkspaceEntry[]> {
+    const result = await source.list(path);
     if (result.status === "error") {
       if (result.error.tag === "PathNotFoundError") {
         return [];

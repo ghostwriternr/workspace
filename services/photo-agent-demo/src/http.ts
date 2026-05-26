@@ -1,6 +1,6 @@
 const demoCapabilities = {
   agent: "Think",
-  execution: "Sandbox/ImageMagick",
+  execution: "Sandbox/ImageMagick and Dynamic Workers",
   state: "Workspace durable files",
   durability: "draft commit or discard",
 } as const;

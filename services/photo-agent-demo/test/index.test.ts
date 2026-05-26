@@ -34,10 +34,27 @@ describe("photo agent demo worker", () => {
     expect(response?.status).toBe(200);
     await expect(response?.json()).resolves.toEqual({
       agent: "Think",
-      execution: "Sandbox/ImageMagick",
+      execution: "Sandbox/ImageMagick and Dynamic Workers",
       state: "Workspace durable files",
       durability: "draft commit or discard",
     });
+  });
+
+  it("offers Sandbox and Dynamic Worker tools over the same draft", async () => {
+    const source = await readFile(fileURLToPath(new URL("../src/index.ts", import.meta.url)), "utf8");
+
+    expect(source).toContain('"runWorkspaceCommand"');
+    expect(source).toContain('"runDynamicWorker"');
+    expect(source).toContain("this.controller().runDynamicWorker");
+  });
+
+  it("enables the compatibility flag required by Dynamic Worker loader capabilities", async () => {
+    const config = JSON.parse(
+      await readFile(fileURLToPath(new URL("../wrangler.jsonc", import.meta.url)), "utf8"),
+    );
+
+    expect(config.worker_loaders).toEqual([{ binding: "DYNAMIC_WORKERS" }]);
+    expect(config.compatibility_flags).toContain("experimental");
   });
 
   it("keeps non-agent unknown API routes explicit", async () => {

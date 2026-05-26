@@ -11,6 +11,13 @@ export {
   type WorkspaceMountHost,
   type WorkspaceMountWorkingCopy,
 } from "./workspace/working-copy-mount";
+export {
+  createWorkspaceFileCapability,
+  ScopedWorkspaceAccessError,
+  ScopedWorkspaceOperationError,
+  ScopedWorkspacePathError,
+  type ScopedWorkspaceFileCapability,
+} from "./workspace/scoped-file-capability";
 
 export default {
   fetch(): Response {

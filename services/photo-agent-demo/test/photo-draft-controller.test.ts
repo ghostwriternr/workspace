@@ -9,7 +9,7 @@ const draftPng = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 3]);
 describe("PhotoDraftController", () => {
   it("starts a durable draft edit and reports passive photo state", async () => {
     const dependencies = createDependencies({
-      head: { "/photos/original.png": originalPng },
+      head: { "/photos/original.png": originalPng, "/notes/edit-summary.md": new TextEncoder().encode("note") },
     });
     const controller = new PhotoDraftController(dependencies);
 
@@ -28,6 +28,7 @@ describe("PhotoDraftController", () => {
       current: { exists: false },
       draft: { exists: false, draftEditId: "session-1" },
     });
+    expect(state.files.map((file) => file.path)).toEqual(["/notes/edit-summary.md", "/photos/original.png"]);
   });
 
   it("runs commands with the draft mounted at /workspace and flushes changes into the draft", async () => {
@@ -86,6 +87,37 @@ describe("PhotoDraftController", () => {
       },
     ]);
     expect(dependencies.sessionFiles["/photos/current"]).toEqual(draftPng);
+  });
+
+  it("runs Dynamic Worker code against the same draft working copy", async () => {
+    const dependencies = createDependencies({
+      head: { "/photos/original.png": originalPng },
+      session: { "/photos/current": currentPng },
+      draftEditId: "session-1",
+    });
+    const controller = new PhotoDraftController(dependencies);
+
+    const result = await controller.runDynamicWorker({
+      code: "export default async function(env) { await env.WORKSPACE.writeFile('/notes/edit-summary.md', new TextEncoder().encode('cropped square')); }",
+    });
+
+    expect(result).toEqual({
+      status: "dynamic-worker-completed",
+      summary: "Dynamic Worker finished.",
+      result: { wrote: "/notes/edit-summary.md" },
+    });
+    expect(dependencies.workspace.beginSessionCount).toBe(0);
+    expect(dependencies.dynamicWorkspaceBindingCalls).toEqual(["session-1"]);
+    expect(dependencies.dynamicWorkerRunner.calls).toEqual([
+      {
+        code: "export default async function(env) { await env.WORKSPACE.writeFile('/notes/edit-summary.md', new TextEncoder().encode('cropped square')); }",
+      },
+    ]);
+    expect(dependencies.sessionFiles["/photos/current"]).toEqual(currentPng);
+    expect(dependencies.sessionFiles["/notes/edit-summary.md"]).toEqual(new TextEncoder().encode("cropped square"));
+    await expect(controller.listPhotoState()).resolves.toMatchObject({
+      files: [{ path: "/notes/edit-summary.md" }, { path: "/photos/current" }],
+    });
   });
 
   it("previews, commits, and clears the draft edit", async () => {
@@ -163,10 +195,17 @@ type CreateDependenciesOptions = {
 function createDependencies(options: CreateDependenciesOptions) {
   const workspace = new FakeWorkspace(options.head, options.session ?? {});
   const commandRunner = new FakeWorkspaceCommandRunner(options.commandOutput ?? draftPng);
+  const dynamicWorkerRunner = new FakeDynamicWorkerRunner();
   const dependencies = {
     workspaceName: "demo",
     workspaces: { getByName: () => workspace },
     commandRunner,
+    dynamicWorkerRunner,
+    dynamicWorkspaceBindingCalls: [] as string[],
+    dynamicWorkspaceBinding: (draftEditId: string) => {
+      dependencies.dynamicWorkspaceBindingCalls.push(draftEditId);
+      return new FakeDynamicWorkspaceBinding(workspace.session);
+    },
     getDraftEditId: () => dependencies.draftEditId,
     setDraftEditId: (draftEditId: string | undefined) => {
       dependencies.draftEditId = draftEditId;
@@ -203,11 +242,14 @@ class FakeWorkspace {
   }
 
   async list(path: string) {
-    expect(path).toBe("/photos");
+    const files = Object.keys(this.headFiles).filter((filePath) => filePath.startsWith(`${path}/`));
+    if (files.length === 0) {
+      return { status: "error" as const, error: { tag: "PathNotFoundError" } };
+    }
     return {
       status: "ok" as const,
-      value: Object.keys(this.headFiles).map((filePath) => ({
-        name: filePath.slice("/photos/".length),
+      value: files.map((filePath) => ({
+        name: filePath.slice(path.length + 1),
         path: filePath,
         type: "file" as const,
       })),
@@ -315,6 +357,43 @@ class FakeSession {
   }
 }
 
+class FakeDynamicWorkspaceBinding {
+  constructor(private readonly session: FakeSession) {}
+
+  async readFile(path: string) {
+    const result = await this.session.readFile(path);
+    if (result.status === "error") throw new Error(result.error.tag);
+    return result.value;
+  }
+
+  async writeFile(path: string, contents: Uint8Array) {
+    await this.session.mkdir(parentPath(path));
+    await this.session.writeFile(path, contents);
+  }
+
+  async list(path: string) {
+    const result = await this.session.list(path);
+    if (result.status === "error") throw new Error(result.error.tag);
+    return result.value;
+  }
+
+  async stat(path: string) {
+    const result = await this.session.stat(path);
+    if (result.status === "error") throw new Error(result.error.tag);
+    return result.value;
+  }
+}
+
+class FakeDynamicWorkerRunner {
+  readonly calls: Array<{ code: string }> = [];
+
+  async runDynamicWorker(options: { workspace: { writeFile(path: string, contents: Uint8Array): Promise<void> }; code: string }) {
+    this.calls.push({ code: options.code });
+    await options.workspace.writeFile("/notes/edit-summary.md", new TextEncoder().encode("cropped square"));
+    return { wrote: "/notes/edit-summary.md" };
+  }
+}
+
 class FakeWorkspaceCommandRunner {
   readonly calls: Array<{ command: string; root: string }> = [];
 
@@ -343,4 +422,9 @@ function fileResult(value: Uint8Array | undefined) {
   return value
     ? { status: "ok" as const, value }
     : { status: "error" as const, error: { tag: "PathNotFoundError" } };
+}
+
+function parentPath(path: string): string {
+  if (path === "/") return "/";
+  return path.slice(0, path.lastIndexOf("/")) || "/";
 }
