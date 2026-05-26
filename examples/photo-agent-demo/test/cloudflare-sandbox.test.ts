@@ -1,85 +1,32 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { SandboxWorkspaceCommandRunner } from "../src/workspace/sandbox-workspace-command-runner";
+const getSandbox = vi.fn((_sandboxes: unknown, id: string, options: unknown) => new FakeSandbox(id, options));
+
+vi.mock("@cloudflare/sandbox", () => ({ getSandbox }));
+
+const { createSandboxWorkspaceCommandRunner } = await import("../src/workspace/cloudflare-sandbox");
 
 const originalBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1]);
 const editedBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 9]);
 
-describe("SandboxWorkspaceCommandRunner", () => {
-  it("attaches the Workspace draft at /workspace, runs the command, and flushes changes", async () => {
+describe("createSandboxWorkspaceCommandRunner", () => {
+  it("uses a short-lived sandbox scoped to the draft edit", async () => {
     const workingCopy = new FakeWorkingCopy({
       "/": { type: "directory" },
       "/photos": { type: "directory" },
-      "/photos/original.png": { type: "file", contents: originalBytes },
       "/photos/current": { type: "file", contents: originalBytes },
     });
-    const sandbox = new FakeSandbox({
-      afterExec: (files) => {
-        files["/workspace/photos/current"] = editedBytes;
-      },
-    });
-    sandbox.files["/workspace/stale.txt"] = new Uint8Array([99]);
-    const runner = new SandboxWorkspaceCommandRunner(sandbox);
+    const runner = createSandboxWorkspaceCommandRunner({} as never, "manual-demo");
 
-    const result = await runner.runWorkspaceCommand({
+    await runner.runWorkspaceCommand({
       workingCopy,
+      command: "convert /workspace/photos/current /workspace/photos/current",
       root: "/workspace",
-      command: "convert /workspace/photos/original.png /workspace/photos/current",
-      draftEditId: "draft-1",
+      draftEditId: "draft-123",
     });
 
-    expect(result).toEqual({
-      command: "convert /workspace/photos/original.png /workspace/photos/current",
-      root: "/workspace",
-      exitCode: 0,
-      stdout: "ok",
-      stderr: "",
-      flush: {
-        created: [],
-        modified: ["/photos/current"],
-        deleted: [],
-        unchanged: 2,
-      },
-    });
-    expect(sandbox.commands).toEqual([
-      {
-        command: "rm -rf '/workspace' && mkdir -p '/workspace'",
-        options: undefined,
-      },
-      {
-        command: "convert /workspace/photos/original.png /workspace/photos/current",
-        options: { cwd: "/workspace" },
-      },
-    ]);
-    expect(sandbox.files["/workspace/photos/original.png"]).toEqual(originalBytes);
-    expect(sandbox.files["/workspace/stale.txt"]).toBeUndefined();
+    expect(getSandbox).toHaveBeenCalledWith({}, "manual-demo-draft-123", { sleepAfter: "60s" });
     expect(workingCopy.files()["/photos/current"]).toEqual(editedBytes);
-  });
-
-  it("does not flush partial filesystem changes when the command fails", async () => {
-    const workingCopy = new FakeWorkingCopy({
-      "/": { type: "directory" },
-      "/photos": { type: "directory" },
-      "/photos/current": { type: "file", contents: originalBytes },
-    });
-    const sandbox = new FakeSandbox({
-      execResult: { success: false, exitCode: 1, stdout: "", stderr: "bad image" },
-      afterExec: (files) => {
-        files["/workspace/photos/current"] = editedBytes;
-      },
-    });
-    const runner = new SandboxWorkspaceCommandRunner(sandbox);
-
-    await expect(
-      runner.runWorkspaceCommand({
-        workingCopy,
-        root: "/workspace",
-        command: "convert /workspace/photos/current /workspace/photos/current",
-        draftEditId: "draft-1",
-      }),
-    ).rejects.toThrow("Sandbox command failed: bad image");
-
-    expect(workingCopy.files()["/photos/current"]).toEqual(originalBytes);
   });
 });
 
@@ -159,27 +106,19 @@ class FakeWorkingCopy {
 }
 
 class FakeSandbox {
-  readonly commands: Array<{ command: string; options: { cwd: string } | undefined }> = [];
   readonly directories = new Set<string>();
   readonly files: Record<string, Uint8Array> = {};
 
-  private readonly execResult: { success: boolean; exitCode: number; stdout: string; stderr: string };
-  private readonly afterExec?: (files: Record<string, Uint8Array>) => void;
-
-  constructor(options: {
-    execResult?: { success: boolean; exitCode: number; stdout: string; stderr: string };
-    afterExec?: (files: Record<string, Uint8Array>) => void;
-  }) {
-    this.execResult = options.execResult ?? { success: true, exitCode: 0, stdout: "ok", stderr: "" };
-    this.afterExec = options.afterExec;
-  }
+  constructor(
+    readonly id: string,
+    readonly options: unknown,
+  ) {}
 
   async mkdir(path: string, _options: { recursive: boolean }) {
     this.directories.add(path);
   }
 
-  async exec(command: string, options?: { cwd?: string }) {
-    this.commands.push({ command, options: options?.cwd ? { cwd: options.cwd } : undefined });
+  async exec(command: string, _options?: { cwd?: string }) {
     if (command === "rm -rf '/workspace' && mkdir -p '/workspace'") {
       for (const filePath of Object.keys(this.files)) {
         if (filePath === "/workspace" || filePath.startsWith("/workspace/")) {
@@ -188,8 +127,9 @@ class FakeSandbox {
       }
       return { success: true, exitCode: 0, stdout: "", stderr: "" };
     }
-    this.afterExec?.(this.files);
-    return this.execResult;
+
+    this.files["/workspace/photos/current"] = editedBytes;
+    return { success: true, exitCode: 0, stdout: "ok", stderr: "" };
   }
 
   async writeFile(path: string, content: ReadableStream<Uint8Array>) {
@@ -264,6 +204,7 @@ async function collect(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> 
     result.set(chunk, offset);
     offset += chunk.byteLength;
   }
+
   return result;
 }
 

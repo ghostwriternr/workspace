@@ -57,6 +57,20 @@ describe("photo agent demo worker", () => {
     expect(config.compatibility_flags).toContain("experimental");
   });
 
+  it("uses a standard sandbox capacity for concurrent image edits", async () => {
+    const config = JSON.parse(
+      await readFile(fileURLToPath(new URL("../wrangler.jsonc", import.meta.url)), "utf8"),
+    );
+
+    expect(config.containers).toContainEqual(
+      expect.objectContaining({
+        class_name: "Sandbox",
+        instance_type: "standard-1",
+        max_instances: 10,
+      }),
+    );
+  });
+
   it("keeps non-agent unknown API routes explicit", async () => {
     const response = handleDemoRequest(new Request("http://example.com/api/missing"));
 

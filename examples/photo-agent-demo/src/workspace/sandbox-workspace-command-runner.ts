@@ -23,6 +23,7 @@ export interface DemoWorkspaceCommandRunner {
     workingCopy: WorkspaceMountWorkingCopy;
     command: string;
     root: string;
+    draftEditId: string;
   }): Promise<WorkspaceCommandResult>;
 }
 
@@ -56,15 +57,19 @@ type SandboxClient = {
 
 // Sandbox owns execution. Workspace only supplies durable files and receives captured
 // filesystem changes after successful execution.
+type SandboxClientFactory = (draftEditId: string) => SandboxClient;
+
 export class SandboxWorkspaceCommandRunner implements DemoWorkspaceCommandRunner {
-  constructor(private readonly sandbox: SandboxClient) {}
+  constructor(private readonly sandbox: SandboxClient | SandboxClientFactory) {}
 
   async runWorkspaceCommand(options: {
     workingCopy: WorkspaceMountWorkingCopy;
     command: string;
     root: string;
+    draftEditId: string;
   }): Promise<WorkspaceCommandResult> {
-    const host = new SandboxWorkspaceMountHost(this.sandbox);
+    const sandbox = typeof this.sandbox === "function" ? this.sandbox(options.draftEditId) : this.sandbox;
+    const host = new SandboxWorkspaceMountHost(sandbox);
     const mount = await attachWorkspaceMount({
       workingCopy: options.workingCopy,
       host,
@@ -75,7 +80,7 @@ export class SandboxWorkspaceCommandRunner implements DemoWorkspaceCommandRunner
       throw new Error(mount.error.message);
     }
 
-    const result = await this.sandbox.exec(options.command, { cwd: mount.value.root });
+    const result = await sandbox.exec(options.command, { cwd: mount.value.root });
     if (!result.success) {
       const detail = result.stderr.trim() || result.stdout.trim() || `exit ${result.exitCode}`;
       throw new Error(`Sandbox command failed: ${detail}`);

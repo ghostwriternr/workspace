@@ -6,5 +6,7 @@ export function createSandboxWorkspaceCommandRunner(
   sandboxes: DurableObjectNamespace<Sandbox>,
   workspaceName: string,
 ): SandboxWorkspaceCommandRunner {
-  return new SandboxWorkspaceCommandRunner(getSandbox(sandboxes, workspaceName));
+  return new SandboxWorkspaceCommandRunner((draftEditId) =>
+    getSandbox(sandboxes, `${workspaceName}-${draftEditId}`, { sleepAfter: "60s" }),
+  );
 }

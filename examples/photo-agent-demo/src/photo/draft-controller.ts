@@ -144,11 +144,12 @@ export class PhotoDraftController {
     exitCode: number;
     flush: WorkspaceMountFlushSummary;
   }> {
-    return this.withDraftSession(async (session) => {
+    return this.withDraftSession(async (session, draftEditId) => {
       const result = await this.dependencies.commandRunner.runWorkspaceCommand({
         workingCopy: session,
         command,
         root: WORKSPACE_ROOT,
+        draftEditId,
       });
 
       return {

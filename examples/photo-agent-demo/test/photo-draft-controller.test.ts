@@ -62,6 +62,7 @@ describe("PhotoDraftController", () => {
       {
         command: "identify /workspace/photos/original.png && convert /workspace/photos/original.png /workspace/photos/current",
         root: "/workspace",
+        draftEditId: "session-1",
       },
     ]);
   });
@@ -84,6 +85,7 @@ describe("PhotoDraftController", () => {
       {
         command: "convert /workspace/photos/current -resize 512x512^ /workspace/photos/current",
         root: "/workspace",
+        draftEditId: "session-1",
       },
     ]);
     expect(dependencies.sessionFiles["/photos/current"]).toEqual(draftPng);
@@ -362,12 +364,12 @@ class FakeDynamicWorkerRunner {
 }
 
 class FakeWorkspaceCommandRunner {
-  readonly calls: Array<{ command: string; root: string }> = [];
+  readonly calls: Array<{ command: string; root: string; draftEditId: string }> = [];
 
   constructor(private readonly output: Uint8Array) {}
 
-  async runWorkspaceCommand(options: { workingCopy: FakeSession; command: string; root: string }) {
-    this.calls.push({ command: options.command, root: options.root });
+  async runWorkspaceCommand(options: { workingCopy: FakeSession; command: string; root: string; draftEditId: string }) {
+    this.calls.push({ command: options.command, root: options.root, draftEditId: options.draftEditId });
     await options.workingCopy.writeFile("/photos/current", this.output);
     return {
       command: options.command,
