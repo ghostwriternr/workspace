@@ -132,6 +132,21 @@ class FakeWorkingCopy {
     return { status: "ok" };
   }
 
+  async stat(path: string): Promise<RpcResult<{ path: string; type: "directory" | "file"; size: number | null; createdAt: number; updatedAt: number }>> {
+    const entry = this.entries[path];
+    if (!entry) return { status: "error", error: { tag: "PathNotFoundError" } };
+    return {
+      status: "ok",
+      value: {
+        path,
+        type: entry.type,
+        size: entry.type === "file" ? entry.contents.byteLength : null,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+  }
+
   files(): Record<string, Uint8Array> {
     return Object.fromEntries(
       Object.entries(this.entries)

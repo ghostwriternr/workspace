@@ -1,7 +1,7 @@
-import type { ScopedWorkspaceFileCapability } from "../../control-plane/src/workspace/scoped-file-capability";
 import type { WorkspaceMountFlushSummary, WorkspaceMountWorkingCopy } from "../../control-plane/src/workspace/working-copy-mount";
 import type { DemoWorkspaceCommandRunner } from "./workspace/sandbox-workspace-command-runner";
 import type { DemoDynamicWorkerRunner, DynamicWorkerResult } from "./workspace/dynamic-worker-runner";
+import { disposeRpc, disposeRpcResult } from "./workspace/rpc-disposal";
 
 const ORIGINAL_CANDIDATES = [
   { path: "/photos/original.png", contentType: "image/png" },
@@ -78,7 +78,6 @@ export type PhotoDraftControllerDependencies = {
   workspaces: WorkspaceNamespace;
   commandRunner: Pick<DemoWorkspaceCommandRunner, "runWorkspaceCommand">;
   dynamicWorkerRunner: Pick<DemoDynamicWorkerRunner, "runDynamicWorker">;
-  dynamicWorkspaceBinding(draftEditId: string): Pick<ScopedWorkspaceFileCapability, "readFile" | "writeFile" | "list" | "stat">;
   getDraftEditId(): string | undefined;
   setDraftEditId(draftEditId: string | undefined): void;
 };
@@ -167,10 +166,9 @@ export class PhotoDraftController {
     summary: string;
     result: DynamicWorkerResult;
   }> {
-    return this.withDraftSession(async (session) => {
-      const info = await expectOk(session.info(), "read draft edit info");
+    return this.withDraftSession(async (_session, draftEditId) => {
       const result = await this.dependencies.dynamicWorkerRunner.runDynamicWorker({
-        workspace: this.dependencies.dynamicWorkspaceBinding(info.sessionId),
+        draftEditId,
         code,
       });
 
@@ -220,7 +218,7 @@ export class PhotoDraftController {
 
       return await sessionResult.value!.readFile(CURRENT_PATH);
     } finally {
-      disposeRpc(sessionResult);
+      disposeRpcResult(sessionResult);
     }
   }
 
@@ -273,7 +271,7 @@ export class PhotoDraftController {
 
       return this.listWorkspaceRoots(result.value!);
     } finally {
-      disposeRpc(result);
+      disposeRpcResult(result);
     }
   }
 
@@ -298,7 +296,7 @@ export class PhotoDraftController {
     return this.dependencies.workspaces.getByName(this.dependencies.workspaceName);
   }
 
-  private async withDraftSession<T>(useSession: (session: WorkspaceSessionForDrafts) => Promise<T>): Promise<T> {
+  private async withDraftSession<T>(useSession: (session: WorkspaceSessionForDrafts, draftEditId: string) => Promise<T>): Promise<T> {
     const started = await this.startDraft();
     const result = await this.workspace().getSession(started.draftEditId);
     try {
@@ -307,9 +305,9 @@ export class PhotoDraftController {
         throw new Error(`draft edit not found: ${result.error.tag}`);
       }
 
-      return await useSession(result.value!);
+      return await useSession(result.value!, started.draftEditId);
     } finally {
-      disposeRpc(result);
+      disposeRpcResult(result);
     }
   }
 
@@ -382,7 +380,7 @@ export class PhotoDraftController {
         contentType: contentTypeForImage(image.value!),
       };
     } finally {
-      disposeRpc(result);
+      disposeRpcResult(result);
     }
   }
 }
@@ -415,9 +413,4 @@ async function expectOk<T>(pending: Promise<RpcResult<T>>, operation: string): P
   }
 
   return result.value as T;
-}
-
-function disposeRpc(value: unknown): void {
-  const disposable = value as { [Symbol.dispose]?: () => void };
-  disposable[Symbol.dispose]?.();
 }

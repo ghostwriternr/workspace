@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { createWorkspaceFileCapability } from "../../control-plane/src/workspace/scoped-file-capability";
 import { DynamicWorkerRunner } from "../src/workspace/dynamic-worker-runner";
 
 const originalBytes = new TextEncoder().encode("original");
@@ -20,11 +19,11 @@ describe("DynamicWorkerRunner", () => {
       return { originalBytes: original.byteLength };
     });
     const workspace = createTestWorkspaceBinding(workingCopy);
-    const runner = new DynamicWorkerRunner(loader);
+    const runner = new DynamicWorkerRunner(loader, { bindingForDraft: () => workspace });
 
     await expect(
       runner.runDynamicWorker({
-        workspace,
+        draftEditId: "draft-1",
         code: "export default async function(env) { return env.WORKSPACE.stat('/photos/original.jpg'); }",
       }),
     ).resolves.toEqual({ originalBytes: originalBytes.byteLength });
@@ -41,16 +40,31 @@ describe("DynamicWorkerRunner", () => {
       hasGetByName: "getByName" in env.WORKSPACE,
       hasBeginSession: "beginSession" in env.WORKSPACE,
     }));
-    const runner = new DynamicWorkerRunner(loader);
+    const runner = new DynamicWorkerRunner(loader, { bindingForDraft: () => createTestWorkspaceBinding(workingCopy) });
 
     await expect(
-      runner.runDynamicWorker({ workspace: createTestWorkspaceBinding(workingCopy), code: "export default async function() {}" }),
+      runner.runDynamicWorker({ draftEditId: "draft-1", code: "export default async function() {}" }),
     ).resolves.toEqual({
       hasCommit: false,
       hasDiscard: false,
       hasGetByName: false,
       hasBeginSession: false,
     });
+  });
+
+  it("builds a harness that delegates only the scoped Workspace binding", async () => {
+    const loader = new FakeWorkerLoader(async () => ({}));
+    const runner = new DynamicWorkerRunner(loader, {
+      bindingForDraft: () => createTestWorkspaceBinding(new FakeWorkingCopy({ "/": { type: "directory" } })),
+    });
+
+    await runner.runDynamicWorker({
+      draftEditId: "draft-1",
+      code: "export default async function() {}",
+    });
+
+    expect(loader.loaded?.modules["harness.js"]).toContain("const env = { WORKSPACE: this.ctx.props.WORKSPACE };");
+    expect(loader.loaded?.modules["harness.js"]).not.toContain("...this.env");
   });
 });
 
@@ -64,13 +78,15 @@ type DelegatedEnv = {
 };
 
 function createTestWorkspaceBinding(workingCopy: FakeWorkingCopy): DelegatedEnv["WORKSPACE"] {
-  return createWorkspaceFileCapability({
-    workingCopy,
-    root: "/",
-    read: ["/photos/**"],
-    write: ["/photos/**", "/notes/**"],
-    delete: false,
-  });
+  return {
+    readFile: async (path) => unwrap(await workingCopy.readFile(path)),
+    writeFile: async (path, contents) => {
+      await workingCopy.mkdir(parentPath(path));
+      unwrap(await workingCopy.writeFile(path, contents));
+    },
+    list: async (path) => unwrap(await workingCopy.list(path)),
+    stat: async (path) => unwrap(await workingCopy.stat(path)),
+  };
 }
 
 class FakeWorkerLoader {
@@ -149,6 +165,11 @@ class FakeWorkingCopy {
     delete this.entries[path];
     return { status: "ok" };
   }
+}
+
+function unwrap<T>(result: RpcResult<T>): T {
+  if (result.status === "error") throw new Error(result.error.tag);
+  return result.value as T;
 }
 
 function parentPath(path: string): string {

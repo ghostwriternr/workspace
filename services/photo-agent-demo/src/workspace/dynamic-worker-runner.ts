@@ -1,11 +1,10 @@
-import type { ScopedWorkspaceFileCapability } from "../../../control-plane/src/workspace/scoped-file-capability";
+import type { DynamicWorkerWorkspaceBinding, DynamicWorkerWorkspaceBindingFactory } from "./workspace-file-capability";
 
 export type DynamicWorkerResult = unknown;
-export type DynamicWorkerWorkspaceBinding = Pick<ScopedWorkspaceFileCapability, "readFile" | "writeFile" | "list" | "stat">;
 
 export interface DemoDynamicWorkerRunner {
   runDynamicWorker(options: {
-    workspace: DynamicWorkerWorkspaceBinding;
+    draftEditId: string;
     code: string;
   }): Promise<DynamicWorkerResult>;
 }
@@ -36,7 +35,7 @@ import worker from "worker.js";
 
 export default class extends WorkerEntrypoint {
   async run() {
-    const env = { ...this.env, WORKSPACE: this.ctx.props.WORKSPACE };
+    const env = { WORKSPACE: this.ctx.props.WORKSPACE };
     if (typeof worker === "function") {
       return await worker(env);
     }
@@ -49,7 +48,10 @@ export default class extends WorkerEntrypoint {
 `;
 
 export class DynamicWorkerRunner implements DemoDynamicWorkerRunner {
-  constructor(private readonly loader: DynamicWorkerLoader) {}
+  constructor(
+    private readonly loader: DynamicWorkerLoader,
+    private readonly workspaceBindings: DynamicWorkerWorkspaceBindingFactory,
+  ) {}
 
   async runDynamicWorker(options: Parameters<DemoDynamicWorkerRunner["runDynamicWorker"]>[0]) {
     const worker = this.loader.load({
@@ -64,7 +66,8 @@ export class DynamicWorkerRunner implements DemoDynamicWorkerRunner {
       globalOutbound: null,
     });
 
-    const entrypoint = worker.getEntrypoint(undefined, { props: { WORKSPACE: options.workspace } });
+    const workspace = this.workspaceBindings.bindingForDraft(options.draftEditId);
+    const entrypoint = worker.getEntrypoint(undefined, { props: { WORKSPACE: workspace } });
     if (!isDynamicWorkerEntrypoint(entrypoint)) {
       throw new Error("Dynamic Worker entrypoint does not expose run().");
     }
@@ -73,8 +76,11 @@ export class DynamicWorkerRunner implements DemoDynamicWorkerRunner {
   }
 }
 
-export function createDynamicWorkerRunner(loader: DynamicWorkerLoader): DemoDynamicWorkerRunner {
-  return new DynamicWorkerRunner(loader);
+export function createDynamicWorkerRunner(
+  loader: DynamicWorkerLoader,
+  workspaceBindings: DynamicWorkerWorkspaceBindingFactory,
+): DemoDynamicWorkerRunner {
+  return new DynamicWorkerRunner(loader, workspaceBindings);
 }
 
 function isDynamicWorkerEntrypoint(value: unknown): value is DynamicWorkerEntrypoint {

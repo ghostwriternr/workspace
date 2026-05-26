@@ -1,16 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  createWorkspaceFileCapability,
-  ScopedWorkspaceAccessError,
-  ScopedWorkspacePathError,
-} from "../src/workspace/scoped-file-capability";
+import { createWorkspaceFileCapability } from "../src/workspace/scoped-file-capability";
 
 const photoBytes = new TextEncoder().encode("photo");
 const noteBytes = new TextEncoder().encode("note");
 
 describe("scoped Workspace file capability", () => {
-  it("allows reads in permitted paths", async () => {
+  it("returns RpcResult values for allowed reads", async () => {
     const workingCopy = new FakeWorkingCopy({
       "/": { type: "directory" },
       "/photos": { type: "directory" },
@@ -21,43 +17,62 @@ describe("scoped Workspace file capability", () => {
       root: "/",
       read: ["/photos/**"],
       write: ["/notes/**"],
-      delete: false,
     });
 
-    await expect(capability.readFile("/photos/current")).resolves.toEqual(photoBytes);
+    await expect(capability.readFile("/photos/current")).resolves.toEqual({ status: "ok", value: photoBytes });
   });
 
-  it("denies reads outside scope", async () => {
+  it("returns RpcResult access errors for denied reads", async () => {
     const capability = createWorkspaceFileCapability({
       workingCopy: new FakeWorkingCopy({ "/": { type: "directory" } }),
       root: "/",
       read: ["/photos/**"],
       write: ["/notes/**"],
-      delete: false,
     });
 
-    await expect(capability.readFile("/secrets/key.txt")).rejects.toSatisfy(
-      (error) =>
-        ScopedWorkspaceAccessError.is(error) &&
-        error.operation === "readFile" &&
-        error.path === "/secrets/key.txt",
-    );
+    await expect(capability.readFile("/secrets/key.txt")).resolves.toEqual({
+      status: "error",
+      error: {
+        tag: "ScopedWorkspaceAccessError",
+        operation: "readFile",
+        path: "/secrets/key.txt",
+        message: "Workspace capability does not allow readFile at /secrets/key.txt",
+      },
+    });
   });
 
-  it("allows writes in permitted paths and creates explicit parent directories", async () => {
+  it("allows root recursive scopes to match descendants", async () => {
+    const capability = createWorkspaceFileCapability({
+      workingCopy: new FakeWorkingCopy({
+        "/": { type: "directory" },
+        "/photos": { type: "directory" },
+        "/photos/current": { type: "file", contents: photoBytes },
+      }),
+      root: "/",
+      read: ["/**"],
+      write: [],
+    });
+
+    await expect(capability.readFile("/photos/current")).resolves.toEqual({ status: "ok", value: photoBytes });
+  });
+
+  it("allows narrow write scopes and creates structural parent directories", async () => {
     const workingCopy = new FakeWorkingCopy({ "/": { type: "directory" } });
     const capability = createWorkspaceFileCapability({
       workingCopy,
       root: "/",
-      read: ["/photos/**"],
-      write: ["/notes/**"],
-      delete: false,
+      read: [],
+      write: ["/notes/2026/**"],
     });
 
-    await capability.writeFile("/notes/edit-summary.md", noteBytes);
+    await expect(capability.writeFile("/notes/2026/edit-summary.md", noteBytes)).resolves.toEqual({ status: "ok" });
 
-    expect(workingCopy.operationLog).toEqual(["mkdir /notes", "write /notes/edit-summary.md"]);
-    await expect(workingCopy.readFile("/notes/edit-summary.md")).resolves.toEqual({ status: "ok", value: noteBytes });
+    expect(workingCopy.operationLog).toEqual([
+      "mkdir /notes",
+      "mkdir /notes/2026",
+      "write /notes/2026/edit-summary.md",
+    ]);
+    await expect(workingCopy.readFile("/notes/2026/edit-summary.md")).resolves.toEqual({ status: "ok", value: noteBytes });
   });
 
   it("denies writes outside scope", async () => {
@@ -66,24 +81,25 @@ describe("scoped Workspace file capability", () => {
       root: "/",
       read: ["/photos/**"],
       write: ["/notes/**"],
-      delete: false,
     });
 
-    await expect(capability.writeFile("/photos/current", photoBytes)).rejects.toSatisfy(
-      (error) =>
-        ScopedWorkspaceAccessError.is(error) &&
-        error.operation === "writeFile" &&
-        error.path === "/photos/current",
-    );
+    await expect(capability.writeFile("/photos/current", photoBytes)).resolves.toEqual({
+      status: "error",
+      error: {
+        tag: "ScopedWorkspaceAccessError",
+        operation: "writeFile",
+        path: "/photos/current",
+        message: "Workspace capability does not allow writeFile at /photos/current",
+      },
+    });
   });
 
-  it("does not expose commit or discard authority", () => {
+  it("does not expose identity, publish, or delete authority", () => {
     const capability = createWorkspaceFileCapability({
       workingCopy: new FakeWorkingCopy({ "/": { type: "directory" } }),
       root: "/",
       read: ["/photos/**"],
       write: ["/notes/**"],
-      delete: false,
     });
 
     expect("commit" in capability).toBe(false);
@@ -92,22 +108,22 @@ describe("scoped Workspace file capability", () => {
     expect("getSession" in capability).toBe(false);
     expect("getRevision" in capability).toBe(false);
     expect("getByName" in capability).toBe(false);
+    expect("delete" in capability).toBe(false);
   });
 
-  it("exposes methods from a capability prototype for Worker Loader env binding transfer", () => {
+  it("exposes methods from a capability prototype for Worker Loader prop transfer", () => {
     const capability = createWorkspaceFileCapability({
       workingCopy: new FakeWorkingCopy({ "/": { type: "directory" } }),
       root: "/",
       read: ["/photos/**"],
       write: ["/notes/**"],
-      delete: false,
     });
 
     expect("readFile" in capability).toBe(true);
     expect(Object.values(capability).filter((value) => typeof value === "function")).toEqual([]);
   });
 
-  it("normalizes paths and rejects traversal", async () => {
+  it("normalizes paths and returns path errors for traversal", async () => {
     const capability = createWorkspaceFileCapability({
       workingCopy: new FakeWorkingCopy({
         "/": { type: "directory" },
@@ -117,19 +133,23 @@ describe("scoped Workspace file capability", () => {
       root: "/",
       read: ["/photos/**"],
       write: ["/notes/**"],
-      delete: false,
     });
 
-    await expect(capability.readFile("photos//current")).resolves.toEqual(photoBytes);
-    await expect(capability.readFile("/photos/../secrets/key.txt")).rejects.toSatisfy(
-      (error) => ScopedWorkspacePathError.is(error) && error.path === "/photos/../secrets/key.txt",
-    );
+    await expect(capability.readFile("photos//current")).resolves.toEqual({ status: "ok", value: photoBytes });
+    await expect(capability.readFile("/photos/../secrets/key.txt")).resolves.toEqual({
+      status: "error",
+      error: {
+        tag: "ScopedWorkspacePathError",
+        path: "/photos/../secrets/key.txt",
+        message: "Workspace capability path is not allowed: /photos/../secrets/key.txt",
+      },
+    });
   });
 });
 
 type RpcResult<T = unknown> =
   | { status: "ok"; value?: T }
-  | { status: "error"; error: { tag: string } };
+  | { status: "error"; error: { tag: string; message?: string } };
 
 type Entry =
   | { type: "directory" }
@@ -190,7 +210,7 @@ class FakeWorkingCopy {
   }
 
   async mkdir(path: string): Promise<RpcResult> {
-    if (this.entries[path]) return { status: "ok" };
+    if (this.entries[path]) return { status: "error", error: { tag: "PathAlreadyExistsError" } };
     const parent = parentPath(path);
     if (!this.entries[parent]) return { status: "error", error: { tag: "PathNotFoundError" } };
     this.operationLog.push(`mkdir ${path}`);

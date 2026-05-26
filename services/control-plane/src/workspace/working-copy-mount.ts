@@ -10,12 +10,21 @@ export type WorkspaceMountEntry = {
   type: "directory" | "file";
 };
 
+export type WorkspaceMountStat = {
+  path: string;
+  type: "directory" | "file";
+  size: number | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type WorkspaceMountWorkingCopy = {
   list(path: string): Promise<RpcResult<WorkspaceMountEntry[]>>;
   readFile(path: string): Promise<RpcResult<Uint8Array>>;
   mkdir(path: string): Promise<RpcResult>;
   writeFile(path: string, contents: Uint8Array): Promise<RpcResult>;
   delete(path: string): Promise<RpcResult>;
+  stat(path: string): Promise<RpcResult<WorkspaceMountStat>>;
 };
 
 export type HostMountEntry = {

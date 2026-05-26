@@ -9,14 +9,18 @@ export {
   type WorkspaceMountError,
   type WorkspaceMountFlushSummary,
   type WorkspaceMountHost,
+  type WorkspaceMountStat,
   type WorkspaceMountWorkingCopy,
 } from "./workspace/working-copy-mount";
 export {
   createWorkspaceFileCapability,
-  ScopedWorkspaceAccessError,
-  ScopedWorkspaceOperationError,
-  ScopedWorkspacePathError,
+  type ScopedWorkspaceAccessErrorDto,
+  type ScopedWorkspaceErrorDto,
   type ScopedWorkspaceFileCapability,
+  type ScopedWorkspaceOperationErrorDto,
+  type ScopedWorkspacePathErrorDto,
+  type ScopedWorkspaceRpcResult,
+  type WorkspaceFileWorkingCopy,
 } from "./workspace/scoped-file-capability";
 
 export default {

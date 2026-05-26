@@ -1,11 +1,9 @@
-import { WorkerEntrypoint } from "cloudflare:workers";
 import { callable, routeAgentRequest } from "agents";
 import { Think } from "@cloudflare/think";
 import { tool, type ToolSet } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
 import { z } from "zod";
 
-import { createWorkspaceFileCapability } from "../../control-plane/src/workspace/scoped-file-capability";
 import { createSandboxWorkspaceCommandRunner } from "./workspace/cloudflare-sandbox";
 import { createDynamicWorkerRunner } from "./workspace/dynamic-worker-runner";
 import { handleDemoRequest } from "./http";
@@ -16,11 +14,7 @@ import { PhotoDraftController, type PhotoState } from "./photo-draft-controller"
 
 export { Sandbox } from "@cloudflare/sandbox";
 export { WorkspaceObject } from "../../control-plane/src";
-
-type WorkspaceFileCapabilityProps = {
-  workspaceName: string;
-  draftEditId: string;
-};
+export { WorkspaceFileCapability } from "./workspace/workspace-file-capability";
 
 type PhotoAgentState = {
   draftEditId?: string;
@@ -34,45 +28,6 @@ const photoToolNames = [
   "commitDraft",
   "discardDraft",
 ];
-
-export class WorkspaceFileCapability extends WorkerEntrypoint<Env, WorkspaceFileCapabilityProps> {
-  async readFile(path: string): Promise<Uint8Array> {
-    return this.withCapability((workspace) => workspace.readFile(path));
-  }
-
-  async writeFile(path: string, contents: Uint8Array): Promise<void> {
-    return this.withCapability((workspace) => workspace.writeFile(path, contents));
-  }
-
-  async list(path: string) {
-    return this.withCapability((workspace) => workspace.list(path));
-  }
-
-  async stat(path: string) {
-    return this.withCapability((workspace) => workspace.stat(path));
-  }
-
-  private async withCapability<T>(useCapability: (workspace: ReturnType<typeof createWorkspaceFileCapability>) => Promise<T>): Promise<T> {
-    const workspace = this.env.WORKSPACES.getByName(this.ctx.props.workspaceName);
-    const sessionResult = await workspace.getSession(this.ctx.props.draftEditId);
-    try {
-      if (sessionResult.status === "error") {
-        throw new Error(`draft edit not found: ${sessionResult.error.tag}`);
-      }
-
-      const capability = createWorkspaceFileCapability({
-        workingCopy: sessionResult.value!,
-        root: "/",
-        read: ["/photos/**"],
-        write: ["/photos/**", "/notes/**"],
-        delete: false,
-      });
-      return await useCapability(capability);
-    } finally {
-      disposeRpc(sessionResult);
-    }
-  }
-}
 
 export class PhotoAgent extends Think<Env, PhotoAgentState> {
   initialState: PhotoAgentState = {};
@@ -187,19 +142,13 @@ export class PhotoAgent extends Think<Env, PhotoAgentState> {
       workspaceName: this.name,
       workspaces: this.env.WORKSPACES,
       commandRunner: createSandboxWorkspaceCommandRunner(this.env.Sandbox, this.name),
-      dynamicWorkerRunner: createDynamicWorkerRunner(this.env.DYNAMIC_WORKERS),
-      dynamicWorkspaceBinding: (draftEditId) =>
-        this.ctx.exports.WorkspaceFileCapability({ props: { workspaceName: this.name, draftEditId } }),
+      dynamicWorkerRunner: createDynamicWorkerRunner(this.env.DYNAMIC_WORKERS, {
+        bindingForDraft: (draftEditId) =>
+          this.ctx.exports.WorkspaceFileCapability({ props: { workspaceName: this.name, draftEditId } }),
+      }),
       getDraftEditId: () => this.state.draftEditId,
       setDraftEditId: (draftEditId) => this.setState({ ...this.state, draftEditId }),
     });
-  }
-}
-
-function disposeRpc(value: unknown): void {
-  if (value && typeof value === "object" && Symbol.dispose in value) {
-    const disposable = value as { [Symbol.dispose]: () => void };
-    disposable[Symbol.dispose]();
   }
 }
 

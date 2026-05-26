@@ -16,7 +16,7 @@ describe("PhotoDraftController", () => {
     const draft = await controller.startDraft();
     const state = await controller.listPhotoState();
 
-    expect(dependencies.session.disposeCount).toBe(1);
+    expect(dependencies.session.disposeCount).toBe(3);
     expect(draft).toEqual({
       status: "draft-ready",
       draftEditId: "session-1",
@@ -107,9 +107,10 @@ describe("PhotoDraftController", () => {
       result: { wrote: "/notes/edit-summary.md" },
     });
     expect(dependencies.workspace.beginSessionCount).toBe(0);
-    expect(dependencies.dynamicWorkspaceBindingCalls).toEqual(["session-1"]);
+    expect(dependencies.session.infoCallCount).toBe(0);
     expect(dependencies.dynamicWorkerRunner.calls).toEqual([
       {
+        draftEditId: "session-1",
         code: "export default async function(env) { await env.WORKSPACE.writeFile('/notes/edit-summary.md', new TextEncoder().encode('cropped square')); }",
       },
     ]);
@@ -170,7 +171,7 @@ describe("PhotoDraftController", () => {
 
     await expect(controller.readDraftImage()).resolves.toEqual({ status: "ok", value: draftPng });
 
-    expect(dependencies.workspace.getSessionResultDisposeCount).toBe(1);
+    expect(dependencies.session.disposeCount).toBe(1);
   });
 
   it("passes shell syntax through to the mounted workspace command runner", async () => {
@@ -195,17 +196,12 @@ type CreateDependenciesOptions = {
 function createDependencies(options: CreateDependenciesOptions) {
   const workspace = new FakeWorkspace(options.head, options.session ?? {});
   const commandRunner = new FakeWorkspaceCommandRunner(options.commandOutput ?? draftPng);
-  const dynamicWorkerRunner = new FakeDynamicWorkerRunner();
+  const dynamicWorkerRunner = new FakeDynamicWorkerRunner(workspace.session);
   const dependencies = {
     workspaceName: "demo",
     workspaces: { getByName: () => workspace },
     commandRunner,
     dynamicWorkerRunner,
-    dynamicWorkspaceBindingCalls: [] as string[],
-    dynamicWorkspaceBinding: (draftEditId: string) => {
-      dependencies.dynamicWorkspaceBindingCalls.push(draftEditId);
-      return new FakeDynamicWorkspaceBinding(workspace.session);
-    },
     getDraftEditId: () => dependencies.draftEditId,
     setDraftEditId: (draftEditId: string | undefined) => {
       dependencies.draftEditId = draftEditId;
@@ -221,7 +217,6 @@ function createDependencies(options: CreateDependenciesOptions) {
 class FakeWorkspace {
   readonly session: FakeSession;
   beginSessionCount = 0;
-  getSessionResultDisposeCount = 0;
 
   constructor(
     private readonly headFiles: Record<string, Uint8Array>,
@@ -268,23 +263,19 @@ class FakeWorkspace {
     if (sessionId !== "session-1") {
       return { status: "error" as const, error: { tag: "SessionNotFoundError" } };
     }
-    return {
-      status: "ok" as const,
-      value: this.session,
-      [Symbol.dispose]: () => {
-        this.getSessionResultDisposeCount += 1;
-      },
-    };
+    return { status: "ok" as const, value: this.session };
   }
 }
 
 class FakeSession {
   discarded = false;
   disposeCount = 0;
+  infoCallCount = 0;
 
   constructor(readonly files: Record<string, Uint8Array>) {}
 
   async info() {
+    this.infoCallCount += 1;
     return { status: "ok" as const, value: { sessionId: "session-1", createdAt: 1 } };
   }
 
@@ -357,39 +348,15 @@ class FakeSession {
   }
 }
 
-class FakeDynamicWorkspaceBinding {
+class FakeDynamicWorkerRunner {
+  readonly calls: Array<{ draftEditId: string; code: string }> = [];
+
   constructor(private readonly session: FakeSession) {}
 
-  async readFile(path: string) {
-    const result = await this.session.readFile(path);
-    if (result.status === "error") throw new Error(result.error.tag);
-    return result.value;
-  }
-
-  async writeFile(path: string, contents: Uint8Array) {
-    await this.session.mkdir(parentPath(path));
-    await this.session.writeFile(path, contents);
-  }
-
-  async list(path: string) {
-    const result = await this.session.list(path);
-    if (result.status === "error") throw new Error(result.error.tag);
-    return result.value;
-  }
-
-  async stat(path: string) {
-    const result = await this.session.stat(path);
-    if (result.status === "error") throw new Error(result.error.tag);
-    return result.value;
-  }
-}
-
-class FakeDynamicWorkerRunner {
-  readonly calls: Array<{ code: string }> = [];
-
-  async runDynamicWorker(options: { workspace: { writeFile(path: string, contents: Uint8Array): Promise<void> }; code: string }) {
-    this.calls.push({ code: options.code });
-    await options.workspace.writeFile("/notes/edit-summary.md", new TextEncoder().encode("cropped square"));
+  async runDynamicWorker(options: { draftEditId: string; code: string }) {
+    this.calls.push({ draftEditId: options.draftEditId, code: options.code });
+    await this.session.mkdir("/notes");
+    await this.session.writeFile("/notes/edit-summary.md", new TextEncoder().encode("cropped square"));
     return { wrote: "/notes/edit-summary.md" };
   }
 }
