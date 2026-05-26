@@ -17,11 +17,7 @@ It also has a photo agent demo Worker that validates Workspace as durable state 
 ```text
 docs/                    project documentation
 services/control-plane/  Worker/Durable Object Workspace control plane
-services/photo-agent-demo/ Think/Sandbox photo editing demo Worker
-workspacefs/             future container-facing filesystem component
-sdks/typescript/         future TypeScript SDK
-proto/                   future shared schema definitions
-tests/                   future contract, e2e, and workload tests
-images/                  future container image definitions
-scripts/                 future development and validation scripts
+services/photo-agent-demo/ Think/Sandbox/Dynamic Worker demo app
 ```
+
+Future SDKs, protocol schemas, container filesystem components, shared tests, and container images should be added when their designs are deliberate.

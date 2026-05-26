@@ -11,10 +11,10 @@ Do not add broad scaffolding, placeholder files, or speculative config.
 ## Map
 
 - `services/control-plane/` — TypeScript Worker/Durable Object control plane.
-- `services/photo-agent-demo/` — Think/Sandbox demo app; keep agent/execution concerns here.
-- `workspacefs/` — future container-facing filesystem component.
-- `proto/` — future shared schemas; do not add until deliberately designed.
+- `services/photo-agent-demo/` — Think/Sandbox/Dynamic Worker demo app; keep agent/execution concerns here.
 - `docs/product-boundaries.md` — product boundary reference.
+
+Future SDKs, protocol schemas, container filesystem components, shared tests, and container images should be added only when deliberately designed.
 
 ## Commands
 
