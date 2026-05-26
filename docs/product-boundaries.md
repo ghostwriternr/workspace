@@ -2,18 +2,19 @@
 
 Workspace is durable file state for Cloudflare execution environments.
 
-It gives Workers a direct file-tree API and gives containers a normal local working copy. Those two views meet at an explicit durability boundary: local container writes become durable only when the working copy is committed.
+It gives Workers a direct file-tree API and gives containers a normal local working copy such as `/workspace`. Those two views meet at an explicit durability boundary: local container writes become durable only when the working copy is committed.
+
+See [`workspace-product-model.md`](./workspace-product-model.md) for the long-term product model.
 
 ## What Workspace owns
 
 Workspace owns:
 
-- a durable file tree,
-- file and directory metadata,
-- file contents as durable data,
-- snapshots or recovery points of that tree,
+- durable files and directories,
+- file contents and generic file metadata,
 - working-copy attachment semantics,
-- explicit commit and discard of working-copy changes.
+- explicit commit and discard of working-copy changes,
+- snapshots or recovery points of durable file state.
 
 The core abstraction is file state, not execution.
 
@@ -23,7 +24,7 @@ Workspace does not own:
 
 - command execution,
 - `run` or `exec` APIs,
-- container or sandbox lifecycle,
+- container or Sandbox lifecycle,
 - agent orchestration,
 - task scheduling,
 - Git history, branches, refs, or remotes,
@@ -33,18 +34,6 @@ Workspace does not own:
 - full distributed POSIX semantics.
 
 Execution products decide how work runs. Workspace decides what durable files exist before and after that work.
-
-## Primary views
-
-### Worker view
-
-Workers operate on durable Workspace state directly. The eventual API should feel like file-tree storage: read, write, list, delete, move, and snapshot.
-
-### Container view
-
-Containers see a local directory, such as `/workspace`, that ordinary tools can use without knowing about Cloudflare storage internals.
-
-That directory is a working copy. It can be read and mutated locally while tools run. Its local mutations are not durable until explicitly committed.
 
 ## Durability rule
 
@@ -56,18 +45,6 @@ Not when a container exits.
 Not because a command succeeded.
 
 The durability operation is an explicit commit. The matching escape hatch is discard.
-
-## Initial constraints
-
-The first useful model is intentionally narrow:
-
-- one writer at a time,
-- regular files and directories,
-- basic metadata including executable bits,
-- snapshots for recovery,
-- lazy hydration for container reads,
-- structured commits from a local working copy,
-- clear failure for unsupported filesystem features.
 
 ## Decision test
 
