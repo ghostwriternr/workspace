@@ -355,12 +355,8 @@ function ToolCard({ part }: { part: ToolPart }) {
 }
 
 function formatToolPayload(toolName: string, input: unknown) {
-  if (toolName === "runSandboxCommand" && isRecord(input) && typeof input.command === "string") {
+  if (toolName === "runWorkspaceCommand" && isRecord(input) && typeof input.command === "string") {
     return input.command;
-  }
-
-  if (toolName === "saveDraftFromSandboxFile" && isRecord(input) && typeof input.filename === "string") {
-    return input.filename;
   }
 
   return formatValue(input);

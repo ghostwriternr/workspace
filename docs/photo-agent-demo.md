@@ -32,7 +32,7 @@ Upload is a concrete browser action. Image previews are passive and update from 
 
 The agent has broad freedom inside an isolated Sandbox working directory. It can use ImageMagick commands such as `identify` and `convert`, shell utilities, or short scripts.
 
-The agent does not receive raw Workspace mutation tools. It receives product-level tools for inspecting photo state, running Sandbox commands, saving a generated file as the draft preview, making the draft current, and throwing the draft away.
+The agent does not receive raw Workspace mutation tools. It receives product-level tools for inspecting photo state, running commands with the draft mounted at `/workspace`, making the draft current, and throwing the draft away.
 
 ## Durable state model
 
@@ -49,4 +49,4 @@ Draft edits stay isolated until the user asks to make one current. The user can 
 
 Workspace does not run commands, own the container, or decide how to edit an image. Sandbox owns execution. Think owns agent conversation and tool choice. Workspace owns durable files and revision boundaries.
 
-The current demo manually moves image bytes between Workspace and Sandbox. That is a product gap, not the desired long-term shape. The long-term Workspace model should provide a mount-like working-copy bridge so tools can operate directly on `/workspace`.
+The demo uses the Workspace working-copy bridge shape: tools operate on `/workspace`, and successful changes become part of the draft working copy. The long-term Workspace model still needs a production mount-like container implementation behind that boundary.

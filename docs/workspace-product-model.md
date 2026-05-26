@@ -175,7 +175,7 @@ The exact names and implementation can change. The important shape is stable:
 4. Workspace tracks the resulting working-copy changes.
 5. Commit or discard remains explicit.
 
-The current photo demo manually copies data into and out of Sandbox. That is useful evidence of the missing bridge, not the desired long-term container adapter.
+The photo demo now uses this shape at the product boundary: commands operate on `/workspace`, and successful changes flush back into the draft working copy. The remaining long-term gap is the production container mount implementation behind that semantic boundary.
 
 ## Current progress
 
@@ -194,11 +194,11 @@ The current photo demo manually copies data into and out of Sandbox. That is use
 - Product-specific agent tools should sit above Workspace primitives.
 - Sandbox is the right execution boundary for broad native command freedom.
 - Users understand draft/current language better than session/commit language.
-- The lack of a real `/workspace` mount-like bridge creates product glue.
+- A `/workspace` working-copy bridge removes product glue from agent command workflows.
 
 ### Missing next
 
-- Mount-like container working-copy interface.
+- Production mount-like container working-copy implementation.
 - Working-copy descriptors, listing, recovery, and cleanup.
 - Diff or changed-path inspection for working copies and revisions.
 - Generic file metadata such as content type.

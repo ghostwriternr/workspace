@@ -4,7 +4,7 @@ import { tool, type ToolSet } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
 import { z } from "zod";
 
-import { createSandboxImageEditor } from "./image/cloudflare-sandbox";
+import { createSandboxWorkspaceCommandRunner } from "./workspace/cloudflare-sandbox";
 import { handleDemoRequest } from "./http";
 import { handlePhotoReadRequest } from "./photo-read-http";
 import { handlePhotoStateRequest } from "./photo-state-http";
@@ -21,8 +21,7 @@ type PhotoAgentState = {
 
 const photoToolNames = [
   "listPhotoState",
-  "runSandboxCommand",
-  "saveDraftFromSandboxFile",
+  "runWorkspaceCommand",
   "commitDraft",
   "discardDraft",
 ];
@@ -44,9 +43,9 @@ export class PhotoAgent extends Think<Env, PhotoAgentState> {
       "Upload is handled by the browser; after that, the user edits by chatting with you.",
       "Use draft edit language with the user: say \"draft edit\", \"make this current\", and \"throw away the draft\".",
       "Do not say session, commit session, or discard session to the user.",
-      "You have broad freedom inside an isolated Sandbox working directory. Use shell commands, ImageMagick, identify, convert, and small scripts as needed.",
-      "Use runSandboxCommand to inspect images and create files in the sandbox. Use saveDraftFromSandboxFile when you want a sandbox file to become the Workspace draft preview.",
-      "The sandbox input file is named original.png, original.jpg, or current. ImageMagick is available as identify and convert in this container.",
+      "You have broad freedom inside an isolated Sandbox with the draft edit mounted at /workspace.",
+      "Use runWorkspaceCommand to inspect and edit files under /workspace. Successful commands flush /workspace changes into the Workspace draft preview.",
+      "Use paths like /workspace/photos/original.png, /workspace/photos/original.jpg, and /workspace/photos/current. ImageMagick is available as identify and convert in this container.",
       "Do not narrate every tool call. Briefly say what changed after the tool result is available.",
       "Only make a draft current when the user clearly asks to commit, approve, publish, or make it current.",
     ].join("\n");
@@ -63,26 +62,18 @@ export class PhotoAgent extends Think<Env, PhotoAgentState> {
         inputSchema: z.object({}),
         execute: async () => this.refreshPhotoState(),
       }),
-      runSandboxCommand: tool({
+      runWorkspaceCommand: tool({
         description: [
-          "Run any shell command inside the isolated photo sandbox working directory.",
+          "Run any shell command inside the isolated Sandbox with the active draft mounted at /workspace.",
           "Use this for image inspection and edits. Available tools include ImageMagick commands such as identify and convert.",
-          "The current input image is hydrated as original.png, original.jpg, or current before the command runs.",
-          "Commands can inspect images, create files, and run short scripts. Use saveDraftFromSandboxFile to import a generated image into the Workspace draft preview.",
-          "Examples: `identify original.jpg`, `convert original.jpg -gravity center -crop 1024x1024+0+0 +repage square.png`, or short Python scripts.",
+          "Files written under /workspace become part of the draft preview after the command succeeds.",
+          "Examples: `identify /workspace/photos/original.jpg`, `convert /workspace/photos/original.jpg -gravity center -crop 1024x1024+0+0 +repage /workspace/photos/current`, or short Python scripts that read and write /workspace files.",
         ].join(" "),
         inputSchema: z.object({
-          command: z.string().min(1).describe("Shell command to run inside the isolated sandbox working directory."),
+          command: z.string().min(1).describe("Shell command to run with the draft mounted at /workspace."),
         }),
-        execute: async ({ command }) => this.controller().runSandboxCommand({ command }),
-      }),
-      saveDraftFromSandboxFile: tool({
-        description: "Import a file from the sandbox working directory into the Workspace draft preview after a command creates the image you want to show.",
-        inputSchema: z.object({
-          filename: z.string().min(1).describe("Sandbox file name to import as the Workspace draft preview."),
-        }),
-        execute: async ({ filename }) => {
-          const result = await this.controller().saveDraftFromSandboxFile({ filename });
+        execute: async ({ command }) => {
+          const result = await this.controller().runWorkspaceCommand({ command });
           await this.refreshPhotoState();
           return result;
         },
@@ -129,7 +120,7 @@ export class PhotoAgent extends Think<Env, PhotoAgentState> {
     return new PhotoDraftController({
       workspaceName: this.name,
       workspaces: this.env.WORKSPACES,
-      imageEditor: createSandboxImageEditor(this.env.Sandbox, this.name),
+      commandRunner: createSandboxWorkspaceCommandRunner(this.env.Sandbox, this.name),
       getDraftEditId: () => this.state.draftEditId,
       setDraftEditId: (draftEditId) => this.setState({ ...this.state, draftEditId }),
     });

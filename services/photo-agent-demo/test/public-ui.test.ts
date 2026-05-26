@@ -49,8 +49,7 @@ describe("photo demo browser UI", () => {
     expect(client).toContain("getToolName(part)");
     expect(client).toContain("getToolInput(part)");
     expect(client).toContain("getToolOutput(part)");
-    expect(client).toContain('toolName === "runSandboxCommand"');
-    expect(client).toContain('toolName === "saveDraftFromSandboxFile"');
+    expect(client).toContain('toolName === "runWorkspaceCommand"');
     expect(client).toContain("Tool result");
   });
 });

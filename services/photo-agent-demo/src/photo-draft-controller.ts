@@ -1,10 +1,12 @@
-import type { DemoImageEditor } from "./image/sandbox-image-editor";
+import type { WorkspaceMountFlushSummary, WorkspaceMountWorkingCopy } from "../../control-plane/src/workspace/working-copy-mount";
+import type { DemoWorkspaceCommandRunner } from "./workspace/sandbox-workspace-command-runner";
 
 const ORIGINAL_CANDIDATES = [
   { path: "/photos/original.png", contentType: "image/png" },
   { path: "/photos/original.jpg", contentType: "image/jpeg" },
 ] as const;
 const CURRENT_PATH = "/photos/current";
+const WORKSPACE_ROOT = "/workspace";
 
 type RpcResult<T = unknown> =
   | { status: "ok"; value?: T }
@@ -22,10 +24,8 @@ type WorkspaceForDrafts = {
   getSession(sessionId: string): Promise<RpcResult<WorkspaceSessionForDrafts>>;
 };
 
-type WorkspaceSessionForDrafts = {
+type WorkspaceSessionForDrafts = WorkspaceMountWorkingCopy & {
   info(): Promise<RpcResult<SessionInfo>>;
-  readFile(path: string): Promise<RpcResult<Uint8Array>>;
-  writeFile(path: string, contents: Uint8Array): Promise<RpcResult>;
   stat(path: string): Promise<RpcResult<WorkspaceStat>>;
   commit(): Promise<RpcResult<RevisionInfo>>;
   discard(): Promise<RpcResult>;
@@ -74,7 +74,7 @@ export type PhotoState = {
 export type PhotoDraftControllerDependencies = {
   workspaceName: string;
   workspaces: WorkspaceNamespace;
-  imageEditor: Pick<DemoImageEditor, "runSandboxCommand" | "readSandboxFile">;
+  commandRunner: Pick<DemoWorkspaceCommandRunner, "runWorkspaceCommand">;
   getDraftEditId(): string | undefined;
   setDraftEditId(draftEditId: string | undefined): void;
 };
@@ -99,15 +99,6 @@ export class PhotoDraftController {
       draft,
       files,
     };
-  }
-
-  async readOriginalImage(): Promise<{
-    path: string;
-    contentType: string;
-    bytes: number;
-    contents: Uint8Array;
-  }> {
-    return readUploadedOriginal(this.workspace());
   }
 
   async startDraft(): Promise<{
@@ -139,48 +130,30 @@ export class PhotoDraftController {
     }
   }
 
-  async runSandboxCommand({ command }: { command: string }): Promise<{
+  async runWorkspaceCommand({ command }: { command: string }): Promise<{
     status: "command-completed";
-    inputPath: string;
-    inputFilename: string;
+    root: string;
     command: string;
     stdout: string;
     stderr: string;
     exitCode: number;
-  }> {
-    const input = await this.readSandboxInput();
-    const result = await this.dependencies.imageEditor.runSandboxCommand({
-      input: input.contents,
-      inputFilename: filenameForWorkspacePath(input.path),
-      command,
-    });
-
-    return {
-      status: "command-completed",
-      inputPath: input.path,
-      inputFilename: filenameForWorkspacePath(input.path),
-      command: result.command,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode,
-    };
-  }
-
-  async saveDraftFromSandboxFile({ filename }: { filename: string }): Promise<{
-    status: "draft-updated";
-    draftPath: string;
-    filename: string;
-    outputBytes: number;
+    flush: WorkspaceMountFlushSummary;
   }> {
     return this.withDraftSession(async (session) => {
-      const contents = await this.dependencies.imageEditor.readSandboxFile(filename);
-      await expectOk(session.writeFile(CURRENT_PATH, contents), "write draft edit");
+      const result = await this.dependencies.commandRunner.runWorkspaceCommand({
+        workingCopy: session,
+        command,
+        root: WORKSPACE_ROOT,
+      });
 
       return {
-        status: "draft-updated",
-        draftPath: CURRENT_PATH,
-        filename,
-        outputBytes: contents.byteLength,
+        status: "command-completed",
+        root: result.root,
+        command: result.command,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+        flush: result.flush,
       };
     });
   }
@@ -275,33 +248,6 @@ export class PhotoDraftController {
 
   private workspace(): WorkspaceForDrafts {
     return this.dependencies.workspaces.getByName(this.dependencies.workspaceName);
-  }
-
-  private async readSandboxInput(): Promise<{
-    path: string;
-    contents: Uint8Array;
-  }> {
-    const draftEditId = this.dependencies.getDraftEditId();
-    if (draftEditId) {
-      const sessionResult = await this.workspace().getSession(draftEditId);
-      try {
-        if (sessionResult.status === "ok") {
-          const current = await sessionResult.value!.readFile(CURRENT_PATH);
-          if (current.status === "ok") {
-            return { path: CURRENT_PATH, contents: current.value! };
-          }
-          if (current.error.tag !== "PathNotFoundError") {
-            throw new Error(`read current draft input failed with ${current.error.tag}`);
-          }
-        } else {
-          this.dependencies.setDraftEditId(undefined);
-        }
-      } finally {
-        disposeRpc(sessionResult);
-      }
-    }
-
-    return readHeadInput(this.workspace());
   }
 
   private async withDraftSession<T>(useSession: (session: WorkspaceSessionForDrafts) => Promise<T>): Promise<T> {
@@ -414,75 +360,6 @@ function contentTypeForImage(contents: Uint8Array): string {
   return "application/octet-stream";
 }
 
-async function readHeadInput(workspace: WorkspaceForDrafts): Promise<{
-  path: string;
-  contents: Uint8Array;
-}> {
-  const current = await workspace.readFile(CURRENT_PATH);
-  if (current.status === "ok") {
-    return { path: CURRENT_PATH, contents: current.value! };
-  }
-
-  if (current.error.tag !== "PathNotFoundError") {
-    throw new Error(`read current image failed with ${current.error.tag}`);
-  }
-
-  const original = await readUploadedOriginal(workspace);
-  return { path: original.path, contents: original.contents };
-}
-
-async function readUploadedOriginal(workspace: WorkspaceForDrafts): Promise<{
-  path: string;
-  contentType: string;
-  bytes: number;
-  contents: Uint8Array;
-}> {
-  for (const candidate of ORIGINAL_CANDIDATES) {
-    const result = await workspace.readFile(candidate.path);
-    if (result.status === "ok") {
-      return {
-        path: candidate.path,
-        contentType: candidate.contentType,
-        bytes: result.value!.byteLength,
-        contents: result.value!,
-      };
-    }
-
-    if (result.error.tag !== "PathNotFoundError") {
-      throw new Error(`read original image failed with ${result.error.tag}`);
-    }
-  }
-
-  throw new Error("No uploaded original photo found");
-}
-
-async function readDraftInput(session: WorkspaceSessionForDrafts): Promise<{
-  path: string;
-  contents: Uint8Array;
-}> {
-  const current = await session.readFile(CURRENT_PATH);
-  if (current.status === "ok") {
-    return { path: CURRENT_PATH, contents: current.value! };
-  }
-
-  if (current.error.tag !== "PathNotFoundError") {
-    throw new Error(`read current draft input failed with ${current.error.tag}`);
-  }
-
-  for (const candidate of ORIGINAL_CANDIDATES) {
-    const original = await session.readFile(candidate.path);
-    if (original.status === "ok") {
-      return { path: candidate.path, contents: original.value! };
-    }
-
-    if (original.error.tag !== "PathNotFoundError") {
-      throw new Error(`read original draft input failed with ${original.error.tag}`);
-    }
-  }
-
-  throw new Error("No uploaded original photo found");
-}
-
 async function expectOk<T>(pending: Promise<RpcResult<T>>, operation: string): Promise<T> {
   const result = await pending;
   if (result.status === "error") {
@@ -495,13 +372,4 @@ async function expectOk<T>(pending: Promise<RpcResult<T>>, operation: string): P
 function disposeRpc(value: unknown): void {
   const disposable = value as { [Symbol.dispose]?: () => void };
   disposable[Symbol.dispose]?.();
-}
-
-function filenameForWorkspacePath(path: string): string {
-  const filename = path.split("/").at(-1);
-  if (!filename) {
-    throw new Error(`Could not derive filename from ${path}`);
-  }
-
-  return filename;
 }

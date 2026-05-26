@@ -30,76 +30,62 @@ describe("PhotoDraftController", () => {
     });
   });
 
-  it("runs freeform sandbox commands without importing a draft image", async () => {
+  it("runs commands with the draft mounted at /workspace and flushes changes into the draft", async () => {
     const dependencies = createDependencies({
       head: { "/photos/original.png": originalPng },
+      commandOutput: draftPng,
     });
     const controller = new PhotoDraftController(dependencies);
 
-    const result = await controller.runSandboxCommand({
-      command: "identify original.png && convert original.png -colorspace Gray square.png",
+    const result = await controller.runWorkspaceCommand({
+      command: "identify /workspace/photos/original.png && convert /workspace/photos/original.png /workspace/photos/current",
     });
 
     expect(result).toEqual({
       status: "command-completed",
-      inputPath: "/photos/original.png",
-      inputFilename: "original.png",
-      command: "identify original.png && convert original.png -colorspace Gray square.png",
+      root: "/workspace",
+      command: "identify /workspace/photos/original.png && convert /workspace/photos/original.png /workspace/photos/current",
       stdout: "ok",
       stderr: "",
       exitCode: 0,
+      flush: {
+        created: [],
+        modified: ["/photos/current"],
+        deleted: [],
+        unchanged: 1,
+      },
     });
-    expect(dependencies.workspace.beginSessionCount).toBe(0);
-    expect(dependencies.sessionFiles["/photos/current"]).toBeUndefined();
-    expect(dependencies.imageEditor.edits).toEqual([
+    expect(dependencies.workspace.beginSessionCount).toBe(1);
+    expect(dependencies.sessionFiles["/photos/current"]).toEqual(draftPng);
+    expect(dependencies.commandRunner.calls).toEqual([
       {
-        input: originalPng,
-        inputFilename: "original.png",
-        command: "identify original.png && convert original.png -colorspace Gray square.png",
+        command: "identify /workspace/photos/original.png && convert /workspace/photos/original.png /workspace/photos/current",
+        root: "/workspace",
       },
     ]);
   });
 
-  it("imports a sandbox file into the Workspace draft when the agent chooses it", async () => {
-    const dependencies = createDependencies({
-      head: { "/photos/original.png": originalPng },
-      sandboxFiles: { "square.png": draftPng },
-    });
-    const controller = new PhotoDraftController(dependencies);
-
-    const result = await controller.saveDraftFromSandboxFile({ filename: "square.png" });
-
-    expect(result).toEqual({
-      status: "draft-updated",
-      draftPath: "/photos/current",
-      filename: "square.png",
-      outputBytes: draftPng.byteLength,
-    });
-    expect(dependencies.sessionFiles["/photos/current"]).toEqual(draftPng);
-    expect(dependencies.imageEditor.reads).toEqual(["square.png"]);
-  });
-
-  it("hydrates the existing draft as input for follow-up sandbox commands", async () => {
+  it("reuses the existing draft for follow-up workspace commands", async () => {
     const dependencies = createDependencies({
       head: { "/photos/original.png": originalPng },
       session: { "/photos/current": currentPng },
       draftEditId: "session-1",
+      commandOutput: draftPng,
     });
     const controller = new PhotoDraftController(dependencies);
 
-    const result = await controller.runSandboxCommand({
-      command: "convert current -resize 512x512^ square.png",
+    await controller.runWorkspaceCommand({
+      command: "convert /workspace/photos/current -resize 512x512^ /workspace/photos/current",
     });
 
-    expect(result.inputPath).toBe("/photos/current");
-    expect(result.inputFilename).toBe("current");
-    expect(dependencies.imageEditor.edits).toEqual([
+    expect(dependencies.workspace.beginSessionCount).toBe(0);
+    expect(dependencies.commandRunner.calls).toEqual([
       {
-        input: currentPng,
-        inputFilename: "current",
-        command: "convert current -resize 512x512^ square.png",
+        command: "convert /workspace/photos/current -resize 512x512^ /workspace/photos/current",
+        root: "/workspace",
       },
     ]);
+    expect(dependencies.sessionFiles["/photos/current"]).toEqual(draftPng);
   });
 
   it("previews, commits, and clears the draft edit", async () => {
@@ -155,13 +141,13 @@ describe("PhotoDraftController", () => {
     expect(dependencies.workspace.getSessionResultDisposeCount).toBe(1);
   });
 
-  it("passes shell syntax through to the sandbox", async () => {
+  it("passes shell syntax through to the mounted workspace command runner", async () => {
     const dependencies = createDependencies({ head: { "/photos/original.png": originalPng } });
     const controller = new PhotoDraftController(dependencies);
 
     await expect(
-      controller.runSandboxCommand({
-        command: "identify original.png | tee dimensions.txt && convert original.png label:@caption.txt square.png",
+      controller.runWorkspaceCommand({
+        command: "identify /workspace/photos/original.png | tee dimensions.txt && convert /workspace/photos/original.png label:@caption.txt /workspace/photos/current",
       }),
     ).resolves.toMatchObject({ status: "command-completed" });
   });
@@ -170,17 +156,17 @@ describe("PhotoDraftController", () => {
 type CreateDependenciesOptions = {
   head: Record<string, Uint8Array>;
   session?: Record<string, Uint8Array>;
-  sandboxFiles?: Record<string, Uint8Array>;
   draftEditId?: string;
+  commandOutput?: Uint8Array;
 };
 
 function createDependencies(options: CreateDependenciesOptions) {
   const workspace = new FakeWorkspace(options.head, options.session ?? {});
-  const imageEditor = new FakeImageEditor(options.sandboxFiles ?? {});
+  const commandRunner = new FakeWorkspaceCommandRunner(options.commandOutput ?? draftPng);
   const dependencies = {
     workspaceName: "demo",
     workspaces: { getByName: () => workspace },
-    imageEditor,
+    commandRunner,
     getDraftEditId: () => dependencies.draftEditId,
     setDraftEditId: (draftEditId: string | undefined) => {
       dependencies.draftEditId = draftEditId;
@@ -269,6 +255,45 @@ class FakeSession {
     return { status: "ok" as const };
   }
 
+  async list(path: string) {
+    const entries: Record<string, { type: "directory" | "file" }> = { "/": { type: "directory" } };
+    for (const filePath of Object.keys(this.files)) {
+      const segments = filePath.split("/").filter(Boolean);
+      let current = "";
+      for (const segment of segments.slice(0, -1)) {
+        current = `${current}/${segment}`;
+        entries[current] = { type: "directory" };
+      }
+      entries[filePath] = { type: "file" };
+    }
+
+    const entry = entries[path];
+    if (!entry) return { status: "error" as const, error: { tag: "PathNotFoundError" } };
+    if (entry.type === "file") return { status: "error" as const, error: { tag: "NotDirectoryError" } };
+
+    const prefix = path === "/" ? "/" : `${path}/`;
+    return {
+      status: "ok" as const,
+      value: Object.entries(entries)
+        .filter(([childPath]) => childPath !== path && childPath.startsWith(prefix))
+        .filter(([childPath]) => !childPath.slice(prefix.length).includes("/"))
+        .map(([childPath, child]) => ({
+          name: childPath.split("/").at(-1) ?? "",
+          path: childPath,
+          type: child.type,
+        })),
+    };
+  }
+
+  async mkdir(_path: string) {
+    return { status: "ok" as const };
+  }
+
+  async delete(path: string) {
+    delete this.files[path];
+    return { status: "ok" as const };
+  }
+
   async stat(path: string) {
     const value = this.files[path];
     return value
@@ -290,29 +315,27 @@ class FakeSession {
   }
 }
 
-class FakeImageEditor {
-  readonly edits: Array<{ input: Uint8Array; inputFilename: string; command: string }> = [];
-  readonly reads: string[] = [];
+class FakeWorkspaceCommandRunner {
+  readonly calls: Array<{ command: string; root: string }> = [];
 
-  constructor(private readonly files: Record<string, Uint8Array>) {}
+  constructor(private readonly output: Uint8Array) {}
 
-  async runSandboxCommand(edit: { input: Uint8Array; inputFilename: string; command: string }) {
-    this.edits.push(edit);
+  async runWorkspaceCommand(options: { workingCopy: FakeSession; command: string; root: string }) {
+    this.calls.push({ command: options.command, root: options.root });
+    await options.workingCopy.writeFile("/photos/current", this.output);
     return {
-      command: edit.command,
+      command: options.command,
+      root: options.root,
       exitCode: 0,
       stdout: "ok",
       stderr: "",
+      flush: {
+        created: [],
+        modified: ["/photos/current"],
+        deleted: [],
+        unchanged: 1,
+      },
     };
-  }
-
-  async readSandboxFile(filename: string) {
-    this.reads.push(filename);
-    const contents = this.files[filename];
-    if (!contents) {
-      throw new Error(`missing fake sandbox file: ${filename}`);
-    }
-    return contents;
   }
 }
 
