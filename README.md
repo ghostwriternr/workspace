@@ -12,12 +12,4 @@ This repository has a minimal TypeScript Workspace package with a first durable 
 
 It also has a photo agent example Worker that validates Workspace as durable state for AI-assisted image editing, with Think for chat, Sandbox for native image transformations through `/workspace`, and Dynamic Workers for scoped Worker-native code over the same draft. See [`docs/photo-agent-demo.md`](./docs/photo-agent-demo.md).
 
-## Layout
-
-```text
-docs/                    project documentation
-packages/workspace/      Workspace package for durable file state
-examples/photo-agent-demo/ Think/Sandbox/Dynamic Worker example app
-```
-
-Future SDKs, protocol schemas, container filesystem components, shared tests, and container images should be added when their designs are deliberate.
+The reusable package lives in `packages/workspace`. The current example app lives in `examples/photo-agent-demo`.
