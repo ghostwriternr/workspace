@@ -238,4 +238,4 @@ Those details can exist in lower layers. They should not be the first API a prod
 
 The current prototype proves the underlying semantics with sessions, filesystem materialization, scoped Dynamic Worker file capabilities, and explicit commit/discard. The product-facing API described here is the target for making those semantics approachable.
 
-Future implementation should be judged by whether product code like `services/photo-agent-demo` can express Workspace usage in these terms without exposing raw Workspace machinery.
+Future implementation should be judged by whether product code like `examples/photo-agent-demo` can express Workspace usage in these terms without exposing raw Workspace machinery.

@@ -1,0 +1,23 @@
+{
+  "name": "@cloudflare/workspace",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "typegen": "wrangler types"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.16.9",
+    "typescript": "^5.5.2",
+    "vitest": "^4.1.7",
+    "wrangler": "^4.94.0"
+  },
+  "dependencies": {
+    "better-result": "^2.9.2"
+  }
+}

@@ -1,0 +1,74 @@
+import { readFile } from "node:fs/promises";
+import { fileURLToPath, URL } from "node:url";
+import { describe, expect, it } from "vitest";
+
+import { handleDemoRequest } from "../src/http/demo";
+
+describe("photo agent demo worker", () => {
+  it("returns a health response", async () => {
+    const response = handleDemoRequest(new Request("http://example.com/health"));
+
+    expect(response).toBeDefined();
+
+    expect(response?.status).toBe(200);
+    await expect(response?.json()).resolves.toEqual({ ok: true });
+  });
+
+  it("routes demo endpoints ahead of agent requests", async () => {
+    const source = await readFile(fileURLToPath(new URL("../src/index.ts", import.meta.url)), "utf8");
+
+    const demoRouteIndex = source.indexOf("const demoResponse = handleDemoRequest(request)");
+    const agentRouteIndex = source.indexOf("routeAgentRequest(request, env)");
+
+    expect(demoRouteIndex).toBeGreaterThan(-1);
+    expect(agentRouteIndex).toBeGreaterThan(demoRouteIndex);
+  });
+
+  it("describes the wired demo capabilities", async () => {
+    const response = handleDemoRequest(
+      new Request("http://example.com/api/demo-capabilities"),
+    );
+
+    expect(response).toBeDefined();
+
+    expect(response?.status).toBe(200);
+    await expect(response?.json()).resolves.toEqual({
+      agent: "Think",
+      execution: "Sandbox/ImageMagick and Dynamic Workers",
+      state: "Workspace durable files",
+      durability: "draft commit or discard",
+    });
+  });
+
+  it("offers Sandbox and Dynamic Worker tools over the same draft", async () => {
+    const source = await readFile(fileURLToPath(new URL("../src/agent/photo-agent.ts", import.meta.url)), "utf8");
+
+    expect(source).toContain('"runWorkspaceCommand"');
+    expect(source).toContain('"runDynamicWorker"');
+    expect(source).toContain("this.controller().runDynamicWorker");
+  });
+
+  it("enables the compatibility flag required by Dynamic Worker loader capabilities", async () => {
+    const config = JSON.parse(
+      await readFile(fileURLToPath(new URL("../wrangler.jsonc", import.meta.url)), "utf8"),
+    );
+
+    expect(config.worker_loaders).toEqual([{ binding: "DYNAMIC_WORKERS" }]);
+    expect(config.compatibility_flags).toContain("experimental");
+  });
+
+  it("keeps non-agent unknown API routes explicit", async () => {
+    const response = handleDemoRequest(new Request("http://example.com/api/missing"));
+
+    expect(response).toBeDefined();
+
+    expect(response?.status).toBe(404);
+    await expect(response?.text()).resolves.toBe("Not found");
+  });
+
+  it("leaves non-demo routes for the Worker runtime", () => {
+    const response = handleDemoRequest(new Request("http://example.com/agents/photo/default"));
+
+    expect(response).toBeUndefined();
+  });
+});
