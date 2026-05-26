@@ -268,6 +268,7 @@ Trusted product code decides whether to publish them.
 - Revisions provide immutable recovery points.
 - Stale working-copy commits must not silently overwrite newer head changes.
 - Filesystem projection semantics work in the photo demo through `/workspace`.
+- Scoped file capability semantics work in the photo demo through Dynamic Worker `env.WORKSPACE` bindings.
 
 ### Validated by the photo demo
 
@@ -276,6 +277,7 @@ Trusted product code decides whether to publish them.
 - Sandbox is the execution boundary for broad native command freedom.
 - Users understand draft/current language better than session/commit language.
 - A `/workspace` filesystem projection removes product glue from agent command workflows.
+- Scoped Dynamic Worker file bindings let delegated Worker code operate on draft files without Workspace identity or commit authority.
 
 ### Informed by Gadgets and Dynamic Workers
 
@@ -292,7 +294,7 @@ Trusted product code decides whether to publish them.
 - Public version/change-token observability.
 - Revision metadata for product-visible history.
 - Production filesystem projection for Sandboxes and containers.
-- Dynamic Worker scoped file, module, and asset projections.
+- Dynamic Worker module and asset projections.
 
 ### Deferred
 

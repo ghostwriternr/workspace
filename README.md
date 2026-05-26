@@ -8,9 +8,9 @@ See [`docs/workspace-product-model.md`](./docs/workspace-product-model.md) for t
 
 ## Status
 
-This repository has a minimal TypeScript control-plane package with a first durable Workspace slice: durable file trees, explicit working copies, immutable revisions, conflict-safe commits, and a prototype filesystem projection.
+This repository has a minimal TypeScript control-plane package with a first durable Workspace slice: durable file trees, explicit working copies, immutable revisions, conflict-safe commits, scoped file capabilities, and a prototype filesystem projection.
 
-It also has a photo agent demo Worker that validates Workspace as durable state for AI-assisted image editing, with Think for chat and Sandbox for native image transformations through `/workspace`. See [`docs/photo-agent-demo.md`](./docs/photo-agent-demo.md).
+It also has a photo agent demo Worker that validates Workspace as durable state for AI-assisted image editing, with Think for chat, Sandbox for native image transformations through `/workspace`, and Dynamic Workers for scoped Worker-native code over the same draft. See [`docs/photo-agent-demo.md`](./docs/photo-agent-demo.md).
 
 ## Layout
 

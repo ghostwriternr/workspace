@@ -39,11 +39,11 @@ The current filesystem projection materializes files into the Sandbox filesystem
 
 This proves `/workspace` working-copy semantics for the demo, but it is not the production Sandbox/container mount implementation. Long-term, Workspace needs a mount-like implementation that can avoid full-tree scans and avoid reading unchanged file contents back into the Worker.
 
-## No Dynamic Worker projections
+## Dynamic Worker module and asset projections are missing
 
-Workspace does not yet expose scoped Dynamic Worker capabilities, module sources, or static asset bindings backed by Workspace trees.
+The current prototype validates scoped Dynamic Worker file capabilities over a Workspace draft, but it does not yet load Dynamic Worker modules or static assets directly from Workspace trees.
 
-The current prototype validates Worker RPC and Sandbox filesystem projections only. Long-term, Dynamic Workers should receive scoped Workspace capabilities instead of Workspace identity by default.
+Long-term, Dynamic Workers should be able to receive Workspace-backed module sources and asset bindings in addition to scoped file capabilities.
 
 ## No session garbage collection
 

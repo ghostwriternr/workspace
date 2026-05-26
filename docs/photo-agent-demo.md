@@ -6,13 +6,17 @@ The browser handles upload because the user owns the local image bytes. After up
 
 ## What it validates
 
-The demo validates one Workspace projection: a Sandbox receives a filesystem view of a draft working copy at `/workspace`.
+The demo validates two Workspace projections over the same draft working copy:
+
+- a Sandbox receives a filesystem view at `/workspace`,
+- a Dynamic Worker receives a scoped `env.WORKSPACE` file capability.
 
 It also validates that:
 
 - product-specific agent tools should sit above Workspace primitives,
-- Sandbox is the execution boundary,
+- Sandbox and Dynamic Workers are execution boundaries,
 - Workspace is the durable file-state boundary,
+- delegated code can receive scoped file authority without Workspace identity or commit authority,
 - draft/current language maps naturally to Workspace working-copy semantics,
 - passive previews can reflect durable Workspace state without exposing low-level file APIs to the user.
 
@@ -34,7 +38,7 @@ Upload is a concrete browser action. Image previews are passive and update from 
 
 The agent has broad freedom inside an isolated Sandbox working directory. It can use ImageMagick commands such as `identify` and `convert`, shell utilities, or short scripts.
 
-The agent does not receive raw Workspace mutation tools. It receives product-level tools for inspecting photo state, running commands with the draft mounted at `/workspace`, making the draft current, and throwing the draft away.
+The agent does not receive raw Workspace control tools. It receives product-level tools for inspecting photo state, running commands with the draft mounted at `/workspace`, running Dynamic Worker code with a scoped Workspace file binding, making the draft current, and throwing the draft away.
 
 ## Durable state model
 
@@ -51,4 +55,6 @@ Draft edits may be durable before they are published. They stay isolated until t
 
 Workspace does not run commands, own the container, or decide how to edit an image. Sandbox owns execution. Think owns agent conversation and tool choice. Workspace owns durable files and revision boundaries.
 
-The demo uses the Workspace filesystem projection shape: tools operate on `/workspace`, and successful changes become part of the draft working copy. The long-term Workspace model also needs non-filesystem projections, especially scoped Dynamic Worker bindings, modules, and assets.
+The demo uses the Workspace filesystem projection shape for Sandbox commands: tools operate on `/workspace`, and successful changes become part of the draft working copy. It also uses the scoped file capability projection for Dynamic Worker code: delegated Worker code receives `env.WORKSPACE.readFile`, `writeFile`, `list`, and `stat` without receiving Workspace identity or publish authority.
+
+The remaining long-term Dynamic Worker gaps are module and asset projections backed by Workspace trees.
