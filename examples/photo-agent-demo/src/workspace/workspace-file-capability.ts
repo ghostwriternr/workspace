@@ -8,7 +8,7 @@ import {
 } from "../../../../packages/workspace/src/workspace/projections/scoped-file-capability";
 import { disposeRpcResult } from "./rpc-disposal";
 
-export type WorkspaceFileCapabilityProps = {
+type WorkspaceFileCapabilityProps = {
   workspaceName: string;
   draftEditId: string;
 };
@@ -64,7 +64,7 @@ export class WorkspaceFileCapability extends WorkerEntrypoint<Env, WorkspaceFile
   }
 }
 
-export function unwrapScopedResult<T>(result: ScopedWorkspaceRpcResult<T>): T {
+function unwrapScopedResult<T>(result: ScopedWorkspaceRpcResult<T>): T {
   if (result.status === "error") {
     throw new Error(result.error.message ?? result.error.tag);
   }

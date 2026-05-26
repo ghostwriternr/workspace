@@ -1,0 +1,16 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["test/**/*.test.ts"],
+  "project": ["src/**/*.ts", "test/**/*.ts"],
+  "ignoreDependencies": [
+    // `cloudflare:workers` is a Workers runtime/vitest-pool virtual module,
+    // not an npm package named `cloudflare`.
+    "cloudflare"
+  ],
+  "rules": {
+    // Unused value exports are usually real cleanup in this package. Type-only
+    // exports stay off while the product API/model docs are being implemented.
+    "exports": "error",
+    "types": "off"
+  }
+}

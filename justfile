@@ -9,6 +9,10 @@ check:
     cd packages/workspace && npm run check
     cd examples/photo-agent-demo && npm run check
 
+knip:
+    cd packages/workspace && npm run knip
+    cd examples/photo-agent-demo && npm run knip
+
 test:
     cd packages/workspace && npm test
     cd examples/photo-agent-demo && npm test

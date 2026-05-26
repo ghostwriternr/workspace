@@ -36,10 +36,3 @@ export function parentPath(path: string): string {
 export function nameFromPath(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
 }
-
-export function pathSegments(path: string): string[] {
-  if (path === "/") {
-    return [];
-  }
-  return path.slice(1).split("/");
-}

@@ -59,7 +59,7 @@ export function photoPathForContentType(contentType: string): string {
   throw new Error(`Unsupported photo content type: ${contentType}`);
 }
 
-export function normalizedContentType(contentType: string): string {
+function normalizedContentType(contentType: string): string {
   return contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
 }
 

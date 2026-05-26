@@ -8,7 +8,7 @@ type EntryTableDescriptor =
   | { tableName: "entries"; targetColumn?: undefined; targetId?: undefined }
   | { tableName: "revision_entries" | "session_entries"; targetColumn: "revision_id" | "session_id"; targetId: string };
 
-export class SqlReadableTree implements ReadableTree {
+class SqlReadableTree implements ReadableTree {
   constructor(
     protected readonly sql: SqlStorage,
     protected readonly descriptor: EntryTableDescriptor,
@@ -53,7 +53,7 @@ export class SqlReadableTree implements ReadableTree {
   }
 }
 
-export class SqlMutableTree extends SqlReadableTree implements MutableTree {
+class SqlMutableTree extends SqlReadableTree implements MutableTree {
   putDirectory(path: string, now: number): void {
     this.insertEntry(path, "directory", null, null, now);
   }

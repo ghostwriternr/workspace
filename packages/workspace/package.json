@@ -7,12 +7,14 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "check": "tsc --noEmit",
+    "check": "tsc --noEmit && npm run knip",
+    "knip": "knip",
     "test": "vitest run",
     "typegen": "wrangler types"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.16.9",
+    "knip": "^6.14.2",
     "typescript": "^5.5.2",
     "vitest": "^4.1.7",
     "wrangler": "^4.94.0"
