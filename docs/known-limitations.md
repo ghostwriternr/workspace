@@ -57,6 +57,12 @@ Sessions record the head version they started from, and `commit()` rejects stale
 
 That proves the safety boundary, but there is no merge, rebase, or conflict-detail model yet. Callers can inspect and discard a conflicted session, but Workspace does not yet help reconcile it with the newer head.
 
+## Product-facing API is not implemented
+
+The prototype currently exposes lower-level Workspace sessions, RPC result DTOs, scoped capabilities, and filesystem projection helpers. [`workspace-product-api.md`](./workspace-product-api.md) describes the intended product-facing shape for current files, file copies, attachments, capture, apply, and discard.
+
+Long-term, products should not need to handle session plumbing, stub disposal, loopback transport details, or projection internals in the happy path.
+
 ## No revision pruning
 
 Revisions and the blobs they reference are retained indefinitely.

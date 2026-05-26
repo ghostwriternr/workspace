@@ -6,7 +6,7 @@ The product promise is not "a filesystem" and not "a storage bucket". The produc
 
 Trusted Workers and Durable Objects can manipulate Workspace state directly. Sandboxes and containers can receive a filesystem projection such as `/workspace`. Dynamic Workers can receive scoped bindings, module sources, and static assets backed by Workspace. In every case, Workspace owns durable file state; execution environments receive capabilities over that state.
 
-This document captures the long-term product model and the durable semantics we want to preserve as the implementation changes.
+This document captures the long-term product model and the durable semantics we want to preserve as the implementation changes. See [`workspace-product-api.md`](./workspace-product-api.md) for the intended product-facing API vocabulary and happy path.
 
 ## Product principles
 
@@ -249,6 +249,8 @@ Dynamic Workers, agent-written code, plugins, and user-generated applications sh
 ### Filesystem tools
 
 Sandbox or container commands receive a filesystem view over a working copy. They can mutate files naturally, but those mutations remain working-copy state until a trusted parent commits.
+
+For product-facing APIs, this should feel like attaching a file copy to an execution environment and then capturing useful execution-local changes back into the copy. Capture is an attachment boundary; commit remains the Workspace publication boundary.
 
 This keeps the core safety rule consistent:
 

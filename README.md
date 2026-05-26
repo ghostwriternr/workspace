@@ -4,7 +4,7 @@ Workspace is durable file state for Cloudflare execution environments.
 
 Workers should be able to manipulate a Workspace through a direct file-tree API. Delegated code should receive scoped file capabilities. Sandboxes and containers should be able to use the same Workspace through a normal local working copy, such as `/workspace`. Dynamic Workers should be able to receive Workspace-backed modules, assets, and scoped bindings. Working-copy changes are published only when explicitly committed.
 
-See [`docs/workspace-product-model.md`](./docs/workspace-product-model.md) for the long-term product model, [`docs/product-boundaries.md`](./docs/product-boundaries.md) for guardrails, and [`docs/known-limitations.md`](./docs/known-limitations.md) for accepted prototype limitations.
+See [`docs/workspace-product-model.md`](./docs/workspace-product-model.md) for the long-term product model, [`docs/workspace-product-api.md`](./docs/workspace-product-api.md) for the intended product-facing API shape, [`docs/product-boundaries.md`](./docs/product-boundaries.md) for guardrails, and [`docs/known-limitations.md`](./docs/known-limitations.md) for accepted prototype limitations.
 
 ## Status
 
