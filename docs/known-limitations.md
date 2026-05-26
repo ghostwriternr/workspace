@@ -33,11 +33,17 @@ That is sufficient for the prototype, but long-term this is storage corruption o
 
 This is correct for proving isolated working-session semantics, but it is O(N) Durable Object SQLite storage per open session and O(N) metadata work at begin/commit time. Long-term, sessions may need copy-on-write metadata, deltas, or immutable tree objects.
 
-## Working-copy bridge scans host files
+## Filesystem projection scans host files
 
-The current working-copy bridge materializes files into the Sandbox filesystem and hashes host files during `flush()` to detect changes.
+The current filesystem projection materializes files into the Sandbox filesystem and hashes host files during `flush()` to detect changes.
 
-This proves `/workspace` working-copy semantics for the demo, but it is not the production container mount implementation. Long-term, Workspace needs a mount-like implementation that can avoid full-tree scans and avoid reading unchanged file contents back into the Worker.
+This proves `/workspace` working-copy semantics for the demo, but it is not the production Sandbox/container mount implementation. Long-term, Workspace needs a mount-like implementation that can avoid full-tree scans and avoid reading unchanged file contents back into the Worker.
+
+## No Dynamic Worker projections
+
+Workspace does not yet expose scoped Dynamic Worker capabilities, module sources, or static asset bindings backed by Workspace trees.
+
+The current prototype validates Worker RPC and Sandbox filesystem projections only. Long-term, Dynamic Workers should receive scoped Workspace capabilities instead of Workspace identity by default.
 
 ## No session garbage collection
 
