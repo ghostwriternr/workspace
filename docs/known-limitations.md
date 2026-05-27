@@ -2,17 +2,19 @@
 
 Accepted gaps in the current prototype. Each entry is intentional today and should be removed when it stops being intentional.
 
-## Revisions are full metadata copies
+## Tree state is one shared SQLite, not facets
 
-`snapshot()` copies the entire `entries` table into `revision_entries`. Correct for proving immutable revision semantics, but O(N) Durable Object SQLite storage per snapshot.
+Head, working copies, and revisions all live in the same SQLite database inside one Durable Object. `beginSession()` copies `entries` into `session_entries`. `commit()` replaces `entries` from that copy. `snapshot()` copies into `revision_entries`. Correct, but O(N) at every fork/commit and O(N) storage per open copy or revision.
 
-Revisit when: workspaces hold many files, commits become frequent, or DO SQLite pressure shows up. The likely fix is delta revisions, chunked tree snapshots, or immutable tree objects stored outside DO SQLite.
+The direction this is heading is named in [`architecture.md`](./architecture.md): one facet per tree state, with `ctx.facets.clone()` doing the copies (and using copy-on-write where the platform supports it). The relevant platform APIs aren't shipped yet, so this is a future-implementation item, not an immediate one. In the meantime, the public API should not expose session tables or row-copy behaviour.
 
-## Sessions copy full metadata
+## Content is always an R2 blob
 
-`beginSession()` copies the current `entries` table into `session_entries`. `commit()` replaces `entries` from that copy. Correct for proving isolated working-copy semantics, but O(N) at begin/commit and O(N) storage per open session.
+Every file entry points at a blob in `WORKSPACE_BLOBS`. That bakes in two assumptions that won't hold for every workload: that Workspace owns the bytes, and that they live in R2. We want a small `ContentRef` shape — see [`architecture.md`](./architecture.md) — so an entry can also point at an external source reference, a cached external reference, or eventually DO-local storage for small/hot files. Until that exists, every file content has to be eagerly imported as R2 bytes.
 
-Same likely fix: copy-on-write metadata, deltas, or immutable tree objects.
+## No source provenance
+
+Files imported from a GitHub commit, an S3 prefix, or any other external source aren't tagged with where they came from. Adapters can't tell which files have changed relative to their source, can't skip re-imports, and can't generate a clean export patch without doing their own bookkeeping. See [`sources.md`](./sources.md) for the shape this should take.
 
 ## No blob garbage collection
 

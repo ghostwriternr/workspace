@@ -79,6 +79,62 @@ Directories are **explicit** durable entries.
 
 This trades convenience for clarity. It makes diff, capture, and future projections tractable.
 
+## Storage shape, and where it's heading
+
+A few choices in the current implementation are load-bearing, and a few are placeholder. It helps to be explicit about which is which.
+
+### Today: SQLite metadata, R2 blobs
+
+Metadata lives in the Durable Object's SQLite. File contents live in R2 as content-addressed blobs. The DO is the source of truth for the tree; an entry row points at a blob key, and R2 stores immutable bytes keyed by digest. Multiple entries pointing at the same digest share storage. This works well for the kinds of files the prototype has dealt with so far — photos, generated images, agent notes — and it scales as object storage scales.
+
+The two real correctness rules:
+
+- The DO, not R2, decides whether a file "exists". R2 object presence is an implementation detail.
+- Blob keys are content-addressed and immutable. Overwrites create a new key; the old key is unreferenced and can be GC'd later.
+
+As long as those hold, multiple writers don't corrupt the tree — they conflict at the SQLite level via head version, and either succeed or fail cleanly.
+
+### Content references are the seam we want
+
+The prototype treats "file content" and "R2 blob" as the same thing. That's fine for now, but it bakes in an assumption that won't hold for every workload:
+
+- A coding agent materialising thousands of small source files into a Sandbox via per-file R2 reads is not where R2 shines.
+- A model-weights file the size of a small disk shouldn't be copied into R2 just because some product wants to attach it to a Workspace.
+- A file imported by reference from a GitHub commit doesn't have R2 bytes at all until something asks for them.
+
+The long-term shape is a **content reference** on each entry, with a few variants:
+
+- Workspace-owned blob in R2 (today's only case).
+- Workspace-owned blob in DO storage, for small/hot files where R2 round-trips hurt.
+- External source reference, hydrated on demand through an adapter (see [`sources.md`](./sources.md)).
+- Cached external reference, where Workspace has a local copy keyed by source version.
+
+We haven't built this yet, but it's worth keeping the door open: code that reads `entry.blobKey` directly is going to be in the way. Code that goes through a `ContentRef`-shaped boundary is not.
+
+### Tree state and Durable Object facets
+
+Today, head, working copies, and revisions all share one SQLite database inside one Durable Object. `beginSession()` copies the `entries` table into `session_entries`. `commit()` replaces `entries` from that copy. `snapshot()` copies it into `revision_entries`. This is correct, but it's O(N) at every fork/commit, and the metadata for every working copy and revision lives in the same actor.
+
+The better long-term shape is to use Durable Object **facets** for each tree state. The Workspace root stays where authority lives — head version, copy registry, revision registry, the public RPC surface — and the actual tree metadata for head, each copy, and each revision lives in its own facet. A `ctx.facets.clone(src, dst)` call (currently landing in workerd/edgeworker) then becomes the natural primitive for:
+
+- creating a working copy: clone `head` → `copies/<copyId>`.
+- taking a revision: clone `head` → `revisions/<revId>`.
+- applying a copy: clone `copies/<copyId>` → `head`.
+
+With copy-on-write where the host filesystem supports it, those operations stop being O(N).
+
+This is the direction, not the current state. The relevant facet APIs aren't shipped yet, and our prototype doesn't depend on them. What we should do today is keep the public API talking about file copies and revisions, not about session tables and entry rows, so that the implementation can move without breaking callers. The `ReadableTree` / `MutableTree` interfaces already help here.
+
+### Atoms, briefly
+
+It's worth naming these out loud:
+
+- **Authority atom:** one Workspace Durable Object. Owns identity, head version, the public API, lifecycle decisions. Not changing.
+- **Isolation atom:** a file copy (also a revision). Today: rows in a shared SQLite table. Likely future: a facet per tree state.
+- **Byte ownership atom:** a content reference. Today: an R2 blob key. Likely future: a tagged ref pointing at R2, DO storage, an external source, or a cached external source.
+
+Product code should only see the first two, and only through the names in [`product-api.md`](./product-api.md).
+
 ## How projections are implemented
 
 ### Scoped file capability
@@ -173,5 +229,6 @@ See [`AGENTS.md`](../AGENTS.md) for the short map, conventions (`Result`, `bette
 - [`product-model.md`](./product-model.md) — the conceptual model and principles.
 - [`product-api.md`](./product-api.md) — the target user-facing API.
 - [`product-boundaries.md`](./product-boundaries.md) — what Workspace doesn't do, and why.
+- [`sources.md`](./sources.md) — how external systems (GitHub, Hugging Face, S3, …) relate to a Workspace.
 - [`known-limitations.md`](./known-limitations.md) — accepted gaps in the prototype.
 - [`photo-agent-demo.md`](./photo-agent-demo.md) — what the example app proves.

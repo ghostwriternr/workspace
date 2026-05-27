@@ -23,6 +23,7 @@ For the conceptual model, see [`product-model.md`](./product-model.md). For the 
 - Agent orchestration or task scheduling.
 - Git history, branches, refs, remotes, rebase, merge.
 - Artifacts semantics.
+- Source adapters — GitHub, GitLab, Hugging Face, S3, external R2, Artifacts, user uploads. Bridging external systems into Workspace is product work; see [`sources.md`](./sources.md).
 - Policy, approval, grant, or audit systems.
 - Arbitrary object-bucket mounting.
 - Full distributed POSIX semantics.
@@ -48,9 +49,9 @@ Working-copy changes may be durable before they're published. Durable draft stat
 For any proposed feature, ask:
 
 1. Is this file state, or is it execution?
-2. Does it define Workspace semantics, or adapt them to one runtime?
+2. Does it define Workspace semantics, or adapt them to one runtime or one source?
 3. What authority does the caller receive?
 4. Can delegated code receive a scoped capability instead of Workspace identity?
 5. Is it a core semantic, or a product/controller concern?
 
-If the answer points to execution, orchestration, loading, Git, policy, or product-specific domain state — keep it out of Workspace core. If it's an adapter, preserve the dependency direction: adapters consume Workspace semantics; Workspace doesn't consume adapters.
+If the answer points to execution, orchestration, loading, Git, policy, source-specific lifecycle, or product-specific domain state — keep it out of Workspace core. If it's an adapter, preserve the dependency direction: adapters consume Workspace semantics; Workspace doesn't consume adapters.

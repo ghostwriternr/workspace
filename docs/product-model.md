@@ -51,6 +51,12 @@ The publish operation is `commit`. The escape hatch is `discard`. A product can 
 
 Workspace doesn't know about original photos, draft edits, code artifacts, agent tasks, or approval rules. Products express those through their own controllers and domain language. Workspace gives them the durable file substrate to do it on.
 
+### Sources are not Workspace
+
+Files in a Workspace might have come from a GitHub repo, a Hugging Face model, an S3 bucket, an Artifacts ref, or a user upload. Workspace doesn't know or care. Those systems have their own lifecycles, and bridging them is product work — see [`sources.md`](./sources.md).
+
+Workspace can record where a file came from as metadata. It does not watch the source for changes.
+
 ## Semantic model
 
 ### Durable tree
@@ -66,6 +72,8 @@ A working copy is an isolated, mutable view of the tree, initialized from the cu
 You can use it directly through a Worker, expose it to a Sandbox through a filesystem projection, or hand it to a Dynamic Worker through a scoped binding. Changes inside the copy don't affect current files until commit.
 
 Working copies are durable. They can be looked up, listed, resumed, and cleaned up without the calling product having to track their state separately.
+
+File copies are the **isolation atom** of Workspace — the unit you fork, edit, and either publish or throw away. Implementation can vary (today it's tables inside the Workspace Durable Object; long-term it's likely Durable Object facets — see [`architecture.md`](./architecture.md)). The product model doesn't change with the implementation.
 
 ### Commit and discard
 

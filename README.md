@@ -11,12 +11,15 @@ It's the missing primitive between "object storage" and "filesystem inside a run
 - Explicit publish (`commit`) and explicit throwaway (`discard`). Nothing is published implicitly when a command exits or a Worker returns.
 - Immutable revisions of head as recovery points.
 
+Workspace is source-agnostic: files might come from a user upload, a GitHub checkout, a Hugging Face snapshot, an S3 bucket, or anywhere else. Bridging those systems in is product work (see [`docs/sources.md`](./docs/sources.md)).
+
 ## Where to look
 
 - [`docs/architecture.md`](./docs/architecture.md) — how the system is actually built and how a demo flow runs end-to-end. **Start here.**
 - [`docs/product-model.md`](./docs/product-model.md) — the conceptual model: working copies, projections, authority.
 - [`docs/product-api.md`](./docs/product-api.md) — the user-facing API we're aiming for.
 - [`docs/product-boundaries.md`](./docs/product-boundaries.md) — what Workspace is and isn't.
+- [`docs/sources.md`](./docs/sources.md) — how external systems (GitHub, Hugging Face, S3, …) relate to a Workspace.
 - [`docs/known-limitations.md`](./docs/known-limitations.md) — honest list of prototype gaps.
 - [`docs/photo-agent-demo.md`](./docs/photo-agent-demo.md) — what the example app proves.
 - [`AGENTS.md`](./AGENTS.md) — guardrails and conventions for anyone (or any agent) modifying the repo.
