@@ -1,6 +1,6 @@
 # Product API
 
-This doc describes the user-facing API we want product code (and agent tools) to see. The current-files, file-copy, attachment, and capture layer exists today; scoped file helpers are still a design target. See [`architecture.md`](./architecture.md) for how the lower layers work, and `examples/photo-agent-demo` for the proving ground.
+This doc describes the user-facing API we want product code (and agent tools) to see. The current-files, file-copy, attachment/capture, and scoped file layers exist today. See [`architecture.md`](./architecture.md) for how the lower layers work, and `examples/photo-agent-demo` for the proving ground.
 
 For the conceptual model behind these names, see [`product-model.md`](./product-model.md).
 
@@ -26,7 +26,9 @@ const copyResult = await workspace.files.copy("crop-square");
 if (Result.isError(copyResult)) return copyResult;
 const copy = copyResult.value;
 
-const attachment = await copy.files.attach(sandbox, "/workspace");
+const attachmentResult = await copy.files.attach(sandbox, "/workspace");
+if (Result.isError(attachmentResult)) return attachmentResult;
+const attachment = attachmentResult.value;
 
 const result = await sandbox.exec(
   "convert photos/original.jpg -gravity center -crop 1024x1024+0+0 +repage photos/current",
@@ -34,7 +36,8 @@ const result = await sandbox.exec(
 );
 
 if (result.success) {
-  await attachment.capture();
+  const capture = await attachment.capture();
+  if (Result.isError(capture)) return capture;
 }
 
 const apply = await copy.apply();        // or: await copy.discard();
@@ -88,7 +91,10 @@ A copy is durable but not live. It can outlive a request, an agent turn, or a pr
 Attachments are how file copies become usable from a runtime. For Sandboxes and containers, that means files appear under a local path like `/workspace`.
 
 ```ts
-const attachment = await copy.files.attach(sandbox, "/workspace");
+const attachmentResult = await copy.files.attach(sandbox, "/workspace");
+if (Result.isError(attachmentResult)) return attachmentResult;
+
+const attachment = attachmentResult.value;
 await sandbox.exec("npm test", { cwd: attachment.path });
 await attachment.capture();
 ```
@@ -162,9 +168,15 @@ const copyResult = await workspace.files.copy("edit");
 if (Result.isError(copyResult)) return copyResult;
 
 const copy = copyResult.value;
-const attachment = await copy.files.attach(sandbox, "/workspace");
+const attachmentResult = await copy.files.attach(sandbox, "/workspace");
+if (Result.isError(attachmentResult)) return attachmentResult;
+
+const attachment = attachmentResult.value;
 const result = await sandbox.exec(command, { cwd: attachment.path });
-if (result.success) await attachment.capture();
+if (result.success) {
+  const capture = await attachment.capture();
+  if (Result.isError(capture)) return capture;
+}
 
 const applied = await copy.apply();
 if (Result.isError(applied)) return applied;
@@ -199,7 +211,7 @@ Out of the happy path:
 - branching on raw RPC result shapes,
 - disposing RPC stubs,
 - knowing about loopback entrypoint transport,
-- constructing scoped capabilities by hand,
+- constructing scoped capability plumbing by hand,
 - understanding Sandbox mount-host internals,
 - creating parent directories before every `writeFile`.
 
@@ -216,6 +228,6 @@ These details belong in lower layers. They shouldn't be the first thing a produc
 
 ## Current gap
 
-The prototype now exposes current files, durable file copies, filesystem attachments, capture, `apply()`, and `discard()` through this product-facing layer. Scoped Dynamic Worker file capabilities still use lower-level projection helpers.
+The prototype now exposes current files, durable file copies, filesystem attachments, capture, scoped file capabilities, `apply()`, and `discard()` through this product-facing layer.
 
-Future implementation should be judged by whether code like `examples/photo-agent-demo` can express scoped delegation in these terms without exposing raw Workspace machinery.
+Future implementation should be judged by whether code like `examples/photo-agent-demo` can express runtime delegation in these terms without exposing raw Workspace machinery.

@@ -157,6 +157,41 @@ describe("Workspace product API", () => {
     }
   });
 
+  it("creates scoped file capabilities from file copies", async () => {
+    const workspace = Workspace.get(env.WORKSPACES, "product-copy-scoped");
+
+    await workspace.files.mkdir("/photos");
+    await workspace.files.write("/photos/current", bytes("photo"));
+    const copyResult = await workspace.files.copy("dynamic-worker");
+    if (Result.isError(copyResult)) {
+      throw new Error("copy failed");
+    }
+
+    const capability = copyResult.value.files.scoped({
+      read: "/photos/**",
+      write: "/notes/**",
+    });
+
+    await expect(capability.readFile("/photos/current")).resolves.toEqual({
+      status: "ok",
+      value: bytes("photo"),
+    });
+    await expect(capability.writeFile("/notes/edit-summary.md", bytes("note"))).resolves.toEqual({ status: "ok" });
+    await expect(capability.writeFile("/photos/current", bytes("updated"))).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "ScopedWorkspaceAccessError" },
+    });
+
+    const note = await copyResult.value.files.read("/notes/edit-summary.md");
+    expect(Result.isOk(note)).toBe(true);
+    if (Result.isOk(note)) {
+      expect(text(note.value)).toBe("note");
+    }
+    expect("apply" in capability).toBe(false);
+    expect("discard" in capability).toBe(false);
+    expect("getByName" in capability).toBe(false);
+  });
+
   it("uses session-id operations without looking up session stubs for file operations", async () => {
     const object = new FakeWorkspaceObject();
     const workspace = Workspace.get({ getByName: () => object }, "unit");

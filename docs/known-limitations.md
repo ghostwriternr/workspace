@@ -52,8 +52,8 @@ Sessions record the head version they started from. `commit()` rejects stale ses
 
 Revisions and the blobs they reference are retained indefinitely. No retention policy, pruning, or export semantics. Keep this outside the core model until revision usage patterns are clearer.
 
-## The user-facing API is only partly built
+## The user-facing API is still shallow
 
-The package now exposes the first product-facing layer: `Workspace.get(...)`, `workspace.files`, durable file copies, `copy.files.attach(...)`, `attachment.capture()`, `copy.apply()`, and `copy.discard()`. It hides sessions, raw RPC result DTOs, RPC stub disposal, and direct filesystem projection setup for that path.
+The package now exposes the first product-facing layer: `Workspace.get(...)`, `workspace.files`, durable file copies, `copy.files.attach(...)`, `attachment.capture()`, `copy.files.scoped(...)`, `copy.apply()`, and `copy.discard()`. It hides sessions, raw RPC result DTOs, RPC stub disposal, direct filesystem projection setup, and scoped capability construction for that path.
 
-The Dynamic Worker path still uses the scoped file capability helper directly. That should move behind a `copy.files.scoped(...)`-style API.
+The API is still a thin layer over the prototype internals. It does not yet cover source adapters, module/asset projections, lifecycle tooling, retention, or higher-level import/export workflows.

@@ -16,7 +16,7 @@ export type WorkspaceCommandResult = {
 
 export interface DemoWorkspaceCommandRunner {
   runWorkspaceCommand(options: {
-    files: WorkspaceFileCopyFiles;
+    files: Pick<WorkspaceFileCopyFiles, "attach">;
     command: string;
     root: string;
     draftEditId: string;
@@ -59,7 +59,7 @@ export class SandboxWorkspaceCommandRunner implements DemoWorkspaceCommandRunner
   constructor(private readonly sandbox: SandboxClient | SandboxClientFactory) {}
 
   async runWorkspaceCommand(options: {
-    files: WorkspaceFileCopyFiles;
+    files: Pick<WorkspaceFileCopyFiles, "attach">;
     command: string;
     root: string;
     draftEditId: string;

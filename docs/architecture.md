@@ -139,9 +139,7 @@ Product code should only see the first two, and only through the names in [`prod
 
 ### Scoped file capability
 
-`packages/workspace/src/workspace/projections/scoped-file-capability.ts`
-
-A factory that wraps a file-copy file API and returns an `RpcTarget` exposing only `readFile`, `writeFile`, `list`, `stat`. It enforces a root prefix, allowed read globs, allowed write globs, optional delete permission (off by default), path normalisation, and traversal rejection.
+`copy.files.scoped(...)` wraps a file-copy file API and returns an `RpcTarget` exposing only `readFile`, `writeFile`, `list`, `stat`. It enforces a root prefix, allowed read globs, allowed write globs, path normalisation, and traversal rejection. The lower-level implementation is `packages/workspace/src/workspace/projections/scoped-file-capability.ts`.
 
 It does **not** expose `commit`, `discard`, `beginSession`, `getByName`, revisions, or Workspace identity. This is what gets passed into a Dynamic Worker as `env.WORKSPACE`.
 

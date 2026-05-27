@@ -5,6 +5,7 @@ import {
   type WorkspaceFileAttachmentError,
   type WorkspaceFileAttachmentHost,
 } from "./attachment";
+import { createWorkspaceFileCapability, type ScopedWorkspaceFileCapability } from "../projections/scoped-file-capability";
 import type {
   WorkspaceDeleteRpcResult,
   WorkspaceEntry,
@@ -63,8 +64,15 @@ export type WorkspaceFilesApi = {
   delete(path: string): Promise<BetterResult<void, WorkspaceFileError>>;
 };
 
+export type WorkspaceFileScope = {
+  root?: string;
+  read: string | string[];
+  write: string | string[];
+};
+
 export type WorkspaceFileCopyFiles = WorkspaceFilesApi & {
   attach(host: WorkspaceFileAttachmentHost, path: string): Promise<BetterResult<WorkspaceFileAttachment, WorkspaceFileAttachmentError>>;
+  scoped(options: WorkspaceFileScope): ScopedWorkspaceFileCapability;
 };
 
 type RpcErrorOf<T> = T extends { status: "error"; error: infer E } ? E : never;
@@ -153,6 +161,15 @@ class WorkspaceCopyFiles implements WorkspaceFileCopyFiles {
   async attach(host: WorkspaceFileAttachmentHost, path: string): Promise<BetterResult<WorkspaceFileAttachment, WorkspaceFileAttachmentError>> {
     return attachWorkspaceFiles(this, host, path);
   }
+
+  scoped(options: WorkspaceFileScope): ScopedWorkspaceFileCapability {
+    return createWorkspaceFileCapability({
+      files: this,
+      root: options.root ?? "/",
+      read: arrayOf(options.read),
+      write: arrayOf(options.write),
+    });
+  }
 }
 
 class WorkspaceFiles implements WorkspaceCurrentFiles {
@@ -204,6 +221,10 @@ class WorkspaceFiles implements WorkspaceCurrentFiles {
 type RpcResult<T, E> =
   | { status: "ok"; value?: T }
   | { status: "error"; error: E };
+
+function arrayOf(value: string | string[]): string[] {
+  return Array.isArray(value) ? value : [value];
+}
 
 function rpcToResult<T, E>(result: RpcResult<T, E>): BetterResult<T, E> {
   if (result.status === "error") {

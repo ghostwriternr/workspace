@@ -10,6 +10,7 @@ export {
   type WorkspaceDiscardError,
   type WorkspaceFileCopyFiles,
   type WorkspaceFileError,
+  type WorkspaceFileScope,
   type WorkspaceFilesApi,
   type WorkspaceNamespace,
 } from "./workspace/product/workspace";
@@ -21,19 +22,6 @@ export {
 } from "./workspace/product/attachment";
 export { WorkspaceObject } from "./workspace/runtime/workspace-object";
 export {
-  attachWorkspaceMount,
-  MountPathEscapeError,
-  UnsupportedMountEntryError,
-  type HostMountEntry,
-  type WorkspaceMount,
-  type WorkspaceMountError,
-  type WorkspaceMountFiles,
-  type WorkspaceMountFlushSummary,
-  type WorkspaceMountHost,
-  type WorkspaceMountStat,
-} from "./workspace/projections/working-copy-mount";
-export {
-  createWorkspaceFileCapability,
   type ScopedWorkspaceAccessErrorDto,
   type ScopedWorkspaceErrorDto,
   type ScopedWorkspaceFileCapability,

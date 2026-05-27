@@ -129,7 +129,10 @@ const copyResult = await workspace.files.copy("photo-edit");
 if (Result.isError(copyResult)) return copyResult;
 const copy = copyResult.value;
 
-const attachment = await copy.files.attach(sandbox, "/workspace");
+const attachmentResult = await copy.files.attach(sandbox, "/workspace");
+if (Result.isError(attachmentResult)) return attachmentResult;
+const attachment = attachmentResult.value;
+
 const result = await sandbox.exec("convert /workspace/photos/original.jpg ... /workspace/photos/current", {
   cwd: attachment.path,
 });

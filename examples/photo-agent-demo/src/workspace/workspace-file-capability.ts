@@ -1,11 +1,11 @@
 import { Result } from "better-result";
 import { WorkerEntrypoint } from "cloudflare:workers";
 
-// This loopback entrypoint adapts the package's scoped file capability into a Dynamic
-// Worker binding. It is transport glue, not photo product logic.
+// This loopback entrypoint adapts a product-level scoped file capability into a
+// Dynamic Worker binding. It is transport glue, not photo product logic.
 import {
-  createWorkspaceFileCapability,
   Workspace,
+  type ScopedWorkspaceFileCapability,
   type ScopedWorkspaceRpcResult,
 } from "@cloudflare/workspace";
 
@@ -26,7 +26,7 @@ export type DynamicWorkerWorkspaceBindingFactory = {
 };
 
 export class WorkspaceFileCapability extends WorkerEntrypoint<Env, WorkspaceFileCapabilityProps> implements DynamicWorkerWorkspaceBinding {
-  private capability?: ReturnType<typeof createWorkspaceFileCapability>;
+  private capability?: ScopedWorkspaceFileCapability;
 
   async readFile(path: string): Promise<Uint8Array> {
     return this.withCapability((workspace) => workspace.readFile(path));
@@ -45,22 +45,20 @@ export class WorkspaceFileCapability extends WorkerEntrypoint<Env, WorkspaceFile
   }
 
   private async withCapability<T>(
-    useCapability: (workspace: ReturnType<typeof createWorkspaceFileCapability>) => Promise<ScopedWorkspaceRpcResult<T>>,
+    useCapability: (workspace: ScopedWorkspaceFileCapability) => Promise<ScopedWorkspaceRpcResult<T>>,
   ): Promise<T> {
     this.capability ??= await this.createCapability();
     return unwrapScopedResult(await useCapability(this.capability));
   }
 
-  private async createCapability(): Promise<ReturnType<typeof createWorkspaceFileCapability>> {
+  private async createCapability(): Promise<ScopedWorkspaceFileCapability> {
     const workspace = Workspace.get(this.env.WORKSPACES, this.ctx.props.workspaceName);
     const copy = await workspace.files.getCopy(this.ctx.props.draftEditId);
     if (Result.isError(copy)) {
       throw new Error(`draft edit not found: ${copy.error.tag}`);
     }
 
-    return createWorkspaceFileCapability({
-      files: copy.value.files,
-      root: "/",
+    return copy.value.files.scoped({
       read: ["/photos/**"],
       write: ["/photos/**", "/notes/**"],
     });

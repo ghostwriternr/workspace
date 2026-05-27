@@ -72,7 +72,7 @@ export class UnsupportedMountEntryError extends TaggedError("UnsupportedMountEnt
   }
 }
 
-export class MountPathEscapeError extends TaggedError("MountPathEscapeError")<{
+class MountPathEscapeError extends TaggedError("MountPathEscapeError")<{
   root: string;
   path: string;
   message: string;

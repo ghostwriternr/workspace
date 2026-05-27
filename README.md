@@ -34,7 +34,7 @@ examples/photo-agent-demo/  Worker app: Think agent edits photos via Sandbox + D
 
 ## Status
 
-Prototype. The core durable semantics work (head tree, working copies, revisions, scoped file capabilities, filesystem projection). The first product-facing API layer exists for current files, file copies, filesystem attachments, capture, apply, and discard. See `docs/known-limitations.md` for the full list.
+Prototype. The core durable semantics work (head tree, working copies, revisions, scoped file capabilities, filesystem projection). The first product-facing API layer exists for current files, file copies, filesystem attachments, capture, scoped file capabilities, apply, and discard. See `docs/known-limitations.md` for the full list.
 
 The photo agent example is deployed at <https://workspace-photo-agent-demo.ghostwriternr.workers.dev>.
 
