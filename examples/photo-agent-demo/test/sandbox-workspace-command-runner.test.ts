@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
 import { SandboxWorkspaceCommandRunner } from "../src/workspace/sandbox-workspace-command-runner";
@@ -22,7 +23,7 @@ describe("SandboxWorkspaceCommandRunner", () => {
     const runner = new SandboxWorkspaceCommandRunner(sandbox);
 
     const result = await runner.runWorkspaceCommand({
-      workingCopy,
+      files: workingCopy,
       root: "/workspace",
       command: "convert /workspace/photos/original.png /workspace/photos/current",
       draftEditId: "draft-1",
@@ -72,7 +73,7 @@ describe("SandboxWorkspaceCommandRunner", () => {
 
     await expect(
       runner.runWorkspaceCommand({
-        workingCopy,
+        files: workingCopy,
         root: "/workspace",
         command: "convert /workspace/photos/current /workspace/photos/current",
         draftEditId: "draft-1",
@@ -83,10 +84,6 @@ describe("SandboxWorkspaceCommandRunner", () => {
   });
 });
 
-type RpcResult<T = unknown> =
-  | { status: "ok"; value?: T }
-  | { status: "error"; error: { tag: string } };
-
 type FakeEntry =
   | { type: "directory" }
   | { type: "file"; contents: Uint8Array };
@@ -94,10 +91,10 @@ type FakeEntry =
 class FakeWorkingCopy {
   constructor(private readonly entries: Record<string, FakeEntry>) {}
 
-  async list(path: string): Promise<RpcResult<Array<{ name: string; path: string; type: "directory" | "file" }>>> {
+  async list(path: string): Promise<Result<Array<{ name: string; path: string; type: "directory" | "file" }>, { tag: string }>> {
     const entry = this.entries[path];
-    if (!entry) return { status: "error", error: { tag: "PathNotFoundError" } };
-    if (entry.type === "file") return { status: "error", error: { tag: "NotDirectoryError" } };
+    if (!entry) return Result.err({ tag: "PathNotFoundError" });
+    if (entry.type === "file") return Result.err({ tag: "NotDirectoryError" });
 
     const prefix = path === "/" ? "/" : `${path}/`;
     const value = Object.entries(this.entries)
@@ -109,44 +106,41 @@ class FakeWorkingCopy {
         type: child.type,
       }));
 
-    return { status: "ok", value };
+    return Result.ok(value);
   }
 
-  async readFile(path: string): Promise<RpcResult<Uint8Array>> {
+  async read(path: string): Promise<Result<Uint8Array, { tag: string }>> {
     const entry = this.entries[path];
-    if (!entry) return { status: "error", error: { tag: "PathNotFoundError" } };
-    if (entry.type === "directory") return { status: "error", error: { tag: "IsDirectoryError" } };
-    return { status: "ok", value: entry.contents };
+    if (!entry) return Result.err({ tag: "PathNotFoundError" });
+    if (entry.type === "directory") return Result.err({ tag: "IsDirectoryError" });
+    return Result.ok(entry.contents);
   }
 
-  async mkdir(path: string): Promise<RpcResult> {
+  async mkdir(path: string): Promise<Result<void, { tag: string }>> {
     this.entries[path] = { type: "directory" };
-    return { status: "ok" };
+    return Result.ok();
   }
 
-  async writeFile(path: string, contents: Uint8Array): Promise<RpcResult> {
+  async write(path: string, contents: Uint8Array): Promise<Result<void, { tag: string }>> {
     this.entries[path] = { type: "file", contents };
-    return { status: "ok" };
+    return Result.ok();
   }
 
-  async delete(path: string): Promise<RpcResult> {
+  async delete(path: string): Promise<Result<void, { tag: string }>> {
     delete this.entries[path];
-    return { status: "ok" };
+    return Result.ok();
   }
 
-  async stat(path: string): Promise<RpcResult<{ path: string; type: "directory" | "file"; size: number | null; createdAt: number; updatedAt: number }>> {
+  async stat(path: string): Promise<Result<{ path: string; type: "directory" | "file"; size: number | null; createdAt: number; updatedAt: number }, { tag: string }>> {
     const entry = this.entries[path];
-    if (!entry) return { status: "error", error: { tag: "PathNotFoundError" } };
-    return {
-      status: "ok",
-      value: {
+    if (!entry) return Result.err({ tag: "PathNotFoundError" });
+    return Result.ok({
         path,
         type: entry.type,
         size: entry.type === "file" ? entry.contents.byteLength : null,
         createdAt: 1,
         updatedAt: 1,
-      },
-    };
+    });
   }
 
   files(): Record<string, Uint8Array> {

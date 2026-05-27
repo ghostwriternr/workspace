@@ -1,9 +1,5 @@
 import { Result, TaggedError } from "better-result";
 
-export type RpcResult<T = unknown> =
-  | { status: "ok"; value?: T }
-  | { status: "error"; error: { tag: string; message?: string } };
-
 export type WorkspaceMountEntry = {
   name: string;
   path: string;
@@ -18,13 +14,15 @@ export type WorkspaceMountStat = {
   updatedAt: number;
 };
 
-export type WorkspaceMountWorkingCopy = {
-  list(path: string): Promise<RpcResult<WorkspaceMountEntry[]>>;
-  readFile(path: string): Promise<RpcResult<Uint8Array>>;
-  mkdir(path: string): Promise<RpcResult>;
-  writeFile(path: string, contents: Uint8Array): Promise<RpcResult>;
-  delete(path: string): Promise<RpcResult>;
-  stat(path: string): Promise<RpcResult<WorkspaceMountStat>>;
+type WorkspaceFileResult<T = void> = Promise<Result<T, { tag: string; message?: string }>>;
+
+export type WorkspaceMountFiles = {
+  delete(path: string): WorkspaceFileResult;
+  list(path: string): WorkspaceFileResult<WorkspaceMountEntry[]>;
+  mkdir(path: string): WorkspaceFileResult;
+  read(path: string): WorkspaceFileResult<Uint8Array>;
+  stat(path: string): WorkspaceFileResult<WorkspaceMountStat>;
+  write(path: string, contents: Uint8Array): WorkspaceFileResult;
 };
 
 export type HostMountEntry = {
@@ -97,7 +95,7 @@ export type WorkspaceMount = {
 };
 
 export async function attachWorkspaceMount(options: {
-  workingCopy: WorkspaceMountWorkingCopy;
+  files: WorkspaceMountFiles;
   host: WorkspaceMountHost;
   root: string;
 }): Promise<WorkspaceMountAttachResult> {
@@ -107,7 +105,7 @@ export async function attachWorkspaceMount(options: {
   await options.host.resetDirectory?.(root);
   await options.host.mkdir(root, { recursive: true });
   const materialized = await materializeDirectory({
-    workingCopy: options.workingCopy,
+    files: options.files,
     host: options.host,
     root,
     workspacePath: "/",
@@ -119,7 +117,7 @@ export async function attachWorkspaceMount(options: {
 
   return Result.ok({
     root,
-    flush: () => flushMount({ workingCopy: options.workingCopy, host: options.host, root, baseline }),
+    flush: () => flushMount({ files: options.files, host: options.host, root, baseline }),
   });
 }
 
@@ -128,13 +126,13 @@ type MountedEntry =
   | { type: "file"; digest: string };
 
 async function materializeDirectory(options: {
-  workingCopy: WorkspaceMountWorkingCopy;
+  files: WorkspaceMountFiles;
   host: WorkspaceMountHost;
   root: string;
   workspacePath: string;
   baseline: Map<string, MountedEntry>;
 }): Promise<Result<void, WorkspaceMountError>> {
-  const entries = await rpcValue(options.workingCopy.list(options.workspacePath), `list ${options.workspacePath}`);
+  const entries = await resultValue(options.files.list(options.workspacePath), `list ${options.workspacePath}`);
   if (Result.isError(entries)) {
     return Result.err(entries.error);
   }
@@ -149,7 +147,7 @@ async function materializeDirectory(options: {
         return Result.err(child.error);
       }
     } else {
-      const contents = await rpcValue(options.workingCopy.readFile(entry.path), `read ${entry.path}`);
+      const contents = await resultValue(options.files.read(entry.path), `read ${entry.path}`);
       if (Result.isError(contents)) {
         return Result.err(contents.error);
       }
@@ -162,7 +160,7 @@ async function materializeDirectory(options: {
 }
 
 async function flushMount(options: {
-  workingCopy: WorkspaceMountWorkingCopy;
+  files: WorkspaceMountFiles;
   host: WorkspaceMountHost;
   root: string;
   baseline: Map<string, MountedEntry>;
@@ -202,7 +200,7 @@ async function flushMount(options: {
     .map(([path]) => path)
     .sort();
   for (const path of removedFiles) {
-    const deletedFile = await rpcValue(options.workingCopy.delete(path), `delete ${path}`);
+    const deletedFile = await resultValue(options.files.delete(path), `delete ${path}`);
     if (Result.isError(deletedFile)) {
       return Result.err(deletedFile.error);
     }
@@ -215,7 +213,7 @@ async function flushMount(options: {
       .map(([path]) => path),
   ).reverse();
   for (const path of removedDirectories) {
-    const deletedDirectory = await rpcValue(options.workingCopy.delete(path), `delete ${path}`);
+    const deletedDirectory = await resultValue(options.files.delete(path), `delete ${path}`);
     if (Result.isError(deletedDirectory)) {
       return Result.err(deletedDirectory.error);
     }
@@ -228,7 +226,7 @@ async function flushMount(options: {
       .map(([path]) => path),
   );
   for (const path of createdDirectories) {
-    const madeDirectory = await rpcValue(options.workingCopy.mkdir(path), `mkdir ${path}`);
+    const madeDirectory = await resultValue(options.files.mkdir(path), `mkdir ${path}`);
     if (Result.isError(madeDirectory)) {
       return Result.err(madeDirectory.error);
     }
@@ -248,7 +246,7 @@ async function flushMount(options: {
     const previous = options.baseline.get(path);
     if (!previous) {
       const contents = await options.host.readFile(hostPathForWorkspacePath(options.root, path));
-      const wroteFile = await rpcValue(options.workingCopy.writeFile(path, contents), `write ${path}`);
+      const wroteFile = await resultValue(options.files.write(path, contents), `write ${path}`);
       if (Result.isError(wroteFile)) {
         return Result.err(wroteFile.error);
       }
@@ -258,7 +256,7 @@ async function flushMount(options: {
 
     if (previous.type !== "file" || previous.digest !== next.digest) {
       const contents = await options.host.readFile(hostPathForWorkspacePath(options.root, path));
-      const wroteFile = await rpcValue(options.workingCopy.writeFile(path, contents), `write ${path}`);
+      const wroteFile = await resultValue(options.files.write(path, contents), `write ${path}`);
       if (Result.isError(wroteFile)) {
         return Result.err(wroteFile.error);
       }
@@ -283,9 +281,12 @@ async function flushMount(options: {
   return Result.ok({ created, modified, deleted, unchanged });
 }
 
-async function rpcValue<T>(result: Promise<RpcResult<T>>, operation: string): Promise<Result<T, MountOperationError>> {
+async function resultValue<T>(
+  result: Promise<Result<T, { tag: string; message?: string }>>,
+  operation: string,
+): Promise<Result<T, MountOperationError>> {
   const value = await result;
-  if (value.status === "error") {
+  if (Result.isError(value)) {
     return Result.err(new MountOperationError({
       operation,
       errorTag: value.error.tag,
@@ -293,7 +294,7 @@ async function rpcValue<T>(result: Promise<RpcResult<T>>, operation: string): Pr
     }));
   }
 
-  return Result.ok(value.value as T);
+  return Result.ok(value.value);
 }
 
 function sortWorkspaceEntries(entries: WorkspaceMountEntry[]): WorkspaceMountEntry[] {

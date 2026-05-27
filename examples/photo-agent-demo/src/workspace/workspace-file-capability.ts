@@ -1,12 +1,13 @@
+import { Result } from "better-result";
 import { WorkerEntrypoint } from "cloudflare:workers";
 
 // This loopback entrypoint adapts the package's scoped file capability into a Dynamic
 // Worker binding. It is transport glue, not photo product logic.
 import {
   createWorkspaceFileCapability,
+  Workspace,
   type ScopedWorkspaceRpcResult,
 } from "@cloudflare/workspace";
-import { disposeRpcResult } from "./rpc-disposal";
 
 type WorkspaceFileCapabilityProps = {
   workspaceName: string;
@@ -25,6 +26,8 @@ export type DynamicWorkerWorkspaceBindingFactory = {
 };
 
 export class WorkspaceFileCapability extends WorkerEntrypoint<Env, WorkspaceFileCapabilityProps> implements DynamicWorkerWorkspaceBinding {
+  private capability?: ReturnType<typeof createWorkspaceFileCapability>;
+
   async readFile(path: string): Promise<Uint8Array> {
     return this.withCapability((workspace) => workspace.readFile(path));
   }
@@ -44,23 +47,23 @@ export class WorkspaceFileCapability extends WorkerEntrypoint<Env, WorkspaceFile
   private async withCapability<T>(
     useCapability: (workspace: ReturnType<typeof createWorkspaceFileCapability>) => Promise<ScopedWorkspaceRpcResult<T>>,
   ): Promise<T> {
-    const workspace = this.env.WORKSPACES.getByName(this.ctx.props.workspaceName);
-    const sessionResult = await workspace.getSession(this.ctx.props.draftEditId);
-    try {
-      if (sessionResult.status === "error") {
-        throw new Error(`draft edit not found: ${sessionResult.error.tag}`);
-      }
+    this.capability ??= await this.createCapability();
+    return unwrapScopedResult(await useCapability(this.capability));
+  }
 
-      const capability = createWorkspaceFileCapability({
-        workingCopy: sessionResult.value!,
-        root: "/",
-        read: ["/photos/**"],
-        write: ["/photos/**", "/notes/**"],
-      });
-      return unwrapScopedResult(await useCapability(capability));
-    } finally {
-      disposeRpcResult(sessionResult);
+  private async createCapability(): Promise<ReturnType<typeof createWorkspaceFileCapability>> {
+    const workspace = Workspace.get(this.env.WORKSPACES, this.ctx.props.workspaceName);
+    const copy = await workspace.files.getCopy(this.ctx.props.draftEditId);
+    if (Result.isError(copy)) {
+      throw new Error(`draft edit not found: ${copy.error.tag}`);
     }
+
+    return createWorkspaceFileCapability({
+      files: copy.value.files,
+      root: "/",
+      read: ["/photos/**"],
+      write: ["/photos/**", "/notes/**"],
+    });
   }
 }
 

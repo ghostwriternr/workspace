@@ -1,6 +1,6 @@
+import { Result } from "better-result";
 import { RpcTarget } from "cloudflare:workers";
 
-import type { RpcResult, WorkspaceMountWorkingCopy } from "./working-copy-mount";
 import type { WorkspaceEntry, WorkspaceStat } from "../model/rpc";
 
 export type ScopedWorkspaceAccessErrorDto = {
@@ -43,10 +43,18 @@ export type ScopedWorkspaceFileCapability = {
   stat(path: string): Promise<ScopedWorkspaceRpcResult<WorkspaceStat>>;
 };
 
-export type WorkspaceFileWorkingCopy = WorkspaceMountWorkingCopy;
+type WorkspaceFileResult<T = void> = Promise<Result<T, { tag: string; message?: string }>>;
+
+type ScopedWorkspaceFiles = {
+  mkdir(path: string): WorkspaceFileResult;
+  read(path: string): WorkspaceFileResult<Uint8Array>;
+  write(path: string, contents: Uint8Array): WorkspaceFileResult;
+  list(path: string): WorkspaceFileResult<WorkspaceEntry[]>;
+  stat(path: string): WorkspaceFileResult<WorkspaceStat>;
+};
 
 export type ScopedWorkspaceFileCapabilityOptions = {
-  workingCopy: WorkspaceFileWorkingCopy;
+  files: ScopedWorkspaceFiles;
   root: string;
   read: string[];
   write: string[];
@@ -74,31 +82,31 @@ class ScopedWorkspaceFileCapabilityTarget extends RpcTarget implements ScopedWor
     const target = this.resolveAllowedPath("readFile", path, this.readScopes);
     if (target.status === "error") return target;
 
-    return passThroughRpcResult(this.options.workingCopy.readFile(target.value));
+    return resultToRpc(this.options.files.read(target.value));
   }
 
   async writeFile(path: string, contents: Uint8Array): Promise<ScopedWorkspaceRpcResult> {
     const target = this.resolveAllowedPath("writeFile", path, this.writeScopes);
     if (target.status === "error") return target;
 
-    const parents = await ensureParentDirectories(this.options.workingCopy, target.value);
+    const parents = await ensureParentDirectories(this.options.files, target.value);
     if (parents.status === "error") return parents;
 
-    return passThroughRpcResult(this.options.workingCopy.writeFile(target.value, contents));
+    return resultToRpc(this.options.files.write(target.value, contents));
   }
 
   async list(path: string): Promise<ScopedWorkspaceRpcResult<WorkspaceEntry[]>> {
     const target = this.resolveAllowedPath("list", path, this.readScopes);
     if (target.status === "error") return target;
 
-    return passThroughRpcResult(this.options.workingCopy.list(target.value));
+    return resultToRpc(this.options.files.list(target.value));
   }
 
   async stat(path: string): Promise<ScopedWorkspaceRpcResult<WorkspaceStat>> {
     const target = this.resolveAllowedPath("stat", path, this.readScopes);
     if (target.status === "error") return target;
 
-    return passThroughRpcResult(this.options.workingCopy.stat(target.value));
+    return resultToRpc(this.options.files.stat(target.value));
   }
 
   private resolveAllowedPath(
@@ -130,12 +138,12 @@ class WorkspaceScopeSet {
 }
 
 async function ensureParentDirectories(
-  workingCopy: WorkspaceFileWorkingCopy,
+  files: ScopedWorkspaceFiles,
   filePath: string,
 ): Promise<ScopedWorkspaceRpcResult> {
   for (const directory of parentDirectories(filePath)) {
-    const result = await workingCopy.mkdir(directory);
-    if (result.status === "error" && result.error.tag !== "PathAlreadyExistsError") {
+    const result = await files.mkdir(directory);
+    if (Result.isError(result) && result.error.tag !== "PathAlreadyExistsError") {
       return { status: "error", error: scopedOperationError("mkdir", directory, result.error.tag) };
     }
   }
@@ -143,9 +151,11 @@ async function ensureParentDirectories(
   return { status: "ok" };
 }
 
-async function passThroughRpcResult<T>(resultPromise: Promise<RpcResult<T>>): Promise<ScopedWorkspaceRpcResult<T>> {
+async function resultToRpc<T>(
+  resultPromise: Promise<Result<T, { tag: string; message?: string }>>,
+): Promise<ScopedWorkspaceRpcResult<T>> {
   const result = await resultPromise;
-  if (result.status === "error") {
+  if (Result.isError(result)) {
     return { status: "error", error: result.error };
   }
 

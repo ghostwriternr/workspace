@@ -28,7 +28,6 @@ import {
   type WorkspaceWriteError,
   workspaceErrorToDto,
 } from "./errors";
-import type { WorkspaceSession } from "../runtime/workspace-session";
 
 export type WorkspaceOk<T = void> = T extends void ? { status: "ok" } : { status: "ok"; value: T };
 
@@ -94,9 +93,6 @@ export type WorkspaceStatRpcResult =
   | WorkspaceRpcError<InvalidPathErrorDto | PathNotFoundErrorDto | RevisionNotFoundErrorDto>;
 export type WorkspaceSessionInfoRpcResult =
   | WorkspaceOk<WorkspaceSessionInfo>
-  | WorkspaceRpcError<SessionNotFoundErrorDto>;
-export type WorkspaceSessionLookupRpcResult =
-  | WorkspaceOk<WorkspaceSession>
   | WorkspaceRpcError<SessionNotFoundErrorDto>;
 export type WorkspaceSessionMkdirRpcResult =
   | WorkspaceOk

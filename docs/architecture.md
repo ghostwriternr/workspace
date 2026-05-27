@@ -36,7 +36,7 @@ Different runtimes need different shapes of access to the same durable state. Wo
 
 | Projection | Consumer | Shape | Authority |
 |---|---|---|---|
-| Control | Trusted Worker / DO | `workspace.beginSession()`, file ops, `commit()` | Full: sessions, commit, discard, revisions |
+| Control | Trusted Worker / DO | `Workspace.get(...)`, current files, file copies, `apply()` | Full: file copies, apply, discard, revisions |
 | Scoped file | Dynamic Worker, plugin, generated code | `env.WORKSPACE.{readFile,writeFile,list,stat}` | Read/write within allowed paths; no commit, no identity |
 | Filesystem | Sandbox / container | Files at `/workspace`; capture-on-flush | Native file IO inside the runtime; commit stays with parent |
 | Module / asset (planned) | Dynamic Worker via Worker Loader | Modules and asset bindings from a Workspace tree | Read-only over the chosen tree or revision |
@@ -59,10 +59,10 @@ A single Workspace is one Durable Object plus an R2 bucket.
 
 ### Runtime
 
-- `WorkspaceObject` — the Durable Object entrypoint. Head operations (`mkdir`, `writeFile`, `readFile`, `list`, `stat`, `delete`, `snapshot`, `beginSession`, `getSession`).
-- `WorkspaceSession extends RpcTarget` — a live capability handle returned by `beginSession()`. Same file API as head but isolated; adds `commit()` and `discard()`. Sessions are also recoverable by `sessionId` via `getSession()` for stateless callers.
+- `WorkspaceObject` — the Durable Object entrypoint. It owns head operations (`mkdir`, `writeFile`, `readFile`, `list`, `stat`, `delete`, `snapshot`) and session-id operations for file copies (`sessionReadFile`, `sessionWriteFile`, `sessionList`, `sessionStat`, `sessionDelete`, `sessionCommit`, `sessionDiscard`).
+- `Workspace.get(...)` — the product-facing package layer. It wraps Durable Object RPC DTOs into `better-result` `Result` values and exposes current files plus durable file copies (`workspace.files.copy(...)`, `copy.files`, `copy.apply()`, `copy.discard()`). Product code does not receive or manage session RPC stubs.
 
-Both surfaces return **Result-shaped DTOs over RPC** (`{ ok: true, value }` / `{ ok: false, error }`). Internally the model uses `better-result` tagged errors — `InvalidPathError`, `PathNotFoundError`, `IsDirectoryError`, `NotDirectoryError`, `DirectoryNotEmptyError`, `PathAlreadyExistsError`, `RevisionNotFoundError`, `SessionNotFoundError`, `SessionConflictError`. Error classes don't survive structured clone, so they don't cross the RPC boundary.
+The Durable Object surface returns **Result-shaped DTOs over RPC** (`{ status: "ok", value }` / `{ status: "error", error }`). Internally the model uses `better-result` tagged errors — `InvalidPathError`, `PathNotFoundError`, `IsDirectoryError`, `NotDirectoryError`, `DirectoryNotEmptyError`, `PathAlreadyExistsError`, `RevisionNotFoundError`, `SessionNotFoundError`, `SessionConflictError`. Error classes don't survive structured clone, so they don't cross the RPC boundary.
 
 ### Tree abstraction
 
@@ -141,7 +141,7 @@ Product code should only see the first two, and only through the names in [`prod
 
 `packages/workspace/src/workspace/projections/scoped-file-capability.ts`
 
-A factory that wraps a session and returns an `RpcTarget` exposing only `readFile`, `writeFile`, `list`, `stat`. It enforces a root prefix, allowed read globs, allowed write globs, optional delete permission (off by default), path normalisation, and traversal rejection.
+A factory that wraps a file-copy file API and returns an `RpcTarget` exposing only `readFile`, `writeFile`, `list`, `stat`. It enforces a root prefix, allowed read globs, allowed write globs, optional delete permission (off by default), path normalisation, and traversal rejection.
 
 It does **not** expose `commit`, `discard`, `beginSession`, `getByName`, revisions, or Workspace identity. This is what gets passed into a Dynamic Worker as `env.WORKSPACE`.
 
@@ -149,7 +149,7 @@ It does **not** expose `commit`, `discard`, `beginSession`, `getByName`, revisio
 
 `packages/workspace/src/workspace/projections/working-copy-mount.ts`
 
-`attachWorkspaceMount(...)` materialises a session's files into a host filesystem — today, into a Sandbox container under `/workspace`. On `flush()`, it reads back changes and writes them into the session as metadata + blob refs.
+`attachWorkspaceMount(...)` materialises a file copy into a host filesystem — today, into a Sandbox container under `/workspace`. On `flush()`, it reads back changes and writes them into the copy as metadata + blob refs.
 
 The current implementation scans and hashes. A future implementation can be a real mount. The semantic boundary stays the same: the runtime sees a normal filesystem; the session sees the changes after flush.
 
@@ -180,24 +180,24 @@ The current implementation scans and hashes. A future implementation can be a re
                                            │   commitDraft / discardDraft   │
                                            └──┬──────────────────┬──────────┘
                                               │                  │
-                            session capability│                  │scoped capability
+                              file copy files │                  │scoped capability
                                               ▼                  ▼
                                 ┌──────────────────────┐ ┌─────────────────────────┐
                                 │ Sandbox (container)  │ │ Worker Loader            │
                                 │ /workspace mounted   │ │ Dynamic Worker w/        │
-                                │ from draft session   │ │ env.WORKSPACE (scoped)   │
+                                │ from draft copy      │ │ env.WORKSPACE (scoped)   │
                                 │ ImageMagick, sh, …   │ │ readFile/writeFile/…     │
                                 └──────────────────────┘ └─────────────────────────┘
                                           │                       │
                                           └────── both mutate the same draft ──────┐
                                                                                    │
                                                           PhotoAgent.commitDraft() ─┘
-                                                          → session.commit() → revision
+                                                          → copy.apply() → revision
 ```
 
 Wiring choices worth knowing:
 
-- **One draft per `PhotoAgent` instance.** The agent stores `draftEditId` in its own state. The Sandbox and the Dynamic Worker both bind to the same session, so a `convert` in Sandbox and a `writeFile('/notes/edit-summary.md')` from a Dynamic Worker land in one draft and publish together.
+- **One draft per `PhotoAgent` instance.** The agent stores `draftEditId` in its own state. The Sandbox and the Dynamic Worker both bind to the same file copy, so a `convert` in Sandbox and a `writeFile('/notes/edit-summary.md')` from a Dynamic Worker land in one draft and publish together.
 - **Sandboxes are scoped per draft.** `getSandbox(env.Sandbox, ${workspaceName}-${draftEditId}, { sleepAfter: "60s" })`. Concurrent users and drafts don't share `/workspace`.
 - **The Dynamic Worker binding goes through a loopback `WorkerEntrypoint`.** `this.ctx.exports.WorkspaceFileCapability({ props: { workspaceName, draftEditId } })`. Worker Loader RPC references can't be serialised through `env`, but service stubs through entrypoint props can.
 - **The UI is event-driven, not polled.** `PhotoAgent.setState({ photo })` pushes change keys over the existing WebSocket; the browser only fetches `/photos/{original|draft|current}` when keys change.
@@ -210,7 +210,7 @@ packages/workspace/
   src/workspace/
     model/        path / errors / operations / rpc / sessions / revisions — pure semantics
     storage/      schema, head state, sql-entry-tree, blob-store
-    runtime/      WorkspaceObject (DO), WorkspaceSession (RpcTarget)
+    runtime/      WorkspaceObject (DO)
     projections/  scoped-file-capability, working-copy-mount
 
 examples/photo-agent-demo/

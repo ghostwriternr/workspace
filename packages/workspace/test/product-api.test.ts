@@ -102,4 +102,122 @@ describe("Workspace product API", () => {
       expect(text(current.value)).toBe("recovered draft");
     }
   });
+
+  it("uses session-id operations without looking up session stubs for file operations", async () => {
+    const object = new FakeWorkspaceObject();
+    const workspace = Workspace.get({ getByName: () => object }, "unit");
+
+    const copyResult = await workspace.files.copy("unit-copy");
+    if (Result.isError(copyResult)) {
+      throw new Error("copy failed");
+    }
+
+    await copyResult.value.files.write("/note.txt", bytes("draft"));
+    const read = await copyResult.value.files.read("/note.txt");
+    await copyResult.value.apply();
+
+    expect(object.getSessionCount).toBe(0);
+    expect(object.sessionWriteCount).toBe(1);
+    expect(object.sessionReadCount).toBe(1);
+    expect(object.sessionCommitCount).toBe(1);
+    if (Result.isOk(read)) {
+      expect(text(read.value)).toBe("draft");
+    }
+  });
 });
+
+class FakeWorkspaceObject {
+  getSessionCount = 0;
+  sessionWriteCount = 0;
+  sessionReadCount = 0;
+  sessionCommitCount = 0;
+  private readonly files = new Map<string, Uint8Array>();
+
+  async beginSession() {
+    return { status: "ok" as const, value: { sessionId: "copy-1", createdAt: 1 } };
+  }
+
+  async getSession(sessionId: string) {
+    this.getSessionCount += 1;
+    return { status: "ok" as const, value: { sessionId, createdAt: 1 } };
+  }
+
+  async mkdir(_path: string) {
+    return { status: "ok" as const };
+  }
+
+  async writeFile(path: string, contents: Uint8Array) {
+    this.files.set(path, contents);
+    return { status: "ok" as const };
+  }
+
+  async readFile(path: string) {
+    const value = this.files.get(path);
+    return value ? { status: "ok" as const, value } : { status: "error" as const, error: pathNotFound(path) };
+  }
+
+  async list(_path: string) {
+    return { status: "ok" as const, value: [] };
+  }
+
+  async stat(path: string) {
+    const value = this.files.get(path);
+    return value
+      ? { status: "ok" as const, value: { path, type: "file" as const, size: value.byteLength, createdAt: 1, updatedAt: 1 } }
+      : { status: "error" as const, error: pathNotFound(path) };
+  }
+
+  async delete(path: string) {
+    this.files.delete(path);
+    return { status: "ok" as const };
+  }
+
+  async sessionMkdir(_sessionId: string, _path: string) {
+    return { status: "ok" as const };
+  }
+
+  async sessionWriteFile(_sessionId: string, path: string, contents: Uint8Array) {
+    this.sessionWriteCount += 1;
+    this.files.set(path, contents);
+    return { status: "ok" as const };
+  }
+
+  async sessionReadFile(_sessionId: string, path: string) {
+    this.sessionReadCount += 1;
+    const value = this.files.get(path);
+    return value ? { status: "ok" as const, value } : { status: "error" as const, error: pathNotFound(path) };
+  }
+
+  async sessionList(_sessionId: string, _path: string) {
+    return { status: "ok" as const, value: [] };
+  }
+
+  async sessionStat(_sessionId: string, path: string) {
+    const value = this.files.get(path);
+    return value
+      ? { status: "ok" as const, value: { path, type: "file" as const, size: value.byteLength, createdAt: 1, updatedAt: 1 } }
+      : { status: "error" as const, error: pathNotFound(path) };
+  }
+
+  async sessionDelete(_sessionId: string, path: string) {
+    this.files.delete(path);
+    return { status: "ok" as const };
+  }
+
+  async sessionCommit(_sessionId: string) {
+    this.sessionCommitCount += 1;
+    return { status: "ok" as const, value: { revisionId: "revision-1", createdAt: 2 } };
+  }
+
+  async sessionDiscard(_sessionId: string) {
+    return { status: "ok" as const };
+  }
+}
+
+function pathNotFound(path: string) {
+  return {
+    tag: "PathNotFoundError" as const,
+    path,
+    message: `Path not found: ${path}`,
+  };
+}

@@ -281,9 +281,9 @@ describe("WorkspaceObject", () => {
   it("keeps session edits isolated from the mutable head", async () => {
     const workspace = env.WORKSPACES.getByName("session-isolation");
 
-    const session = await workspace.beginSession();
-    await expect(session.mkdir("/src")).resolves.toEqual({ status: "ok" });
-    await expect(session.writeFile("/src/index.ts", bytes("export {};"))).resolves.toEqual({
+    const sessionId = await beginSession(workspace);
+    await expect(workspace.sessionMkdir(sessionId, "/src")).resolves.toEqual({ status: "ok" });
+    await expect(workspace.sessionWriteFile(sessionId, "/src/index.ts", bytes("export {};"))).resolves.toEqual({
       status: "ok",
     });
 
@@ -292,7 +292,7 @@ describe("WorkspaceObject", () => {
       error: { tag: "PathNotFoundError", path: "/src" },
     });
 
-    const sessionRead = await session.readFile("/src/index.ts");
+    const sessionRead = await workspace.sessionReadFile(sessionId, "/src/index.ts");
     expect(sessionRead.status).toBe("ok");
     if (sessionRead.status === "ok") {
       expect(text(sessionRead.value)).toBe("export {};");
@@ -303,10 +303,10 @@ describe("WorkspaceObject", () => {
     const workspace = env.WORKSPACES.getByName("session-commit");
 
     await workspace.writeFile("/README.md", bytes("head"));
-    const session = await workspace.beginSession();
-    await session.writeFile("/README.md", bytes("session"));
+    const sessionId = await beginSession(workspace);
+    await workspace.sessionWriteFile(sessionId, "/README.md", bytes("session"));
 
-    const commit = await session.commit();
+    const commit = await workspace.sessionCommit(sessionId);
     expect(commit.status).toBe("ok");
     if (commit.status !== "ok") {
       throw new Error("commit failed");
@@ -326,7 +326,7 @@ describe("WorkspaceObject", () => {
       expect(text(revisionRead.value)).toBe("session");
     }
 
-    await expect(session.stat("/README.md")).resolves.toMatchObject({
+    await expect(workspace.sessionStat(sessionId, "/README.md")).resolves.toMatchObject({
       status: "error",
       error: { tag: "SessionNotFoundError" },
     });
@@ -336,17 +336,17 @@ describe("WorkspaceObject", () => {
     const workspace = env.WORKSPACES.getByName("session-discard");
 
     await workspace.writeFile("/README.md", bytes("head"));
-    const session = await workspace.beginSession();
-    await session.writeFile("/README.md", bytes("session"));
+    const sessionId = await beginSession(workspace);
+    await workspace.sessionWriteFile(sessionId, "/README.md", bytes("session"));
 
-    await expect(session.discard()).resolves.toEqual({ status: "ok" });
+    await expect(workspace.sessionDiscard(sessionId)).resolves.toEqual({ status: "ok" });
 
     const headRead = await workspace.readFile("/README.md");
     expect(headRead.status).toBe("ok");
     if (headRead.status === "ok") {
       expect(text(headRead.value)).toBe("head");
     }
-    await expect(session.readFile("/README.md")).resolves.toMatchObject({
+    await expect(workspace.sessionReadFile(sessionId, "/README.md")).resolves.toMatchObject({
       status: "error",
       error: { tag: "SessionNotFoundError" },
     });
@@ -354,18 +354,18 @@ describe("WorkspaceObject", () => {
 
   it("uses explicit directory semantics inside sessions", async () => {
     const workspace = env.WORKSPACES.getByName("session-explicit-directories");
-    const session = await workspace.beginSession();
+    const sessionId = await beginSession(workspace);
 
-    await expect(session.writeFile("/src/index.ts", bytes("export {};"))).resolves.toMatchObject({
+    await expect(workspace.sessionWriteFile(sessionId, "/src/index.ts", bytes("export {};"))).resolves.toMatchObject({
       status: "error",
       error: { tag: "PathNotFoundError", path: "/src" },
     });
 
-    await expect(session.mkdir("/src")).resolves.toEqual({ status: "ok" });
-    await expect(session.writeFile("/src/index.ts", bytes("export {};"))).resolves.toEqual({
+    await expect(workspace.sessionMkdir(sessionId, "/src")).resolves.toEqual({ status: "ok" });
+    await expect(workspace.sessionWriteFile(sessionId, "/src/index.ts", bytes("export {};"))).resolves.toEqual({
       status: "ok",
     });
-    await expect(session.delete("/src")).resolves.toMatchObject({
+    await expect(workspace.sessionDelete(sessionId, "/src")).resolves.toMatchObject({
       status: "error",
       error: { tag: "DirectoryNotEmptyError", path: "/src" },
     });
@@ -374,22 +374,17 @@ describe("WorkspaceObject", () => {
   it("can look up open sessions by durable session id", async () => {
     const workspace = env.WORKSPACES.getByName("session-lookup");
 
-    const session = await workspace.beginSession();
-    const info = await session.info();
-    expect(info.status).toBe("ok");
-    if (info.status !== "ok") {
-      throw new Error("session info failed");
-    }
+    const sessionId = await beginSession(workspace);
+    await workspace.sessionWriteFile(sessionId, "/README.md", bytes("session"));
 
-    await session.writeFile("/README.md", bytes("session"));
-
-    const lookup = await workspace.getSession(info.value.sessionId);
+    const lookup = await workspace.getSession(sessionId);
     expect(lookup.status).toBe("ok");
     if (lookup.status !== "ok") {
       throw new Error("session lookup failed");
     }
+    expect(lookup.value.sessionId).toBe(sessionId);
 
-    const lookedUpRead = await lookup.value.readFile("/README.md");
+    const lookedUpRead = await workspace.sessionReadFile(lookup.value.sessionId, "/README.md");
     expect(lookedUpRead.status).toBe("ok");
     if (lookedUpRead.status === "ok") {
       expect(text(lookedUpRead.value)).toBe("session");
@@ -405,14 +400,14 @@ describe("WorkspaceObject", () => {
     const workspace = env.WORKSPACES.getByName("concurrent-sessions");
 
     await workspace.writeFile("/README.md", bytes("head"));
-    const first = await workspace.beginSession();
-    const second = await workspace.beginSession();
+    const first = await beginSession(workspace);
+    const second = await beginSession(workspace);
 
-    await first.writeFile("/README.md", bytes("first"));
-    await second.writeFile("/README.md", bytes("second"));
+    await workspace.sessionWriteFile(first, "/README.md", bytes("first"));
+    await workspace.sessionWriteFile(second, "/README.md", bytes("second"));
 
-    const firstRead = await first.readFile("/README.md");
-    const secondRead = await second.readFile("/README.md");
+    const firstRead = await workspace.sessionReadFile(first, "/README.md");
+    const secondRead = await workspace.sessionReadFile(second, "/README.md");
     expect(firstRead.status).toBe("ok");
     expect(secondRead.status).toBe("ok");
     if (firstRead.status === "ok") {
@@ -422,25 +417,25 @@ describe("WorkspaceObject", () => {
       expect(text(secondRead.value)).toBe("second");
     }
 
-    await first.commit();
+    await workspace.sessionCommit(first);
 
-    const secondAfterCommit = await second.readFile("/README.md");
+    const secondAfterCommit = await workspace.sessionReadFile(second, "/README.md");
     expect(secondAfterCommit.status).toBe("ok");
     if (secondAfterCommit.status === "ok") {
       expect(text(secondAfterCommit.value)).toBe("second");
     }
-    await expect(second.discard()).resolves.toEqual({ status: "ok" });
+    await expect(workspace.sessionDiscard(second)).resolves.toEqual({ status: "ok" });
   });
 
   it("allows sessions to commit after head snapshots", async () => {
     const workspace = env.WORKSPACES.getByName("session-after-head-snapshot");
 
     await workspace.writeFile("/README.md", bytes("base"));
-    const session = await workspace.beginSession();
-    await session.writeFile("/README.md", bytes("session"));
+    const sessionId = await beginSession(workspace);
+    await workspace.sessionWriteFile(sessionId, "/README.md", bytes("session"));
     await workspace.snapshot();
 
-    await expect(session.commit()).resolves.toMatchObject({ status: "ok" });
+    await expect(workspace.sessionCommit(sessionId)).resolves.toMatchObject({ status: "ok" });
 
     const headRead = await workspace.readFile("/README.md");
     expect(headRead.status).toBe("ok");
@@ -453,16 +448,16 @@ describe("WorkspaceObject", () => {
     const workspace = env.WORKSPACES.getByName("session-head-conflict");
 
     await workspace.writeFile("/README.md", bytes("base"));
-    const session = await workspace.beginSession();
-    await session.writeFile("/README.md", bytes("session"));
+    const sessionId = await beginSession(workspace);
+    await workspace.sessionWriteFile(sessionId, "/README.md", bytes("session"));
 
     await workspace.writeFile("/README.md", bytes("head"));
 
-    await expect(session.commit()).resolves.toMatchObject({
+    await expect(workspace.sessionCommit(sessionId)).resolves.toMatchObject({
       status: "error",
       error: { tag: "SessionConflictError" },
     });
-    await expect(session.commit()).resolves.toMatchObject({
+    await expect(workspace.sessionCommit(sessionId)).resolves.toMatchObject({
       status: "error",
       error: { tag: "SessionConflictError" },
     });
@@ -473,58 +468,67 @@ describe("WorkspaceObject", () => {
       expect(text(headRead.value)).toBe("head");
     }
 
-    const sessionRead = await session.readFile("/README.md");
+    const sessionRead = await workspace.sessionReadFile(sessionId, "/README.md");
     expect(sessionRead.status).toBe("ok");
     if (sessionRead.status === "ok") {
       expect(text(sessionRead.value)).toBe("session");
     }
 
-    await expect(session.discard()).resolves.toEqual({ status: "ok" });
+    await expect(workspace.sessionDiscard(sessionId)).resolves.toEqual({ status: "ok" });
   });
 
   it("rejects later concurrent session commits without closing the conflicted session", async () => {
     const workspace = env.WORKSPACES.getByName("session-session-conflict");
 
     await workspace.writeFile("/README.md", bytes("base"));
-    const first = await workspace.beginSession();
-    const second = await workspace.beginSession();
+    const first = await beginSession(workspace);
+    const second = await beginSession(workspace);
 
-    await first.writeFile("/README.md", bytes("first"));
-    await second.writeFile("/README.md", bytes("second"));
+    await workspace.sessionWriteFile(first, "/README.md", bytes("first"));
+    await workspace.sessionWriteFile(second, "/README.md", bytes("second"));
 
-    await expect(first.commit()).resolves.toMatchObject({ status: "ok" });
-    await expect(second.commit()).resolves.toMatchObject({
+    await expect(workspace.sessionCommit(first)).resolves.toMatchObject({ status: "ok" });
+    await expect(workspace.sessionCommit(second)).resolves.toMatchObject({
       status: "error",
       error: { tag: "SessionConflictError" },
     });
 
-    const secondRead = await second.readFile("/README.md");
+    const secondRead = await workspace.sessionReadFile(second, "/README.md");
     expect(secondRead.status).toBe("ok");
     if (secondRead.status === "ok") {
       expect(text(secondRead.value)).toBe("second");
     }
-    await expect(second.discard()).resolves.toEqual({ status: "ok" });
+    await expect(workspace.sessionDiscard(second)).resolves.toEqual({ status: "ok" });
   });
 
   it("rejects operations on terminal sessions", async () => {
     const workspace = env.WORKSPACES.getByName("terminal-sessions");
 
-    const committed = await workspace.beginSession();
-    await committed.commit();
-    await expect(committed.commit()).resolves.toMatchObject({
+    const committed = await beginSession(workspace);
+    await workspace.sessionCommit(committed);
+    await expect(workspace.sessionCommit(committed)).resolves.toMatchObject({
       status: "error",
       error: { tag: "SessionNotFoundError" },
     });
-    await expect(committed.discard()).resolves.toMatchObject({
+    await expect(workspace.sessionDiscard(committed)).resolves.toMatchObject({
       status: "error",
       error: { tag: "SessionNotFoundError" },
     });
 
-    const discarded = await workspace.beginSession();
-    await discarded.discard();
-    await expect(discarded.discard()).resolves.toMatchObject({
+    const discarded = await beginSession(workspace);
+    await workspace.sessionDiscard(discarded);
+    await expect(workspace.sessionDiscard(discarded)).resolves.toMatchObject({
       status: "error",
       error: { tag: "SessionNotFoundError" },
     });
   });
 });
+
+async function beginSession(workspace: ReturnType<typeof env.WORKSPACES.getByName>): Promise<string> {
+  const session = await workspace.beginSession();
+  expect(session.status).toBe("ok");
+  if (session.status !== "ok") {
+    throw new Error("session begin failed");
+  }
+  return session.value.sessionId;
+}

@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
 import { createWorkspaceFileCapability } from "../src/workspace/projections/scoped-file-capability";
@@ -13,7 +14,7 @@ describe("scoped Workspace file capability", () => {
       "/photos/current": { type: "file", contents: photoBytes },
     });
     const capability = createWorkspaceFileCapability({
-      workingCopy,
+      files: workingCopy,
       root: "/",
       read: ["/photos/**"],
       write: ["/notes/**"],
@@ -24,7 +25,7 @@ describe("scoped Workspace file capability", () => {
 
   it("returns RpcResult access errors for denied reads", async () => {
     const capability = createWorkspaceFileCapability({
-      workingCopy: new FakeWorkingCopy({ "/": { type: "directory" } }),
+      files: new FakeWorkingCopy({ "/": { type: "directory" } }),
       root: "/",
       read: ["/photos/**"],
       write: ["/notes/**"],
@@ -43,7 +44,7 @@ describe("scoped Workspace file capability", () => {
 
   it("allows root recursive scopes to match descendants", async () => {
     const capability = createWorkspaceFileCapability({
-      workingCopy: new FakeWorkingCopy({
+      files: new FakeWorkingCopy({
         "/": { type: "directory" },
         "/photos": { type: "directory" },
         "/photos/current": { type: "file", contents: photoBytes },
@@ -59,7 +60,7 @@ describe("scoped Workspace file capability", () => {
   it("allows narrow write scopes and creates structural parent directories", async () => {
     const workingCopy = new FakeWorkingCopy({ "/": { type: "directory" } });
     const capability = createWorkspaceFileCapability({
-      workingCopy,
+      files: workingCopy,
       root: "/",
       read: [],
       write: ["/notes/2026/**"],
@@ -72,12 +73,12 @@ describe("scoped Workspace file capability", () => {
       "mkdir /notes/2026",
       "write /notes/2026/edit-summary.md",
     ]);
-    await expect(workingCopy.readFile("/notes/2026/edit-summary.md")).resolves.toEqual({ status: "ok", value: noteBytes });
+    await expect(workingCopy.read("/notes/2026/edit-summary.md")).resolves.toEqual({ status: "ok", value: noteBytes });
   });
 
   it("denies writes outside scope", async () => {
     const capability = createWorkspaceFileCapability({
-      workingCopy: new FakeWorkingCopy({ "/": { type: "directory" } }),
+      files: new FakeWorkingCopy({ "/": { type: "directory" } }),
       root: "/",
       read: ["/photos/**"],
       write: ["/notes/**"],
@@ -96,7 +97,7 @@ describe("scoped Workspace file capability", () => {
 
   it("does not expose identity, publish, or delete authority", () => {
     const capability = createWorkspaceFileCapability({
-      workingCopy: new FakeWorkingCopy({ "/": { type: "directory" } }),
+      files: new FakeWorkingCopy({ "/": { type: "directory" } }),
       root: "/",
       read: ["/photos/**"],
       write: ["/notes/**"],
@@ -113,7 +114,7 @@ describe("scoped Workspace file capability", () => {
 
   it("exposes methods from a capability prototype for Worker Loader prop transfer", () => {
     const capability = createWorkspaceFileCapability({
-      workingCopy: new FakeWorkingCopy({ "/": { type: "directory" } }),
+      files: new FakeWorkingCopy({ "/": { type: "directory" } }),
       root: "/",
       read: ["/photos/**"],
       write: ["/notes/**"],
@@ -125,7 +126,7 @@ describe("scoped Workspace file capability", () => {
 
   it("normalizes paths and returns path errors for traversal", async () => {
     const capability = createWorkspaceFileCapability({
-      workingCopy: new FakeWorkingCopy({
+      files: new FakeWorkingCopy({
         "/": { type: "directory" },
         "/photos": { type: "directory" },
         "/photos/current": { type: "file", contents: photoBytes },
@@ -147,10 +148,6 @@ describe("scoped Workspace file capability", () => {
   });
 });
 
-type RpcResult<T = unknown> =
-  | { status: "ok"; value?: T }
-  | { status: "error"; error: { tag: string; message?: string } };
-
 type Entry =
   | { type: "directory" }
   | { type: "file"; contents: Uint8Array };
@@ -160,25 +157,25 @@ class FakeWorkingCopy {
 
   constructor(private readonly entries: Record<string, Entry>) {}
 
-  async readFile(path: string): Promise<RpcResult<Uint8Array>> {
+  async read(path: string): Promise<Result<Uint8Array, { tag: string; message?: string }>> {
     const entry = this.entries[path];
-    if (!entry) return { status: "error", error: { tag: "PathNotFoundError" } };
-    if (entry.type === "directory") return { status: "error", error: { tag: "IsDirectoryError" } };
-    return { status: "ok", value: entry.contents };
+    if (!entry) return Result.err({ tag: "PathNotFoundError" });
+    if (entry.type === "directory") return Result.err({ tag: "IsDirectoryError" });
+    return Result.ok(entry.contents);
   }
 
-  async writeFile(path: string, contents: Uint8Array): Promise<RpcResult> {
+  async write(path: string, contents: Uint8Array): Promise<Result<void, { tag: string; message?: string }>> {
     const parent = parentPath(path);
-    if (!this.entries[parent]) return { status: "error", error: { tag: "PathNotFoundError" } };
+    if (!this.entries[parent]) return Result.err({ tag: "PathNotFoundError" });
     this.operationLog.push(`write ${path}`);
     this.entries[path] = { type: "file", contents };
-    return { status: "ok" };
+    return Result.ok();
   }
 
-  async list(path: string): Promise<RpcResult<Array<{ name: string; path: string; type: "directory" | "file" }>>> {
+  async list(path: string): Promise<Result<Array<{ name: string; path: string; type: "directory" | "file" }>, { tag: string; message?: string }>> {
     const entry = this.entries[path];
-    if (!entry) return { status: "error", error: { tag: "PathNotFoundError" } };
-    if (entry.type === "file") return { status: "error", error: { tag: "NotDirectoryError" } };
+    if (!entry) return Result.err({ tag: "PathNotFoundError" });
+    if (entry.type === "file") return Result.err({ tag: "NotDirectoryError" });
 
     const prefix = path === "/" ? "/" : `${path}/`;
     const value = Object.entries(this.entries)
@@ -189,38 +186,35 @@ class FakeWorkingCopy {
         path: childPath,
         type: child.type,
       }));
-    return { status: "ok", value };
+    return Result.ok(value);
   }
 
   async stat(path: string): Promise<
-    RpcResult<{ path: string; type: "directory" | "file"; size: number | null; createdAt: number; updatedAt: number }>
+    Result<{ path: string; type: "directory" | "file"; size: number | null; createdAt: number; updatedAt: number }, { tag: string; message?: string }>
   > {
     const entry = this.entries[path];
-    if (!entry) return { status: "error", error: { tag: "PathNotFoundError" } };
-    return {
-      status: "ok",
-      value: {
+    if (!entry) return Result.err({ tag: "PathNotFoundError" });
+    return Result.ok({
         path,
         type: entry.type,
         size: entry.type === "file" ? entry.contents.byteLength : null,
         createdAt: 1,
         updatedAt: 1,
-      },
-    };
+    });
   }
 
-  async mkdir(path: string): Promise<RpcResult> {
-    if (this.entries[path]) return { status: "error", error: { tag: "PathAlreadyExistsError" } };
+  async mkdir(path: string): Promise<Result<void, { tag: string; message?: string }>> {
+    if (this.entries[path]) return Result.err({ tag: "PathAlreadyExistsError" });
     const parent = parentPath(path);
-    if (!this.entries[parent]) return { status: "error", error: { tag: "PathNotFoundError" } };
+    if (!this.entries[parent]) return Result.err({ tag: "PathNotFoundError" });
     this.operationLog.push(`mkdir ${path}`);
     this.entries[path] = { type: "directory" };
-    return { status: "ok" };
+    return Result.ok();
   }
 
-  async delete(path: string): Promise<RpcResult> {
+  async delete(path: string): Promise<Result<void, { tag: string; message?: string }>> {
     delete this.entries[path];
-    return { status: "ok" };
+    return Result.ok();
   }
 }
 

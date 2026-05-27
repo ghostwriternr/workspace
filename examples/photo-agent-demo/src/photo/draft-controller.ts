@@ -1,13 +1,12 @@
 import { Result, type Result as BetterResult } from "better-result";
 import {
   Workspace,
-  type WorkspaceCopyFiles,
   type WorkspaceFileCopy,
   type WorkspaceFilesApi,
   type WorkspaceNamespace,
   type WorkspaceFileError,
 } from "@cloudflare/workspace";
-import type { WorkspaceMountFlushSummary, WorkspaceMountWorkingCopy } from "@cloudflare/workspace";
+import type { WorkspaceMountFiles, WorkspaceMountFlushSummary } from "@cloudflare/workspace";
 import type { DemoWorkspaceCommandRunner } from "../workspace/sandbox-workspace-command-runner";
 import type { DemoDynamicWorkerRunner, DynamicWorkerResult } from "../workspace/dynamic-worker-runner";
 
@@ -123,7 +122,7 @@ export class PhotoDraftController {
   }> {
     return this.withDraftCopy(async (copy, draftEditId) => {
       const result = await this.dependencies.commandRunner.runWorkspaceCommand({
-        workingCopy: mountWorkingCopy(copy.files),
+        files: copy.files,
         command,
         root: WORKSPACE_ROOT,
         draftEditId,
@@ -347,17 +346,6 @@ export class PhotoDraftController {
       contentType: contentTypeForImage(image.value),
     };
   }
-}
-
-function mountWorkingCopy(files: WorkspaceCopyFiles): WorkspaceMountWorkingCopy {
-  return {
-    list: async (path) => resultToRpc(await files.list(path)),
-    readFile: async (path) => resultToRpc(await files.read(path)),
-    mkdir: async (path) => resultToRpc(await files.mkdir(path)),
-    writeFile: async (path, contents) => resultToRpc(await files.write(path, contents)),
-    delete: async (path) => resultToRpc(await files.delete(path)),
-    stat: async (path) => resultToRpc(await files.stat(path)),
-  };
 }
 
 async function readImageContentType(files: WorkspaceFilesApi, path: string): Promise<string> {

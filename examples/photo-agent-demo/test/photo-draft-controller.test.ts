@@ -268,14 +268,46 @@ class FakeWorkspace {
     for (const [path, contents] of Object.entries(this.headFiles)) {
       this.session.files[path] ??= contents;
     }
-    return this.session;
+    return { status: "ok" as const, value: { sessionId: "session-1", createdAt: 1 } };
   }
 
   async getSession(sessionId: string) {
     if (sessionId !== "session-1") {
       return { status: "error" as const, error: { tag: "SessionNotFoundError" as const, sessionId, message: `Session not found: ${sessionId}` } };
     }
-    return { status: "ok" as const, value: this.session };
+    return { status: "ok" as const, value: { sessionId: "session-1", createdAt: 1 } };
+  }
+
+  async sessionMkdir(_sessionId: string, path: string) {
+    return this.session.mkdir(path);
+  }
+
+  async sessionWriteFile(_sessionId: string, path: string, contents: Uint8Array) {
+    return this.session.writeFile(path, contents);
+  }
+
+  async sessionReadFile(_sessionId: string, path: string) {
+    return this.session.readFile(path);
+  }
+
+  async sessionList(_sessionId: string, path: string) {
+    return this.session.list(path);
+  }
+
+  async sessionStat(_sessionId: string, path: string) {
+    return this.session.stat(path);
+  }
+
+  async sessionDelete(_sessionId: string, path: string) {
+    return this.session.delete(path);
+  }
+
+  async sessionCommit(_sessionId: string) {
+    return this.session.commit();
+  }
+
+  async sessionDiscard(_sessionId: string) {
+    return this.session.discard();
   }
 }
 
@@ -378,9 +410,9 @@ class FakeWorkspaceCommandRunner {
 
   constructor(private readonly output: Uint8Array) {}
 
-  async runWorkspaceCommand(options: { workingCopy: FakeSession; command: string; root: string; draftEditId: string }) {
+  async runWorkspaceCommand(options: { files: { write(path: string, contents: Uint8Array): Promise<unknown> }; command: string; root: string; draftEditId: string }) {
     this.calls.push({ command: options.command, root: options.root, draftEditId: options.draftEditId });
-    await options.workingCopy.writeFile("/photos/current", this.output);
+    await options.files.write("/photos/current", this.output);
     return {
       command: options.command,
       root: options.root,

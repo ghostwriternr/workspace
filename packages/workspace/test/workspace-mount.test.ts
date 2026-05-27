@@ -16,7 +16,7 @@ const rootEntry = { name: "", path: "/", type: "directory" as const };
 
 describe("Workspace working-copy mount", () => {
   it("attaches a Workspace tree to a host filesystem root", async () => {
-    const workingCopy = new FakeWorkingCopy({
+    const files = new FakeWorkingCopy({
       "/": { type: "directory" },
       "/photos": { type: "directory" },
       "/photos/original.png": { type: "file", contents: originalBytes },
@@ -24,7 +24,7 @@ describe("Workspace working-copy mount", () => {
     });
     const host = new FakeMountHost();
 
-    await attachOk({ workingCopy, host, root: "/workspace" });
+    await attachOk({ files, host, root: "/workspace" });
 
     expect(host.directories).toEqual(["/workspace", "/workspace/photos"]);
     expect(host.files).toEqual({
@@ -34,7 +34,7 @@ describe("Workspace working-copy mount", () => {
   });
 
   it("clears the host root before materializing the working copy", async () => {
-    const workingCopy = new FakeWorkingCopy({
+    const files = new FakeWorkingCopy({
       "/": { type: "directory" },
       "/photos": { type: "directory" },
       "/photos/current": { type: "file", contents: currentBytes },
@@ -42,7 +42,7 @@ describe("Workspace working-copy mount", () => {
     const host = new FakeMountHost();
     host.files["/workspace/stale.txt"] = new Uint8Array([99]);
 
-    const mount = await attachOk({ workingCopy, host, root: "/workspace" });
+    const mount = await attachOk({ files, host, root: "/workspace" });
     const result = await mount.flush();
 
     if (Result.isError(result)) {
@@ -54,14 +54,14 @@ describe("Workspace working-copy mount", () => {
   });
 
   it("flushes created, modified, and deleted host files into the working copy", async () => {
-    const workingCopy = new FakeWorkingCopy({
+    const files = new FakeWorkingCopy({
       "/": { type: "directory" },
       "/photos": { type: "directory" },
       "/photos/original.png": { type: "file", contents: originalBytes },
       "/photos/current": { type: "file", contents: currentBytes },
     });
     const host = new FakeMountHost();
-    const mount = await attachOk({ workingCopy, host, root: "/workspace" });
+    const mount = await attachOk({ files, host, root: "/workspace" });
 
     delete host.files["/workspace/photos/original.png"];
     host.files["/workspace/photos/current"] = editedBytes;
@@ -78,20 +78,20 @@ describe("Workspace working-copy mount", () => {
       deleted: ["/photos/original.png"],
       unchanged: 1,
     });
-    expect(workingCopy.files()).toEqual({
+    expect(files.files()).toEqual({
       "/photos/current": editedBytes,
       "/photos/contact-sheet.png": new Uint8Array([10, 11, 12]),
     });
   });
 
   it("creates explicit directories before flushing nested files", async () => {
-    const workingCopy = new FakeWorkingCopy({
+    const files = new FakeWorkingCopy({
       "/": { type: "directory" },
       "/photos": { type: "directory" },
       "/photos/current": { type: "file", contents: currentBytes },
     });
     const host = new FakeMountHost();
-    const mount = await attachOk({ workingCopy, host, root: "/workspace" });
+    const mount = await attachOk({ files, host, root: "/workspace" });
 
     host.directories.push("/workspace/photos/exports");
     host.files["/workspace/photos/exports/square.png"] = editedBytes;
@@ -101,18 +101,18 @@ describe("Workspace working-copy mount", () => {
     if (Result.isError(result)) {
       throw result.error;
     }
-    expect(workingCopy.mkdirCalls).toEqual(["/photos/exports"]);
-    expect(workingCopy.files()["/photos/exports/square.png"]).toEqual(editedBytes);
+    expect(files.mkdirCalls).toEqual(["/photos/exports"]);
+    expect(files.files()["/photos/exports/square.png"]).toEqual(editedBytes);
   });
 
   it("deletes removed paths before writing replacements with the same path", async () => {
-    const workingCopy = new FakeWorkingCopy({
+    const files = new FakeWorkingCopy({
       "/": { type: "directory" },
       "/photos": { type: "directory" },
       "/photos/current": { type: "file", contents: currentBytes },
     });
     const host = new FakeMountHost();
-    const mount = await attachOk({ workingCopy, host, root: "/workspace" });
+    const mount = await attachOk({ files, host, root: "/workspace" });
 
     delete host.files["/workspace/photos/current"];
     host.directories.push("/workspace/photos/current");
@@ -123,24 +123,24 @@ describe("Workspace working-copy mount", () => {
     if (Result.isError(result)) {
       throw result.error;
     }
-    expect(workingCopy.operationLog).toEqual([
+    expect(files.operationLog).toEqual([
       "delete /photos/current",
       "mkdir /photos/current",
       "write /photos/current/edited.png",
     ]);
-    expect(workingCopy.files()).toEqual({
+    expect(files.files()).toEqual({
       "/photos/current/edited.png": editedBytes,
     });
   });
 
   it("supports mounting at the host filesystem root", async () => {
-    const workingCopy = new FakeWorkingCopy({
+    const files = new FakeWorkingCopy({
       "/": { type: "directory" },
       "/photos": { type: "directory" },
       "/photos/current": { type: "file", contents: currentBytes },
     });
     const host = new FakeMountHost();
-    const mount = await attachOk({ workingCopy, host, root: "/" });
+    const mount = await attachOk({ files, host, root: "/" });
 
     host.files["/photos/current"] = editedBytes;
 
@@ -150,14 +150,14 @@ describe("Workspace working-copy mount", () => {
       throw result.error;
     }
     expect(result.value.modified).toEqual(["/photos/current"]);
-    expect(workingCopy.files()["/photos/current"]).toEqual(editedBytes);
+    expect(files.files()["/photos/current"]).toEqual(editedBytes);
   });
 
   it("returns a Result error when Workspace operations fail during attach", async () => {
-    const workingCopy = new FakeWorkingCopy({});
+    const files = new FakeWorkingCopy({});
     const host = new FakeMountHost();
 
-    const result = await attachWorkspaceMount({ workingCopy, host, root: "/workspace" });
+    const result = await attachWorkspaceMount({ files, host, root: "/workspace" });
 
     if (!Result.isError(result)) {
       throw new Error("expected mount operation error");
@@ -170,12 +170,12 @@ describe("Workspace working-copy mount", () => {
   });
 
   it("rejects unsupported host filesystem entries", async () => {
-    const workingCopy = new FakeWorkingCopy({
+    const files = new FakeWorkingCopy({
       "/": { type: "directory" },
       "/photos": { type: "directory" },
     });
     const host = new FakeMountHost();
-    const mount = await attachOk({ workingCopy, host, root: "/workspace" });
+    const mount = await attachOk({ files, host, root: "/workspace" });
 
     host.otherEntries.push({ path: "/workspace/photos/link", type: "symlink" });
 
@@ -192,10 +192,6 @@ describe("Workspace working-copy mount", () => {
   });
 });
 
-type RpcResult<T = unknown> =
-  | { status: "ok"; value?: T }
-  | { status: "error"; error: { tag: string } };
-
 type WorkspaceEntry = {
   name: string;
   path: string;
@@ -207,7 +203,7 @@ type FakeEntry =
   | { type: "file"; contents: Uint8Array };
 
 async function attachOk(options: {
-  workingCopy: FakeWorkingCopy;
+  files: FakeWorkingCopy;
   host: FakeMountHost;
   root: string;
 }): Promise<WorkspaceMount> {
@@ -224,10 +220,10 @@ class FakeWorkingCopy {
 
   constructor(private readonly entries: Record<string, FakeEntry>) {}
 
-  async list(path: string): Promise<RpcResult<WorkspaceEntry[]>> {
+  async list(path: string): Promise<Result<WorkspaceEntry[], { tag: string }>> {
     const entry = this.entries[path];
-    if (!entry) return { status: "error", error: { tag: "PathNotFoundError" } };
-    if (entry.type === "file") return { status: "error", error: { tag: "NotDirectoryError" } };
+    if (!entry) return Result.err({ tag: "PathNotFoundError" });
+    if (entry.type === "file") return Result.err({ tag: "NotDirectoryError" });
 
     const prefix = path === "/" ? "/" : `${path}/`;
     const children = Object.entries(this.entries)
@@ -239,48 +235,45 @@ class FakeWorkingCopy {
         type: child.type,
       }));
 
-    return { status: "ok", value: path === "/" ? children.filter((child) => child.path !== rootEntry.path) : children };
+    return Result.ok(path === "/" ? children.filter((child) => child.path !== rootEntry.path) : children);
   }
 
-  async readFile(path: string): Promise<RpcResult<Uint8Array>> {
+  async read(path: string): Promise<Result<Uint8Array, { tag: string }>> {
     const entry = this.entries[path];
-    if (!entry) return { status: "error", error: { tag: "PathNotFoundError" } };
-    if (entry.type === "directory") return { status: "error", error: { tag: "IsDirectoryError" } };
-    return { status: "ok", value: entry.contents };
+    if (!entry) return Result.err({ tag: "PathNotFoundError" });
+    if (entry.type === "directory") return Result.err({ tag: "IsDirectoryError" });
+    return Result.ok(entry.contents);
   }
 
-  async mkdir(path: string): Promise<RpcResult> {
+  async mkdir(path: string): Promise<Result<void, { tag: string }>> {
     this.mkdirCalls.push(path);
     this.operationLog.push(`mkdir ${path}`);
     this.entries[path] = { type: "directory" };
-    return { status: "ok" };
+    return Result.ok();
   }
 
-  async writeFile(path: string, contents: Uint8Array): Promise<RpcResult> {
+  async write(path: string, contents: Uint8Array): Promise<Result<void, { tag: string }>> {
     this.operationLog.push(`write ${path}`);
     this.entries[path] = { type: "file", contents };
-    return { status: "ok" };
+    return Result.ok();
   }
 
-  async delete(path: string): Promise<RpcResult> {
+  async delete(path: string): Promise<Result<void, { tag: string }>> {
     this.operationLog.push(`delete ${path}`);
     delete this.entries[path];
-    return { status: "ok" };
+    return Result.ok();
   }
 
-  async stat(path: string): Promise<RpcResult<{ path: string; type: "directory" | "file"; size: number | null; createdAt: number; updatedAt: number }>> {
+  async stat(path: string): Promise<Result<{ path: string; type: "directory" | "file"; size: number | null; createdAt: number; updatedAt: number }, { tag: string }>> {
     const entry = this.entries[path];
-    if (!entry) return { status: "error", error: { tag: "PathNotFoundError" } };
-    return {
-      status: "ok",
-      value: {
+    if (!entry) return Result.err({ tag: "PathNotFoundError" });
+    return Result.ok({
         path,
         type: entry.type,
         size: entry.type === "file" ? entry.contents.byteLength : null,
         createdAt: 1,
         updatedAt: 1,
-      },
-    };
+    });
   }
 
   files(): Record<string, Uint8Array> {

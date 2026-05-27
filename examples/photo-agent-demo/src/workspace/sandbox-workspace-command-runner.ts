@@ -6,7 +6,7 @@ import {
   attachWorkspaceMount,
   type WorkspaceMountFlushSummary,
   type WorkspaceMountHost,
-  type WorkspaceMountWorkingCopy,
+  type WorkspaceMountFiles,
 } from "@cloudflare/workspace";
 
 export type WorkspaceCommandResult = {
@@ -20,7 +20,7 @@ export type WorkspaceCommandResult = {
 
 export interface DemoWorkspaceCommandRunner {
   runWorkspaceCommand(options: {
-    workingCopy: WorkspaceMountWorkingCopy;
+    files: WorkspaceMountFiles;
     command: string;
     root: string;
     draftEditId: string;
@@ -63,7 +63,7 @@ export class SandboxWorkspaceCommandRunner implements DemoWorkspaceCommandRunner
   constructor(private readonly sandbox: SandboxClient | SandboxClientFactory) {}
 
   async runWorkspaceCommand(options: {
-    workingCopy: WorkspaceMountWorkingCopy;
+    files: WorkspaceMountFiles;
     command: string;
     root: string;
     draftEditId: string;
@@ -71,7 +71,7 @@ export class SandboxWorkspaceCommandRunner implements DemoWorkspaceCommandRunner
     const sandbox = typeof this.sandbox === "function" ? this.sandbox(options.draftEditId) : this.sandbox;
     const host = new SandboxWorkspaceMountHost(sandbox);
     const mount = await attachWorkspaceMount({
-      workingCopy: options.workingCopy,
+      files: options.files,
       host,
       root: options.root,
     });

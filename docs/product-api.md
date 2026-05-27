@@ -216,6 +216,6 @@ These details belong in lower layers. They shouldn't be the first thing a produc
 
 ## Current gap
 
-The prototype proves the underlying semantics with sessions, filesystem materialisation, scoped Dynamic Worker file capabilities, and explicit commit/discard. The API above is the target for making those semantics approachable.
+The prototype now exposes current files, durable file copies, `apply()`, and `discard()` through this product-facing layer. Filesystem materialisation and scoped Dynamic Worker file capabilities still use lower-level projection helpers.
 
-Future implementation should be judged by whether code like `examples/photo-agent-demo` can express its Workspace usage in these terms without exposing raw Workspace machinery.
+Future implementation should be judged by whether code like `examples/photo-agent-demo` can express attachment, capture, and scoped delegation in these terms without exposing raw Workspace machinery.

@@ -1,7 +1,7 @@
 import { Result } from "better-result";
 import { DurableObject } from "cloudflare:workers";
 import { WorkspaceBlobStore } from "../storage/blob-store";
-import type { RevisionNotFoundError } from "../model/errors";
+import type { RevisionNotFoundError, SessionNotFoundError, WorkspaceError } from "../model/errors";
 import { bumpHeadVersion } from "../storage/head-state";
 import {
   deleteFromTree,
@@ -23,15 +23,28 @@ import {
   type WorkspaceMkdirRpcResult,
   type WorkspaceReadOptions,
   type WorkspaceReadRpcResult,
-  type WorkspaceSessionLookupRpcResult,
+  type WorkspaceSessionCommitRpcResult,
+  type WorkspaceSessionDeleteRpcResult,
+  type WorkspaceSessionDiscardRpcResult,
+  type WorkspaceSessionInfoRpcResult,
+  type WorkspaceSessionListRpcResult,
+  type WorkspaceSessionMkdirRpcResult,
+  type WorkspaceSessionReadRpcResult,
+  type WorkspaceSessionStatRpcResult,
+  type WorkspaceSessionWriteRpcResult,
+  type WorkspaceRpcResult,
   type WorkspaceStatRpcResult,
   type WorkspaceWriteRpcResult,
 } from "../model/rpc";
 import { initializeWorkspaceSchema } from "../storage/schema";
-import { beginWorkspaceSession, requireOpenSession } from "../model/sessions";
-import { headTree, revisionTree } from "../storage/sql-entry-tree";
+import {
+  beginWorkspaceSession,
+  commitWorkspaceSession,
+  discardWorkspaceSession,
+  requireOpenSession,
+} from "../model/sessions";
+import { headTree, revisionTree, sessionTree } from "../storage/sql-entry-tree";
 import type { MutableTree, ReadableTree } from "../storage/tree";
-import { WorkspaceSession } from "./workspace-session";
 
 export interface Env {
   WORKSPACE_BLOBS: R2Bucket;
@@ -49,20 +62,12 @@ export class WorkspaceObject extends DurableObject<Env> {
     return toRpcResult(this.snapshotInternal());
   }
 
-  async beginSession(): Promise<WorkspaceSession> {
-    const session = beginWorkspaceSession(this.ctx.storage);
-    return new WorkspaceSession(this.ctx.storage, this.env.WORKSPACE_BLOBS, session.sessionId);
+  async beginSession(): Promise<WorkspaceSessionInfoRpcResult> {
+    return toRpcResult(Result.ok(beginWorkspaceSession(this.ctx.storage)));
   }
 
-  async getSession(sessionId: string): Promise<WorkspaceSessionLookupRpcResult> {
-    const session = requireOpenSession(this.ctx.storage.sql, sessionId);
-    if (Result.isError(session)) {
-      return toRpcError(session.error);
-    }
-
-    return toRpcResult(
-      Result.ok(new WorkspaceSession(this.ctx.storage, this.env.WORKSPACE_BLOBS, session.value.sessionId)),
-    );
+  async getSession(sessionId: string): Promise<WorkspaceSessionInfoRpcResult> {
+    return toRpcResult(requireOpenSession(this.ctx.storage.sql, sessionId));
   }
 
   async mkdir(path: string): Promise<WorkspaceMkdirRpcResult> {
@@ -135,6 +140,54 @@ export class WorkspaceObject extends DurableObject<Env> {
     return toRpcResult(statTree(tree.value, path));
   }
 
+  async sessionMkdir(sessionId: string, path: string): Promise<WorkspaceSessionMkdirRpcResult> {
+    return this.withSessionTree(sessionId, (tree) => mkdirInTree(tree, path));
+  }
+
+  async sessionWriteFile(sessionId: string, path: string, contents: Uint8Array): Promise<WorkspaceSessionWriteRpcResult> {
+    const tree = this.openSessionTree(sessionId);
+    if (Result.isError(tree)) {
+      return toRpcError(tree.error);
+    }
+
+    const preflight = validateWriteTarget(tree.value, path);
+    if (Result.isError(preflight)) {
+      return toRpcResult(preflight);
+    }
+
+    const blob = await this.blobs().put(contents);
+    return this.withSessionTree(sessionId, (currentTree) => writeBlobRefToTree(currentTree, path, blob));
+  }
+
+  async sessionReadFile(sessionId: string, path: string): Promise<WorkspaceSessionReadRpcResult> {
+    const tree = this.openSessionTree(sessionId);
+    if (Result.isError(tree)) {
+      return toRpcError(tree.error);
+    }
+
+    return toRpcResult(await readFileFromTree(tree.value, this.blobs(), path));
+  }
+
+  async sessionList(sessionId: string, path: string): Promise<WorkspaceSessionListRpcResult> {
+    return this.withSessionTree(sessionId, (tree) => listTree(tree, path));
+  }
+
+  async sessionDelete(sessionId: string, path: string): Promise<WorkspaceSessionDeleteRpcResult> {
+    return this.withSessionTree(sessionId, (tree) => deleteFromTree(tree, path));
+  }
+
+  async sessionStat(sessionId: string, path: string): Promise<WorkspaceSessionStatRpcResult> {
+    return this.withSessionTree(sessionId, (tree) => statTree(tree, path));
+  }
+
+  async sessionCommit(sessionId: string): Promise<WorkspaceSessionCommitRpcResult> {
+    return toRpcResult(commitWorkspaceSession(this.ctx.storage, sessionId));
+  }
+
+  async sessionDiscard(sessionId: string): Promise<WorkspaceSessionDiscardRpcResult> {
+    return toRpcResult(discardWorkspaceSession(this.ctx.storage, sessionId));
+  }
+
   private snapshotInternal(): WorkspaceSnapshotResult {
     return this.ctx.storage.transactionSync(() => createRevisionFromHead(this.ctx.storage.sql));
   }
@@ -146,6 +199,27 @@ export class WorkspaceObject extends DurableObject<Env> {
     }
 
     return Result.ok(revision.value ? revisionTree(this.ctx.storage.sql, revision.value) : this.head());
+  }
+
+  private withSessionTree<T, E extends WorkspaceError>(
+    sessionId: string,
+    operation: (tree: MutableTree) => Result<T, E>,
+  ): WorkspaceRpcResult<T, E | SessionNotFoundError> {
+    const tree = this.openSessionTree(sessionId);
+    if (Result.isError(tree)) {
+      return toRpcError(tree.error);
+    }
+
+    return toRpcResult(operation(tree.value));
+  }
+
+  private openSessionTree(sessionId: string): Result<MutableTree, SessionNotFoundError> {
+    const session = requireOpenSession(this.ctx.storage.sql, sessionId);
+    if (Result.isError(session)) {
+      return Result.err(session.error);
+    }
+
+    return Result.ok(sessionTree(this.ctx.storage.sql, sessionId));
   }
 
   private head(): MutableTree {
