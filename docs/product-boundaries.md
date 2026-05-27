@@ -1,74 +1,56 @@
 # Product boundaries
 
-Workspace is durable file state for Cloudflare execution environments.
+Workspace is durable file state for Cloudflare execution environments. Everything below either flows from that statement or is excluded by it.
 
-It gives trusted Workers and Durable Objects a direct file-tree API. It gives delegated code scoped file capabilities. It gives Sandboxes and containers a filesystem projection such as `/workspace`. It can provide Dynamic Workers with modules and static assets backed by Workspace state.
-
-All of these are projections of the same core model: durable file trees, durable working copies, explicit commit/discard, and immutable recovery points.
-
-See [`workspace-product-model.md`](./workspace-product-model.md) for the long-term product model.
+For the conceptual model, see [`product-model.md`](./product-model.md). For the target API shape, see [`product-api.md`](./product-api.md). For how it's actually built, see [`architecture.md`](./architecture.md).
 
 ## What Workspace owns
 
-Workspace owns:
-
-- durable files and directories,
-- file contents and generic file metadata,
-- working-copy semantics,
-- scoped file capabilities,
-- filesystem attachment semantics,
-- module and asset projections from Workspace trees,
-- explicit commit and discard of working-copy changes,
-- snapshots or recovery points of durable file state.
-
-The core abstraction is file state, not execution.
+- Durable files and directories.
+- File contents and generic file metadata.
+- Working-copy semantics (file copies).
+- Scoped file capabilities for delegated code.
+- Filesystem attachment semantics for Sandboxes and containers.
+- Module and asset projections from Workspace trees (planned).
+- Explicit commit and discard of working-copy changes.
+- Immutable revisions as recovery points.
 
 ## What Workspace does not own
 
-Workspace does not own:
-
-- command execution,
-- `run` or `exec` APIs,
-- Dynamic Worker loading,
-- container or Sandbox lifecycle,
-- agent orchestration,
-- task scheduling,
-- Git history, branches, refs, or remotes,
-- Artifacts semantics,
-- policy, grant, approval, or audit systems,
-- arbitrary object-bucket mounting,
-- full distributed POSIX semantics.
+- Command execution. No `run`, no `exec`.
+- Sandbox, container, or Dynamic Worker lifecycle.
+- Dynamic Worker loading (Worker Loader is the consumer).
+- Agent orchestration or task scheduling.
+- Git history, branches, refs, remotes, rebase, merge.
+- Artifacts semantics.
+- Policy, approval, grant, or audit systems.
+- Arbitrary object-bucket mounting.
+- Full distributed POSIX semantics.
 
 Execution products decide how work runs. Workspace decides what durable files exist before and after that work.
 
-## Authority rule
+## Authority
 
-Trusted product code may receive Workspace identity and control capabilities.
+Trusted product code (Workers, Durable Objects you wrote) may receive Workspace identity and control capabilities.
 
-Delegated code should usually receive scoped capabilities, not Workspace identity. Dynamic Workers, plugins, generated code, and Sandbox/container commands can propose file-state changes within a working copy. A trusted parent should normally decide whether to commit or discard those changes.
+Delegated code (Dynamic Workers, plugins, generated code, Sandbox/container commands) should usually receive scoped capabilities, not Workspace identity. They can propose file-state changes within a working copy. The parent decides whether to publish.
 
-## Publication rule
+## Publication
 
-Workspace never publishes execution-local or delegated changes implicitly.
+Workspace never publishes execution-local changes implicitly. Not when a process writes a file. Not when a command exits. Not when a Dynamic Worker returns. Not when a Sandbox shuts down. Not because execution succeeded.
 
-Not when a process writes a file.  
-Not when a command exits.  
-Not when a Dynamic Worker returns.  
-Not when a Sandbox or container exits.  
-Not because execution succeeded.
+The publish operation is `commit`. The escape hatch is `discard`.
 
-The publication operation is an explicit commit. The matching escape hatch is discard.
-
-Working-copy changes may be durable before they are published. Durable draft state and published head state are different concepts.
+Working-copy changes may be durable before they're published. Durable draft state and published current state are different concepts.
 
 ## Decision test
 
 For any proposed feature, ask:
 
-1. Is this file state or execution?
-2. Does this define Workspace semantics, or adapt them to one execution environment?
+1. Is this file state, or is it execution?
+2. Does it define Workspace semantics, or adapt them to one runtime?
 3. What authority does the caller receive?
 4. Can delegated code receive a scoped capability instead of Workspace identity?
-5. Is this a core semantic or a product/controller concern?
+5. Is it a core semantic, or a product/controller concern?
 
-If the answer points to execution, orchestration, Dynamic Worker loading, Git, policy, or product integration, keep it outside the core Workspace model. If it is an adapter, preserve the dependency direction: adapters consume Workspace semantics; Workspace does not depend on adapters.
+If the answer points to execution, orchestration, loading, Git, policy, or product-specific domain state — keep it out of Workspace core. If it's an adapter, preserve the dependency direction: adapters consume Workspace semantics; Workspace doesn't consume adapters.

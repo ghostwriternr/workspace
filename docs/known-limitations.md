@@ -1,70 +1,57 @@
 # Known limitations
 
-These are accepted limitations of the current Workspace prototype. Keep this file short and remove entries when they are resolved or no longer relevant.
+Accepted gaps in the current prototype. Each entry is intentional today and should be removed when it stops being intentional.
 
 ## Revisions are full metadata copies
 
-`snapshot()` copies the current `entries` table into `revision_entries`.
+`snapshot()` copies the entire `entries` table into `revision_entries`. Correct for proving immutable revision semantics, but O(N) Durable Object SQLite storage per snapshot.
 
-This is correct for proving immutable revision semantics, but it is O(N) Durable Object SQLite storage per snapshot. Long-term, Workspace may need delta revisions, chunked tree snapshots, or immutable tree objects stored outside Durable Object SQLite.
-
-Revisit when:
-
-- workspaces can contain many files,
-- commits become frequent,
-- container working-copy commits are introduced,
-- Durable Object SQLite storage pressure becomes relevant.
-
-## No blob garbage collection
-
-R2 file contents are content-addressed and retained even after files are deleted or overwritten.
-
-This keeps metadata and blob writes independent during the prototype. Long-term, Workspace needs blob reachability and garbage collection across mutable head and immutable revisions.
-
-## Missing blob references are not distinct errors
-
-If metadata points at a missing R2 blob, `readFile()` currently returns `PathNotFoundError`.
-
-That is sufficient for the prototype, but long-term this is storage corruption or an internal consistency failure and should likely have a distinct error and observability path.
+Revisit when: workspaces hold many files, commits become frequent, or DO SQLite pressure shows up. The likely fix is delta revisions, chunked tree snapshots, or immutable tree objects stored outside DO SQLite.
 
 ## Sessions copy full metadata
 
-`beginSession()` copies the current `entries` table into `session_entries`, and `commit()` on a session replaces `entries` from that full copy.
+`beginSession()` copies the current `entries` table into `session_entries`. `commit()` replaces `entries` from that copy. Correct for proving isolated working-copy semantics, but O(N) at begin/commit and O(N) storage per open session.
 
-This is correct for proving isolated working-session semantics, but it is O(N) Durable Object SQLite storage per open session and O(N) metadata work at begin/commit time. Long-term, sessions may need copy-on-write metadata, deltas, or immutable tree objects.
+Same likely fix: copy-on-write metadata, deltas, or immutable tree objects.
+
+## No blob garbage collection
+
+R2 file contents are content-addressed and retained even after files are deleted or overwritten. Keeps metadata and blob writes independent during the prototype.
+
+Long-term, we need blob reachability across mutable head and immutable revisions, and a GC path.
+
+## Missing blob references look like missing files
+
+If metadata points at a blob that isn't in R2, `readFile()` returns `PathNotFoundError`. That's adequate for the prototype, but it's really storage corruption and should eventually have a distinct error and an observability signal.
 
 ## Filesystem projection scans host files
 
-The current filesystem projection materializes files into the Sandbox filesystem and hashes host files during `flush()` to detect changes.
+The current projection materialises files into the Sandbox filesystem and hashes host files during `flush()` to detect changes. Proves `/workspace` semantics for the demo; it's not the production mount.
 
-This proves `/workspace` working-copy semantics for the demo, but it is not the production Sandbox/container mount implementation. Long-term, Workspace needs a mount-like implementation that can avoid full-tree scans and avoid reading unchanged file contents back into the Worker.
+Long-term: a mount-like implementation that avoids full-tree scans and avoids reading unchanged file contents back into the Worker.
 
-## Dynamic Worker module and asset projections are missing
+## Dynamic Worker module and asset projections aren't built
 
-The current prototype validates scoped Dynamic Worker file capabilities over a Workspace draft, but it does not yet load Dynamic Worker modules or static assets directly from Workspace trees.
+The prototype validates scoped Dynamic Worker file capabilities over a draft. It does not yet load Dynamic Worker modules or static assets from Workspace trees.
 
-Long-term, Dynamic Workers should be able to receive Workspace-backed module sources and asset bindings in addition to scoped file capabilities.
+These are documented projections in [`product-model.md`](./product-model.md); they're just unimplemented.
 
 ## No session garbage collection
 
-Sessions left open indefinitely retain `session_entries` rows indefinitely.
+Sessions left open indefinitely retain `session_entries` indefinitely. No TTL, sweep, list, or purge API. Callers must explicitly `commit()` or `discard()`.
 
-There is no TTL, sweep, list, or purge API yet. Callers must explicitly `commit()` or `discard()` sessions. Long-term, Workspace needs session expiration or garbage collection before supporting high-volume or untrusted session creation.
+Needed before high-volume or untrusted session creation.
 
-## No merge or rebase model
+## No merge or rebase
 
-Sessions record the head version they started from, and `commit()` rejects stale sessions when the head has newer changes.
-
-That proves the safety boundary, but there is no merge, rebase, or conflict-detail model yet. Callers can inspect and discard a conflicted session, but Workspace does not yet help reconcile it with the newer head.
-
-## Product-facing API is not implemented
-
-The prototype currently exposes lower-level Workspace sessions, RPC result DTOs, scoped capabilities, and filesystem projection helpers. [`workspace-product-api.md`](./workspace-product-api.md) describes the intended product-facing shape for current files, file copies, attachments, capture, apply, and discard.
-
-Long-term, products should not need to handle session plumbing, stub disposal, loopback transport details, or projection internals in the happy path.
+Sessions record the head version they started from. `commit()` rejects stale sessions. That's the safety boundary; there's no merge, rebase, or conflict-detail model yet. Callers can inspect and discard, but Workspace doesn't yet help reconcile.
 
 ## No revision pruning
 
-Revisions and the blobs they reference are retained indefinitely.
+Revisions and the blobs they reference are retained indefinitely. No retention policy, pruning, or export semantics. Keep this outside the core model until revision usage patterns are clearer.
 
-Long-term, Workspace needs retention policy, pruning, or export semantics. Keep this outside the core model until revision usage patterns are clearer.
+## The user-facing API isn't built
+
+The prototype exposes sessions, RPC result DTOs, scoped capabilities, and filesystem projection helpers directly. The target shape in [`product-api.md`](./product-api.md) — `workspace.files.copy(...)`, `attachment.capture()`, `copy.apply()` — is the next product layer.
+
+Until that exists, callers (including `examples/photo-agent-demo`) handle the lower-level shape directly.

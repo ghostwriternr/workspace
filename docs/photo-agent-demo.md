@@ -1,30 +1,22 @@
 # Photo agent demo
 
-This demo validates Workspace as durable image project state for an AI agent.
+The demo is a Worker app that uses Workspace as the durable state for an AI agent editing photos. It's deliberately not a photo editor — it's a proof that two different runtimes (a Sandbox shell and a Dynamic Worker) can edit the same Workspace draft and publish through one boundary.
 
-The browser handles upload because the user owns the local image bytes. After upload, the user edits through chat. The agent uses Think for conversation, Workspace for durable file state, and Sandbox for native image work.
+For the wiring diagram and how the pieces fit, see [`architecture.md`](./architecture.md). For boundaries, see [`product-boundaries.md`](./product-boundaries.md).
 
-## What it validates
+## What the demo proves
 
-The demo validates two Workspace projections over the same draft working copy:
-
-- a Sandbox receives a filesystem view at `/workspace`,
-- a Dynamic Worker receives a scoped `env.WORKSPACE` file capability.
-
-It also validates that:
-
-- product-specific agent tools should sit above Workspace primitives,
-- Sandbox and Dynamic Workers are execution boundaries,
-- Workspace is the durable file-state boundary,
-- delegated code can receive scoped file authority without Workspace identity or commit authority,
-- draft/current language maps naturally to Workspace working-copy semantics,
-- passive previews can reflect durable Workspace state without exposing low-level file APIs to the user.
+- Workspace works as durable file state for AI-assisted work.
+- The same draft (working copy) is usable from a Sandbox at `/workspace` and from a Dynamic Worker via `env.WORKSPACE` simultaneously.
+- Delegated Worker code can receive scoped file authority without Workspace identity or commit authority.
+- The publish boundary stays explicit: only `commitDraft` makes a draft current, and only `discardDraft` throws it away.
+- Product-specific agent tools belong above Workspace primitives, not inside them.
+- "Draft" / "current" maps cleanly to working-copy / head — users don't need to think in session/commit terms.
+- Previews can be passive: agent state pushes change keys, the browser fetches only when things change.
 
 ## Experience
 
-The app has three visible zones:
-
-```text
+```
 [Upload + workspace name]
 
 [Original] [Draft edit] [Current]
@@ -32,29 +24,36 @@ The app has three visible zones:
 [Chat / Agent activity timeline]
 ```
 
-Upload is a concrete browser action. Image previews are passive and update from agent state. The chat timeline shows assistant text, compact tool activity, tool results, and collapsed reasoning.
+Upload is a concrete browser action because the user owns the local bytes. Image previews are passive and update from agent state. Chat shows assistant text, compact tool activity, tool results, and collapsed reasoning.
 
-## Agent editing model
+## How the agent edits
 
-The agent has broad freedom inside an isolated Sandbox working directory. It can use ImageMagick commands such as `identify` and `convert`, shell utilities, or short scripts.
+The agent has broad freedom inside an isolated Sandbox working directory. It can use ImageMagick (`identify`, `convert`), shell utilities, or short scripts. It also has Worker-native code execution through a Dynamic Worker with a scoped Workspace binding — useful for metadata, notes, manifests, anything file-oriented in JS.
 
-The agent does not receive raw Workspace control tools. It receives product-level tools for inspecting photo state, running commands with the draft mounted at `/workspace`, running Dynamic Worker code with a scoped Workspace file binding, making the draft current, and throwing the draft away.
+It doesn't see raw Workspace control. It sees product-level tools:
 
-## Durable state model
+- `listPhotoState` — passive state (original, current, draft, files in draft).
+- `runWorkspaceCommand` — shell command in the Sandbox with the draft mounted at `/workspace`.
+- `runDynamicWorker` — Worker-native JS over a scoped `env.WORKSPACE` for the draft.
+- `commitDraft` — make the draft current.
+- `discardDraft` — throw it away.
 
-Workspace stores:
+## What's stored in Workspace
 
-- uploaded original image,
-- durable draft edit image,
-- current image,
-- immutable revisions from committed working copies.
+- The uploaded original image.
+- The durable draft edit image (and any other draft files).
+- The current image.
+- Immutable revisions from committed drafts.
 
-Draft edits may be durable before they are published. They stay isolated until the user asks to make one current. The user can throw away a draft without changing the current image.
+A draft can survive across requests, reconnects, and agent turns. It's only published when the user (or the agent acting on user intent) asks for it.
 
 ## Product boundary
 
-Workspace does not run commands, own the container, or decide how to edit an image. Sandbox owns execution. Think owns agent conversation and tool choice. Workspace owns durable files and revision boundaries.
+Workspace doesn't run commands, own the container, or decide how to edit an image. Sandbox owns execution. Think owns conversation and tool choice. Workspace owns durable files and the publication boundary.
 
-The demo uses the Workspace filesystem projection shape for Sandbox commands: tools operate on `/workspace`, and successful changes become part of the draft working copy. It also uses the scoped file capability projection for Dynamic Worker code: delegated Worker code receives `env.WORKSPACE.readFile`, `writeFile`, `list`, and `stat` without receiving Workspace identity or publish authority.
+The demo uses two of Workspace's projections over one draft:
 
-The remaining long-term Dynamic Worker gaps are module and asset projections backed by Workspace trees.
+- The **filesystem projection** for Sandbox commands: tools operate on `/workspace`, and successful changes become part of the draft after `flush`.
+- The **scoped file capability projection** for Dynamic Worker code: delegated JS sees `readFile` / `writeFile` / `list` / `stat` only, never Workspace identity or publish authority.
+
+The remaining Workspace gaps relevant to this demo are the production mount and the Dynamic Worker module/asset projections — see [`known-limitations.md`](./known-limitations.md).
