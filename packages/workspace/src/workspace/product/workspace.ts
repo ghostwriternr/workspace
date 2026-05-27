@@ -1,4 +1,10 @@
 import { Result, type Result as BetterResult } from "better-result";
+import {
+  attachWorkspaceFiles,
+  type WorkspaceFileAttachment,
+  type WorkspaceFileAttachmentError,
+  type WorkspaceFileAttachmentHost,
+} from "./attachment";
 import type {
   WorkspaceDeleteRpcResult,
   WorkspaceEntry,
@@ -57,6 +63,10 @@ export type WorkspaceFilesApi = {
   delete(path: string): Promise<BetterResult<void, WorkspaceFileError>>;
 };
 
+export type WorkspaceFileCopyFiles = WorkspaceFilesApi & {
+  attach(host: WorkspaceFileAttachmentHost, path: string): Promise<BetterResult<WorkspaceFileAttachment, WorkspaceFileAttachmentError>>;
+};
+
 type RpcErrorOf<T> = T extends { status: "error"; error: infer E } ? E : never;
 
 export type WorkspaceFileError =
@@ -91,7 +101,7 @@ export class Workspace {
 }
 
 export class WorkspaceFileCopy {
-  readonly files: WorkspaceFilesApi;
+  readonly files: WorkspaceFileCopyFiles;
 
   constructor(
     private readonly object: WorkspaceObjectClient,
@@ -110,7 +120,7 @@ export class WorkspaceFileCopy {
   }
 }
 
-class WorkspaceCopyFiles implements WorkspaceFilesApi {
+class WorkspaceCopyFiles implements WorkspaceFileCopyFiles {
   constructor(
     private readonly object: WorkspaceObjectClient,
     private readonly copyId: string,
@@ -138,6 +148,10 @@ class WorkspaceCopyFiles implements WorkspaceFilesApi {
 
   async delete(path: string): Promise<BetterResult<void, WorkspaceFileError>> {
     return rpcToResult(await this.object.sessionDelete(this.copyId, path));
+  }
+
+  async attach(host: WorkspaceFileAttachmentHost, path: string): Promise<BetterResult<WorkspaceFileAttachment, WorkspaceFileAttachmentError>> {
+    return attachWorkspaceFiles(this, host, path);
   }
 }
 

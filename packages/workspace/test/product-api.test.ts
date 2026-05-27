@@ -103,6 +103,60 @@ describe("Workspace product API", () => {
     }
   });
 
+  it("attaches a file copy to a filesystem host and captures changed files", async () => {
+    const workspace = Workspace.get(env.WORKSPACES, "product-copy-attach-capture");
+    const host = new FakeAttachmentHost();
+
+    await workspace.files.mkdir("/photos");
+    await workspace.files.write("/photos/original.txt", bytes("original"));
+    const copyResult = await workspace.files.copy("edit-photo");
+    if (Result.isError(copyResult)) {
+      throw new Error("copy failed");
+    }
+
+    const attachment = await copyResult.value.files.attach(host, "/workspace");
+    expect(Result.isOk(attachment)).toBe(true);
+    if (Result.isError(attachment)) {
+      throw new Error("attach failed");
+    }
+
+    host.files["/workspace/photos/current.txt"] = bytes("edited");
+
+    const capture = await attachment.value.capture();
+    const apply = await copyResult.value.apply();
+    const current = await workspace.files.read("/photos/current.txt");
+
+    expect(attachment.value.path).toBe("/workspace");
+    expect(Result.isOk(capture)).toBe(true);
+    if (Result.isOk(capture)) {
+      expect(capture.value.created).toContain("/photos/current.txt");
+    }
+    expect(Result.isOk(apply)).toBe(true);
+    expect(Result.isOk(current)).toBe(true);
+    if (Result.isOk(current)) {
+      expect(text(current.value)).toBe("edited");
+    }
+  });
+
+  it("returns Result errors for attachment materialization failures", async () => {
+    const object = new BrokenAttachmentWorkspaceObject();
+    const workspace = Workspace.get({ getByName: () => object }, "unit");
+    const copyResult = await workspace.files.copy("unit-copy");
+    if (Result.isError(copyResult)) {
+      throw new Error("copy failed");
+    }
+
+    const attachment = await copyResult.value.files.attach(new FakeAttachmentHost(), "/workspace");
+
+    expect(Result.isError(attachment)).toBe(true);
+    if (Result.isError(attachment)) {
+      expect(attachment.error).toMatchObject({
+        operation: "list /",
+        errorTag: "PathNotFoundError",
+      });
+    }
+  });
+
   it("uses session-id operations without looking up session stubs for file operations", async () => {
     const object = new FakeWorkspaceObject();
     const workspace = Workspace.get({ getByName: () => object }, "unit");
@@ -125,6 +179,54 @@ describe("Workspace product API", () => {
     }
   });
 });
+
+class FakeAttachmentHost {
+  readonly directories = new Set<string>();
+  readonly files: Record<string, Uint8Array> = {};
+
+  async resetDirectory(path: string) {
+    for (const filePath of Object.keys(this.files)) {
+      if (filePath === path || filePath.startsWith(`${path}/`)) {
+        delete this.files[filePath];
+      }
+    }
+  }
+
+  async mkdir(path: string, _options: { recursive: boolean }) {
+    this.directories.add(path);
+  }
+
+  async writeFile(path: string, content: ReadableStream<Uint8Array>) {
+    this.files[path] = await collect(content);
+  }
+
+  async readFile(path: string, _options: { encoding: "none" }) {
+    const content = this.files[path];
+    if (!content) throw new Error(`missing fake attachment file: ${path}`);
+    return { success: true as const, content: bytesToStream(content) };
+  }
+
+  async listFiles(path: string, _options: { recursive: boolean; includeHidden: boolean }) {
+    const prefix = `${path}/`;
+    return {
+      success: true,
+      files: [
+        ...[...this.directories]
+          .filter((directoryPath) => directoryPath !== path && directoryPath.startsWith(prefix))
+          .map((directoryPath) => ({
+            absolutePath: directoryPath,
+            type: "directory" as const,
+          })),
+        ...Object.keys(this.files)
+          .filter((filePath) => filePath.startsWith(prefix))
+          .map((filePath) => ({
+            absolutePath: filePath,
+            type: "file" as const,
+          })),
+      ],
+    };
+  }
+}
 
 class FakeWorkspaceObject {
   getSessionCount = 0;
@@ -188,7 +290,13 @@ class FakeWorkspaceObject {
     return value ? { status: "ok" as const, value } : { status: "error" as const, error: pathNotFound(path) };
   }
 
-  async sessionList(_sessionId: string, _path: string) {
+  async sessionList(
+    _sessionId: string,
+    _path: string,
+  ): Promise<
+    | { status: "ok"; value: Array<{ name: string; path: string; type: "directory" | "file" }> }
+    | { status: "error"; error: ReturnType<typeof pathNotFound> }
+  > {
     return { status: "ok" as const, value: [] };
   }
 
@@ -212,6 +320,42 @@ class FakeWorkspaceObject {
   async sessionDiscard(_sessionId: string) {
     return { status: "ok" as const };
   }
+}
+
+class BrokenAttachmentWorkspaceObject extends FakeWorkspaceObject {
+  async sessionList(_sessionId: string, path: string) {
+    return { status: "error" as const, error: pathNotFound(path) };
+  }
+}
+
+function bytesToStream(value: Uint8Array): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(value);
+      controller.close();
+    },
+  });
+}
+
+async function collect(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  while (true) {
+    const next = await reader.read();
+    if (next.done) break;
+    chunks.push(next.value);
+    total += next.value.byteLength;
+  }
+
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result;
 }
 
 function pathNotFound(path: string) {

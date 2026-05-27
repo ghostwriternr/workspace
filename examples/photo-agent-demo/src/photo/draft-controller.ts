@@ -6,7 +6,7 @@ import {
   type WorkspaceNamespace,
   type WorkspaceFileError,
 } from "@cloudflare/workspace";
-import type { WorkspaceMountFiles, WorkspaceMountFlushSummary } from "@cloudflare/workspace";
+import type { WorkspaceFileCaptureSummary } from "@cloudflare/workspace";
 import type { DemoWorkspaceCommandRunner } from "../workspace/sandbox-workspace-command-runner";
 import type { DemoDynamicWorkerRunner, DynamicWorkerResult } from "../workspace/dynamic-worker-runner";
 
@@ -118,7 +118,7 @@ export class PhotoDraftController {
     stdout: string;
     stderr: string;
     exitCode: number;
-    flush: WorkspaceMountFlushSummary;
+    flush: WorkspaceFileCaptureSummary;
   }> {
     return this.withDraftCopy(async (copy, draftEditId) => {
       const result = await this.dependencies.commandRunner.runWorkspaceCommand({

@@ -1,12 +1,8 @@
 import { Result } from "better-result";
-
-// This example still uses the low-level filesystem projection until the product-facing
-// Workspace API grows attachments and capture semantics.
-import {
-  attachWorkspaceMount,
-  type WorkspaceMountFlushSummary,
-  type WorkspaceMountHost,
-  type WorkspaceMountFiles,
+import type {
+  WorkspaceFileAttachmentHost,
+  WorkspaceFileCaptureSummary,
+  WorkspaceFileCopyFiles,
 } from "@cloudflare/workspace";
 
 export type WorkspaceCommandResult = {
@@ -15,12 +11,12 @@ export type WorkspaceCommandResult = {
   exitCode: number;
   stdout: string;
   stderr: string;
-  flush: WorkspaceMountFlushSummary;
+  flush: WorkspaceFileCaptureSummary;
 };
 
 export interface DemoWorkspaceCommandRunner {
   runWorkspaceCommand(options: {
-    files: WorkspaceMountFiles;
+    files: WorkspaceFileCopyFiles;
     command: string;
     root: string;
     draftEditId: string;
@@ -63,108 +59,59 @@ export class SandboxWorkspaceCommandRunner implements DemoWorkspaceCommandRunner
   constructor(private readonly sandbox: SandboxClient | SandboxClientFactory) {}
 
   async runWorkspaceCommand(options: {
-    files: WorkspaceMountFiles;
+    files: WorkspaceFileCopyFiles;
     command: string;
     root: string;
     draftEditId: string;
   }): Promise<WorkspaceCommandResult> {
     const sandbox = typeof this.sandbox === "function" ? this.sandbox(options.draftEditId) : this.sandbox;
-    const host = new SandboxWorkspaceMountHost(sandbox);
-    const mount = await attachWorkspaceMount({
-      files: options.files,
-      host,
-      root: options.root,
-    });
-
-    if (Result.isError(mount)) {
-      throw new Error(mount.error.message);
+    const attachment = await options.files.attach(sandboxAttachmentHost(sandbox), options.root);
+    if (Result.isError(attachment)) {
+      throw new Error(attachment.error.message);
     }
 
-    const result = await sandbox.exec(options.command, { cwd: mount.value.root });
+    const result = await sandbox.exec(options.command, { cwd: attachment.value.path });
     if (!result.success) {
       const detail = result.stderr.trim() || result.stdout.trim() || `exit ${result.exitCode}`;
       throw new Error(`Sandbox command failed: ${detail}`);
     }
 
-    const flush = await mount.value.flush();
-    if (Result.isError(flush)) {
-      throw new Error(flush.error.message);
+    const capture = await attachment.value.capture();
+    if (Result.isError(capture)) {
+      throw new Error(capture.error.message);
     }
 
     return {
       command: options.command,
-      root: mount.value.root,
+      root: attachment.value.path,
       exitCode: result.exitCode,
       stdout: result.stdout,
       stderr: result.stderr,
-      flush: flush.value,
+      flush: capture.value,
     };
   }
 }
 
-class SandboxWorkspaceMountHost implements WorkspaceMountHost {
-  constructor(private readonly sandbox: SandboxClient) {}
-
-  async resetDirectory(path: string): Promise<void> {
-    await this.sandbox.exec(`rm -rf ${shellQuote(path)} && mkdir -p ${shellQuote(path)}`);
-  }
-
-  async mkdir(path: string, options: { recursive: boolean }): Promise<void> {
-    await this.sandbox.mkdir(path, options);
-  }
-
-  async writeFile(path: string, contents: Uint8Array): Promise<void> {
-    await this.sandbox.writeFile(path, bytesToStream(contents));
-  }
-
-  async readFile(path: string): Promise<Uint8Array> {
-    const result = await this.sandbox.readFile(path, { encoding: "none" });
-    return collectStream(result.content);
-  }
-
-  async listFiles(path: string) {
-    const result = await this.sandbox.listFiles(path, { recursive: true, includeHidden: true });
-    return result.files.map((file) => ({
-      path: file.absolutePath,
-      type: file.type,
-    }));
-  }
+function sandboxAttachmentHost(sandbox: SandboxClient): WorkspaceFileAttachmentHost {
+  return {
+    resetDirectory: async (path) => {
+      await sandbox.exec(`rm -rf ${shellQuote(path)} && mkdir -p ${shellQuote(path)}`);
+    },
+    mkdir: (path, options) => sandbox.mkdir(path, options),
+    writeFile: (path, content) => sandbox.writeFile(path, content),
+    readFile: (path, options) => sandbox.readFile(path, options),
+    listFiles: async (path, options) => {
+      const result = await sandbox.listFiles(path, options);
+      return {
+        files: result.files.map((file) => ({
+          absolutePath: file.absolutePath,
+          type: file.type,
+        })),
+      };
+    },
+  };
 }
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
-function bytesToStream(bytes: Uint8Array): ReadableStream<Uint8Array> {
-  return new ReadableStream({
-    start(controller) {
-      controller.enqueue(bytes);
-      controller.close();
-    },
-  });
-}
-
-async function collectStream(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-
-  while (true) {
-    const next = await reader.read();
-    if (next.done) {
-      break;
-    }
-
-    chunks.push(next.value);
-    total += next.value.byteLength;
-  }
-
-  const result = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-
-  return result;
 }

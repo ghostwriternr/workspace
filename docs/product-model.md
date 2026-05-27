@@ -125,13 +125,17 @@ Bounded by root prefix, read globs, write globs, optional delete, no commit auth
 Sandboxes and containers see a working copy as a local directory. The product attaches it, runs commands, captures useful changes, and decides on commit:
 
 ```ts
-const copy = await workspace.beginSession();
-const mount = await attachWorkspaceFilesystem({ workingCopy: copy, target: sandbox, path: "/workspace" });
+const copyResult = await workspace.files.copy("photo-edit");
+if (Result.isError(copyResult)) return copyResult;
+const copy = copyResult.value;
 
-await sandbox.exec("convert /workspace/photos/original.jpg ... /workspace/photos/current");
+const attachment = await copy.files.attach(sandbox, "/workspace");
+const result = await sandbox.exec("convert /workspace/photos/original.jpg ... /workspace/photos/current", {
+  cwd: attachment.path,
+});
 
-await mount.flush();
-await copy.commit({ message: "Publish edited photo" });
+if (result.success) await attachment.capture();
+await copy.apply();
 ```
 
 The implementation may be FUSE, a native mount, or a Sandbox-specific mechanism. Workspace is not defined as FUSE and won't chase full distributed POSIX. Unsupported filesystem features should fail clearly.

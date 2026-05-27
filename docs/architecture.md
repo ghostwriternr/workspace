@@ -149,9 +149,9 @@ It does **not** expose `commit`, `discard`, `beginSession`, `getByName`, revisio
 
 `packages/workspace/src/workspace/projections/working-copy-mount.ts`
 
-`attachWorkspaceMount(...)` materialises a file copy into a host filesystem — today, into a Sandbox container under `/workspace`. On `flush()`, it reads back changes and writes them into the copy as metadata + blob refs.
+`copy.files.attach(...)` materialises a file copy into a host filesystem — today, into a Sandbox container under `/workspace`. On `attachment.capture()`, it reads back changes and writes them into the copy as metadata + blob refs. The lower-level implementation is `attachWorkspaceMount(...)`.
 
-The current implementation scans and hashes. A future implementation can be a real mount. The semantic boundary stays the same: the runtime sees a normal filesystem; the session sees the changes after flush.
+The current implementation scans and hashes. A future implementation can be a real mount. The semantic boundary stays the same: the runtime sees a normal filesystem; the file copy sees the changes after capture.
 
 ## How the demo wires it together
 

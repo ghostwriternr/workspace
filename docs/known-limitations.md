@@ -54,6 +54,6 @@ Revisions and the blobs they reference are retained indefinitely. No retention p
 
 ## The user-facing API is only partly built
 
-The package now exposes the first product-facing layer: `Workspace.get(...)`, `workspace.files`, durable file copies, `copy.apply()`, and `copy.discard()`. It hides sessions, raw RPC result DTOs, and RPC stub disposal for that path.
+The package now exposes the first product-facing layer: `Workspace.get(...)`, `workspace.files`, durable file copies, `copy.files.attach(...)`, `attachment.capture()`, `copy.apply()`, and `copy.discard()`. It hides sessions, raw RPC result DTOs, RPC stub disposal, and direct filesystem projection setup for that path.
 
-Attachments and capture are still lower-level projection code. The Sandbox path in `examples/photo-agent-demo` still adapts a file copy into the filesystem projection directly, and the Dynamic Worker path still uses the scoped file capability helper directly. Those should move behind `copy.files.attach(...)`, `attachment.capture()`, and `copy.files.scoped(...)`-style APIs.
+The Dynamic Worker path still uses the scoped file capability helper directly. That should move behind a `copy.files.scoped(...)`-style API.

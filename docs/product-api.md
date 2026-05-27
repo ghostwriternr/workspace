@@ -1,6 +1,6 @@
 # Product API
 
-This doc describes the user-facing API we want product code (and agent tools) to see. The current-files and file-copy layer exists today; attachment/capture helpers are still a design target. See [`architecture.md`](./architecture.md) for how the lower layers work, and `examples/photo-agent-demo` for the proving ground.
+This doc describes the user-facing API we want product code (and agent tools) to see. The current-files, file-copy, attachment, and capture layer exists today; scoped file helpers are still a design target. See [`architecture.md`](./architecture.md) for how the lower layers work, and `examples/photo-agent-demo` for the proving ground.
 
 For the conceptual model behind these names, see [`product-model.md`](./product-model.md).
 
@@ -216,6 +216,6 @@ These details belong in lower layers. They shouldn't be the first thing a produc
 
 ## Current gap
 
-The prototype now exposes current files, durable file copies, `apply()`, and `discard()` through this product-facing layer. Filesystem materialisation and scoped Dynamic Worker file capabilities still use lower-level projection helpers.
+The prototype now exposes current files, durable file copies, filesystem attachments, capture, `apply()`, and `discard()` through this product-facing layer. Scoped Dynamic Worker file capabilities still use lower-level projection helpers.
 
-Future implementation should be judged by whether code like `examples/photo-agent-demo` can express attachment, capture, and scoped delegation in these terms without exposing raw Workspace machinery.
+Future implementation should be judged by whether code like `examples/photo-agent-demo` can express scoped delegation in these terms without exposing raw Workspace machinery.

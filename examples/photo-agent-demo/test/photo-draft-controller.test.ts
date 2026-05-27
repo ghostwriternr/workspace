@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { WorkspaceFileCopyFiles } from "@cloudflare/workspace";
 
 import { PhotoDraftController } from "../src/photo/draft-controller";
 
@@ -410,7 +411,7 @@ class FakeWorkspaceCommandRunner {
 
   constructor(private readonly output: Uint8Array) {}
 
-  async runWorkspaceCommand(options: { files: { write(path: string, contents: Uint8Array): Promise<unknown> }; command: string; root: string; draftEditId: string }) {
+  async runWorkspaceCommand(options: { files: WorkspaceFileCopyFiles; command: string; root: string; draftEditId: string }) {
     this.calls.push({ command: options.command, root: options.root, draftEditId: options.draftEditId });
     await options.files.write("/photos/current", this.output);
     return {

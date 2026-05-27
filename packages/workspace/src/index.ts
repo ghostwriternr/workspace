@@ -8,10 +8,17 @@ export {
   type WorkspaceCopyLookupError,
   type WorkspaceCurrentFiles,
   type WorkspaceDiscardError,
+  type WorkspaceFileCopyFiles,
   type WorkspaceFileError,
   type WorkspaceFilesApi,
   type WorkspaceNamespace,
 } from "./workspace/product/workspace";
+export {
+  type WorkspaceFileAttachment,
+  type WorkspaceFileAttachmentError,
+  type WorkspaceFileAttachmentHost,
+  type WorkspaceFileCaptureSummary,
+} from "./workspace/product/attachment";
 export { WorkspaceObject } from "./workspace/runtime/workspace-object";
 export {
   attachWorkspaceMount,

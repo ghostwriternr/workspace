@@ -20,7 +20,7 @@ describe("createSandboxWorkspaceCommandRunner", () => {
     const runner = createSandboxWorkspaceCommandRunner({} as never, "manual-demo");
 
     await runner.runWorkspaceCommand({
-      files: workingCopy,
+      files: workingCopy as never,
       command: "convert /workspace/photos/current /workspace/photos/current",
       root: "/workspace",
       draftEditId: "draft-123",
@@ -87,6 +87,16 @@ class FakeWorkingCopy {
         size: entry.type === "file" ? entry.contents.byteLength : null,
         createdAt: 1,
         updatedAt: 1,
+    });
+  }
+
+  async attach(_host: unknown, path: string) {
+    return Result.ok({
+      path,
+      capture: async () => {
+        this.entries["/photos/current"] = { type: "file", contents: editedBytes };
+        return Result.ok({ created: [], modified: ["/photos/current"], deleted: [], unchanged: 1 });
+      },
     });
   }
 
