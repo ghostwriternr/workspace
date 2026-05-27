@@ -1,5 +1,18 @@
 // Runtime exports used by Workers bindings. Product-facing helpers should avoid
 // forcing ordinary app code to import runtime classes just to work with files.
+export {
+  Workspace,
+  WorkspaceFileCopy,
+  type WorkspaceApplyError,
+  type WorkspaceCopyError,
+  type WorkspaceCopyFiles,
+  type WorkspaceCopyLookupError,
+  type WorkspaceCurrentFiles,
+  type WorkspaceDiscardError,
+  type WorkspaceFileError,
+  type WorkspaceFilesApi,
+  type WorkspaceNamespace,
+} from "./workspace/product/workspace";
 export { WorkspaceObject } from "./workspace/runtime/workspace-object";
 export { WorkspaceSession } from "./workspace/runtime/workspace-session";
 export {

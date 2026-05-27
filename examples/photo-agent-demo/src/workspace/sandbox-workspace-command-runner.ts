@@ -1,13 +1,13 @@
 import { Result } from "better-result";
 
-// This example uses the low-level projection helper directly until the product-facing
-// Workspace API grows file copies, attachments, and capture semantics.
+// This example still uses the low-level filesystem projection until the product-facing
+// Workspace API grows attachments and capture semantics.
 import {
   attachWorkspaceMount,
   type WorkspaceMountFlushSummary,
   type WorkspaceMountHost,
   type WorkspaceMountWorkingCopy,
-} from "../../../../packages/workspace/src/workspace/projections/working-copy-mount";
+} from "@cloudflare/workspace";
 
 export type WorkspaceCommandResult = {
   command: string;

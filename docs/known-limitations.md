@@ -52,8 +52,8 @@ Sessions record the head version they started from. `commit()` rejects stale ses
 
 Revisions and the blobs they reference are retained indefinitely. No retention policy, pruning, or export semantics. Keep this outside the core model until revision usage patterns are clearer.
 
-## The user-facing API isn't built
+## The user-facing API is only partly built
 
-The prototype exposes sessions, RPC result DTOs, scoped capabilities, and filesystem projection helpers directly. The target shape in [`product-api.md`](./product-api.md) — `workspace.files.copy(...)`, `attachment.capture()`, `copy.apply()` — is the next product layer.
+The package now exposes the first product-facing layer: `Workspace.get(...)`, `workspace.files`, durable file copies, `copy.apply()`, and `copy.discard()`. It hides sessions, raw RPC result DTOs, and RPC stub disposal for that path.
 
-Until that exists, callers (including `examples/photo-agent-demo`) handle the lower-level shape directly.
+Attachments and capture are still lower-level projection code. The Sandbox path in `examples/photo-agent-demo` still adapts a file copy into the filesystem projection directly, and the Dynamic Worker path still uses the scoped file capability helper directly. Those should move behind `copy.files.attach(...)`, `attachment.capture()`, and `copy.files.scoped(...)`-style APIs.

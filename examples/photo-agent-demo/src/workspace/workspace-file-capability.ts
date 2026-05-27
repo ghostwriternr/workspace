@@ -1,11 +1,11 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 
-// This loopback entrypoint adapts the package's low-level scoped file capability into
-// a Dynamic Worker binding. It is transport glue, not photo product logic.
+// This loopback entrypoint adapts the package's scoped file capability into a Dynamic
+// Worker binding. It is transport glue, not photo product logic.
 import {
   createWorkspaceFileCapability,
   type ScopedWorkspaceRpcResult,
-} from "../../../../packages/workspace/src/workspace/projections/scoped-file-capability";
+} from "@cloudflare/workspace";
 import { disposeRpcResult } from "./rpc-disposal";
 
 type WorkspaceFileCapabilityProps = {

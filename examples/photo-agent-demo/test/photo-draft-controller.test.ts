@@ -16,7 +16,6 @@ describe("PhotoDraftController", () => {
     const draft = await controller.startDraft();
     const state = await controller.listPhotoState();
 
-    expect(dependencies.session.disposeCount).toBe(3);
     expect(draft).toEqual({
       status: "draft-ready",
       draftEditId: "session-1",
@@ -109,7 +108,6 @@ describe("PhotoDraftController", () => {
       result: { wrote: "/notes/edit-summary.md" },
     });
     expect(dependencies.workspace.beginSessionCount).toBe(0);
-    expect(dependencies.session.infoCallCount).toBe(0);
     expect(dependencies.dynamicWorkerRunner.calls).toEqual([
       {
         draftEditId: "session-1",
@@ -163,7 +161,7 @@ describe("PhotoDraftController", () => {
     expect(dependencies.draftEditId).toBeUndefined();
   });
 
-  it("disposes session lookup results when reading draft images", async () => {
+  it("reads draft images through the active file copy", async () => {
     const dependencies = createDependencies({
       head: { "/photos/original.png": originalPng },
       session: { "/photos/current": draftPng },
@@ -172,8 +170,6 @@ describe("PhotoDraftController", () => {
     const controller = new PhotoDraftController(dependencies);
 
     await expect(controller.readDraftImage()).resolves.toEqual({ status: "ok", value: draftPng });
-
-    expect(dependencies.session.disposeCount).toBe(1);
   });
 
   it("passes shell syntax through to the mounted workspace command runner", async () => {
@@ -227,21 +223,35 @@ class FakeWorkspace {
     this.session = new FakeSession(sessionFiles);
   }
 
+  async mkdir(_path: string) {
+    return { status: "ok" as const };
+  }
+
+  async writeFile(path: string, contents: Uint8Array) {
+    this.headFiles[path] = contents;
+    return { status: "ok" as const };
+  }
+
   async readFile(path: string) {
-    return fileResult(this.headFiles[path]);
+    return fileResult(this.headFiles[path], path);
+  }
+
+  async delete(path: string) {
+    delete this.headFiles[path];
+    return { status: "ok" as const };
   }
 
   async stat(path: string) {
     const value = this.headFiles[path];
     return value
       ? { status: "ok" as const, value: { path, type: "file" as const, size: value.byteLength, createdAt: 1, updatedAt: 1 } }
-      : { status: "error" as const, error: { tag: "PathNotFoundError" } };
+      : { status: "error" as const, error: pathNotFound(path) };
   }
 
   async list(path: string) {
     const files = Object.keys(this.headFiles).filter((filePath) => filePath.startsWith(`${path}/`));
     if (files.length === 0) {
-      return { status: "error" as const, error: { tag: "PathNotFoundError" } };
+      return { status: "error" as const, error: pathNotFound(path) };
     }
     return {
       status: "ok" as const,
@@ -263,7 +273,7 @@ class FakeWorkspace {
 
   async getSession(sessionId: string) {
     if (sessionId !== "session-1") {
-      return { status: "error" as const, error: { tag: "SessionNotFoundError" } };
+      return { status: "error" as const, error: { tag: "SessionNotFoundError" as const, sessionId, message: `Session not found: ${sessionId}` } };
     }
     return { status: "ok" as const, value: this.session };
   }
@@ -282,7 +292,7 @@ class FakeSession {
   }
 
   async readFile(path: string) {
-    return fileResult(this.files[path]);
+    return fileResult(this.files[path], path);
   }
 
   async writeFile(path: string, contents: Uint8Array) {
@@ -303,8 +313,8 @@ class FakeSession {
     }
 
     const entry = entries[path];
-    if (!entry) return { status: "error" as const, error: { tag: "PathNotFoundError" } };
-    if (entry.type === "file") return { status: "error" as const, error: { tag: "NotDirectoryError" } };
+    if (!entry) return { status: "error" as const, error: pathNotFound(path) };
+    if (entry.type === "file") return { status: "error" as const, error: { tag: "NotDirectoryError" as const, path, message: `Not a directory: ${path}` } };
 
     const prefix = path === "/" ? "/" : `${path}/`;
     return {
@@ -333,7 +343,7 @@ class FakeSession {
     const value = this.files[path];
     return value
       ? { status: "ok" as const, value: { path, type: "file" as const, size: value.byteLength, createdAt: 1, updatedAt: 1 } }
-      : { status: "error" as const, error: { tag: "PathNotFoundError" } };
+      : { status: "error" as const, error: pathNotFound(path) };
   }
 
   async commit() {
@@ -387,13 +397,16 @@ class FakeWorkspaceCommandRunner {
   }
 }
 
-function fileResult(value: Uint8Array | undefined) {
+function fileResult(value: Uint8Array | undefined, path: string) {
   return value
     ? { status: "ok" as const, value }
-    : { status: "error" as const, error: { tag: "PathNotFoundError" } };
+    : { status: "error" as const, error: pathNotFound(path) };
 }
 
-function parentPath(path: string): string {
-  if (path === "/") return "/";
-  return path.slice(0, path.lastIndexOf("/")) || "/";
+function pathNotFound(path: string) {
+  return {
+    tag: "PathNotFoundError" as const,
+    path,
+    message: `Path not found: ${path}`,
+  };
 }

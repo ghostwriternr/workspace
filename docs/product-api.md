@@ -1,6 +1,6 @@
 # Product API
 
-This doc describes the user-facing API we want product code (and agent tools) to see. It is a design target, not what exists today. The current implementation uses lower-level sessions and RPC DTOs — see [`architecture.md`](./architecture.md) — and `examples/photo-agent-demo` is the proving ground.
+This doc describes the user-facing API we want product code (and agent tools) to see. The current-files and file-copy layer exists today; attachment/capture helpers are still a design target. See [`architecture.md`](./architecture.md) for how the lower layers work, and `examples/photo-agent-demo` for the proving ground.
 
 For the conceptual model behind these names, see [`product-model.md`](./product-model.md).
 
@@ -19,9 +19,13 @@ current files
 ```ts
 const workspace = Workspace.get(env.WORKSPACES, "family-photo");
 
-await workspace.files.write("/photos/original.jpg", imageBytes);
+const write = await workspace.files.write("/photos/original.jpg", imageBytes);
+if (Result.isError(write)) return write;
 
-const copy = await workspace.files.copy("crop-square");
+const copyResult = await workspace.files.copy("crop-square");
+if (Result.isError(copyResult)) return copyResult;
+const copy = copyResult.value;
+
 const attachment = await copy.files.attach(sandbox, "/workspace");
 
 const result = await sandbox.exec(
@@ -33,10 +37,11 @@ if (result.success) {
   await attachment.capture();
 }
 
-await copy.apply();        // or: await copy.discard();
+const apply = await copy.apply();        // or: await copy.discard();
+if (Result.isError(apply)) return apply;
 ```
 
-The intent is intentionally boring. Product code says what it wants; the lower layers handle the plumbing.
+The intent is intentionally boring. Product code says what it wants; the lower layers handle the plumbing. Expected Workspace failures are `Result` values, not thrown exceptions or raw RPC DTOs.
 
 ## Vocabulary
 
@@ -58,8 +63,8 @@ We avoid implementation terms (session, RPC result, stub disposal, loopback, pro
 `workspace.files` is the current tree.
 
 ```ts
-await workspace.files.read(path);
-await workspace.files.write(path, bytes);
+await workspace.files.read(path);        // Result<Uint8Array, WorkspaceFileError>
+await workspace.files.write(path, bytes); // Result<void, WorkspaceFileError>
 await workspace.files.list(path);
 await workspace.files.stat(path);
 await workspace.files.delete(path);
@@ -68,8 +73,12 @@ await workspace.files.delete(path);
 `workspace.files.copy(name)` creates a durable, isolated, mutable copy initialised from the current files.
 
 ```ts
-const copy = await workspace.files.copy("agent-edit");
-await copy.files.write("/notes/summary.md", bytes);
+const copyResult = await workspace.files.copy("agent-edit");
+if (Result.isError(copyResult)) return copyResult;
+
+const copy = copyResult.value;
+const write = await copy.files.write("/notes/summary.md", bytes);
+if (Result.isError(write)) return write;
 ```
 
 A copy is durable but not live. It can outlive a request, an agent turn, or a process. Applying is a separate decision.
@@ -95,7 +104,8 @@ Capture is not publication. Captured files are still isolated in the copy.
 `apply()` is the only publication path from a file copy to current files.
 
 ```ts
-await copy.apply();
+const applied = await copy.apply();
+if (Result.isError(applied)) return applied;
 ```
 
 After apply, current Workspace files reflect the copy; a recovery point can be created.
@@ -103,7 +113,8 @@ After apply, current Workspace files reflect the copy; a recovery point can be c
 `discard()` abandons a file copy without changing current files.
 
 ```ts
-await copy.discard();
+const discarded = await copy.discard();
+if (Result.isError(discarded)) return discarded;
 ```
 
 Two different questions, two different verbs:
@@ -147,11 +158,16 @@ A scoped file capability should expose familiar file operations and nothing more
 Platform developers use the primitives directly:
 
 ```ts
-const copy = await workspace.files.copy("edit");
+const copyResult = await workspace.files.copy("edit");
+if (Result.isError(copyResult)) return copyResult;
+
+const copy = copyResult.value;
 const attachment = await copy.files.attach(sandbox, "/workspace");
 const result = await sandbox.exec(command, { cwd: attachment.path });
 if (result.success) await attachment.capture();
-await copy.apply();
+
+const applied = await copy.apply();
+if (Result.isError(applied)) return applied;
 ```
 
 Agents get tool-shaped versions of the same model:
