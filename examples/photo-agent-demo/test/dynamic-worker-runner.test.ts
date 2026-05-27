@@ -32,7 +32,7 @@ describe("DynamicWorkerRunner", () => {
     await expect(workingCopy.readFile("/notes/edit-summary.md")).resolves.toEqual({ status: "ok", value: noteBytes });
   });
 
-  it("withholds Workspace identity and commit authority from delegated code", async () => {
+  it("withholds Workspace identity and publish authority from delegated code", async () => {
     const workingCopy = new FakeWorkingCopy({ "/": { type: "directory" }, "/photos": { type: "directory" } });
     const loader = new FakeWorkerLoader(async (env) => ({
       hasCommit: "commit" in env.WORKSPACE,

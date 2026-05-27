@@ -28,7 +28,7 @@ If metadata points at a blob that isn't in R2, `readFile()` returns `PathNotFoun
 
 ## Filesystem projection scans host files
 
-The current projection materialises files into the Sandbox filesystem and hashes host files during `flush()` to detect changes. Proves `/workspace` semantics for the demo; it's not the production mount.
+The current projection materialises files into the Sandbox filesystem and hashes host files during capture to detect changes. Proves `/workspace` semantics for the demo; it's not the production mount.
 
 Long-term: a mount-like implementation that avoids full-tree scans and avoids reading unchanged file contents back into the Worker.
 
@@ -40,13 +40,13 @@ These are documented projections in [`product-model.md`](./product-model.md); th
 
 ## No session garbage collection
 
-Sessions left open indefinitely retain `session_entries` indefinitely. No TTL, sweep, list, or purge API. Callers must explicitly `commit()` or `discard()`.
+File copies left open indefinitely retain `session_entries` indefinitely. No TTL, sweep, list, or purge API. Callers must explicitly apply or discard them.
 
 Needed before high-volume or untrusted session creation.
 
 ## No merge or rebase
 
-Sessions record the head version they started from. `commit()` rejects stale sessions. That's the safety boundary; there's no merge, rebase, or conflict-detail model yet. Callers can inspect and discard, but Workspace doesn't yet help reconcile.
+File copies record the head version they started from. Applying rejects stale copies. That's the safety boundary; there's no merge, rebase, or conflict-detail model yet. Callers can inspect and discard, but Workspace doesn't yet help reconcile.
 
 ## No revision pruning
 

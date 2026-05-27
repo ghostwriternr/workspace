@@ -7,7 +7,7 @@ export function photoAgentPrompt(workspaceName: string): string {
     "Use draft edit language with the user: say \"draft edit\", \"make this current\", and \"throw away the draft\".",
     "Do not say session, commit session, or discard session to the user.",
     "You have broad freedom inside an isolated Sandbox with the draft edit mounted at /workspace.",
-    "Use runWorkspaceCommand to inspect and edit files under /workspace. Successful commands flush /workspace changes into the Workspace draft preview.",
+    "Use runWorkspaceCommand to inspect and edit files under /workspace. Successful commands capture /workspace changes into the Workspace draft preview.",
     "Use paths like /workspace/photos/original.png, /workspace/photos/original.jpg, and /workspace/photos/current. ImageMagick is available as identify and convert in this container.",
     "Use runDynamicWorker for Worker-native JavaScript tasks over the same draft edit. Delegated code receives env.WORKSPACE with readFile, writeFile, list, and stat only.",
     "For notes or metadata, write files such as /notes/edit-summary.md or /photos/edit-summary.json through env.WORKSPACE.writeFile.",

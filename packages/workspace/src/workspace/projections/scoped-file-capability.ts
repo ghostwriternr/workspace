@@ -67,6 +67,7 @@ export function createWorkspaceFileCapability(
 }
 
 class ScopedWorkspaceFileCapabilityTarget extends RpcTarget implements ScopedWorkspaceFileCapability {
+  private readonly ensuredDirectories = new Set<string>();
   private readonly root: string;
   private readonly readScopes: WorkspaceScopeSet;
   private readonly writeScopes: WorkspaceScopeSet;
@@ -89,7 +90,7 @@ class ScopedWorkspaceFileCapabilityTarget extends RpcTarget implements ScopedWor
     const target = this.resolveAllowedPath("writeFile", path, this.writeScopes);
     if (target.status === "error") return target;
 
-    const parents = await ensureParentDirectories(this.options.files, target.value);
+    const parents = await ensureParentDirectories(this.options.files, target.value, this.ensuredDirectories);
     if (parents.status === "error") return parents;
 
     return resultToRpc(this.options.files.write(target.value, contents));
@@ -140,12 +141,18 @@ class WorkspaceScopeSet {
 async function ensureParentDirectories(
   files: ScopedWorkspaceFiles,
   filePath: string,
+  ensuredDirectories: Set<string>,
 ): Promise<ScopedWorkspaceRpcResult> {
   for (const directory of parentDirectories(filePath)) {
+    if (ensuredDirectories.has(directory)) {
+      continue;
+    }
+
     const result = await files.mkdir(directory);
     if (Result.isError(result) && result.error.tag !== "PathAlreadyExistsError") {
       return { status: "error", error: scopedOperationError("mkdir", directory, result.error.tag) };
     }
+    ensuredDirectories.add(directory);
   }
 
   return { status: "ok" };

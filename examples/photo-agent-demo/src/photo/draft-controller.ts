@@ -118,7 +118,7 @@ export class PhotoDraftController {
     stdout: string;
     stderr: string;
     exitCode: number;
-    flush: WorkspaceFileCaptureSummary;
+    capture: WorkspaceFileCaptureSummary;
   }> {
     return this.withDraftCopy(async (copy, draftEditId) => {
       const result = await this.dependencies.commandRunner.runWorkspaceCommand({
@@ -135,7 +135,7 @@ export class PhotoDraftController {
         stdout: result.stdout,
         stderr: result.stderr,
         exitCode: result.exitCode,
-        flush: result.flush,
+        capture: result.capture,
       };
     });
   }

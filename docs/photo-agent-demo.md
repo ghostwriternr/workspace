@@ -8,10 +8,10 @@ For the wiring diagram and how the pieces fit, see [`architecture.md`](./archite
 
 - Workspace works as durable file state for AI-assisted work.
 - The same draft (working copy) is usable from a Sandbox at `/workspace` and from a Dynamic Worker via `env.WORKSPACE` simultaneously.
-- Delegated Worker code can receive scoped file authority without Workspace identity or commit authority.
+- Delegated Worker code can receive scoped file authority without Workspace identity or publish authority.
 - The publish boundary stays explicit: only `commitDraft` makes a draft current, and only `discardDraft` throws it away.
 - Product-specific agent tools belong above Workspace primitives, not inside them.
-- "Draft" / "current" maps cleanly to working-copy / head — users don't need to think in session/commit terms.
+- "Draft" / "current" maps cleanly to working-copy / head — users don't need to think in session/apply terms.
 - Previews can be passive: agent state pushes change keys, the browser fetches only when things change.
 
 ## Experience
@@ -53,7 +53,7 @@ Workspace doesn't run commands, own the container, or decide how to edit an imag
 
 The demo uses two of Workspace's projections over one draft:
 
-- The **filesystem projection** for Sandbox commands: tools operate on `/workspace`, and successful changes become part of the draft after `flush`.
+- The **filesystem projection** for Sandbox commands: tools operate on `/workspace`, and successful changes become part of the draft after capture.
 - The **scoped file capability projection** for Dynamic Worker code: delegated JS sees `readFile` / `writeFile` / `list` / `stat` only, never Workspace identity or publish authority.
 
 The remaining Workspace gaps relevant to this demo are the production mount and the Dynamic Worker module/asset projections — see [`known-limitations.md`](./known-limitations.md).

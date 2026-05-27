@@ -18,6 +18,7 @@ export {
   type WorkspaceFileAttachment,
   type WorkspaceFileAttachmentError,
   type WorkspaceFileAttachmentHost,
+  type WorkspaceFileAttachmentHostEntry,
   type WorkspaceFileCaptureSummary,
 } from "./workspace/product/attachment";
 export { WorkspaceObject } from "./workspace/runtime/workspace-object";

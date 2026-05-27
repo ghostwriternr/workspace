@@ -96,12 +96,13 @@ if (Result.isError(attachmentResult)) return attachmentResult;
 
 const attachment = attachmentResult.value;
 await sandbox.exec("npm test", { cwd: attachment.path });
-await attachment.capture();
+const capture = await attachment.capture();
+if (Result.isError(capture)) return capture;
 ```
 
 `capture()` is the attachment's responsibility, not the copy's. It records execution-local file changes back into the file copy.
 
-This distinction exists because not every runtime is a live mount. Today's Sandbox integration materialises files into the container and reads changes back on flush. A future native mount might make capture automatic or unnecessary — but the product-level model stays the same: execution changes become file-copy state before they become current Workspace state.
+This distinction exists because not every runtime is a live mount. Today's Sandbox integration materialises files into the container and reads changes back on capture. A future native mount might make capture automatic or unnecessary — but the product-level model stays the same: execution changes become file-copy state before they become current Workspace state.
 
 Capture is not publication. Captured files are still isolated in the copy.
 

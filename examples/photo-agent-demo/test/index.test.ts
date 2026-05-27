@@ -36,7 +36,7 @@ describe("photo agent demo worker", () => {
       agent: "Think",
       execution: "Sandbox/ImageMagick and Dynamic Workers",
       state: "Workspace durable files",
-      durability: "draft commit or discard",
+      durability: "make draft current or discard",
     });
   });
 

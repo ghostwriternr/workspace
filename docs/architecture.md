@@ -37,8 +37,8 @@ Different runtimes need different shapes of access to the same durable state. Wo
 | Projection | Consumer | Shape | Authority |
 |---|---|---|---|
 | Control | Trusted Worker / DO | `Workspace.get(...)`, current files, file copies, `apply()` | Full: file copies, apply, discard, revisions |
-| Scoped file | Dynamic Worker, plugin, generated code | `env.WORKSPACE.{readFile,writeFile,list,stat}` | Read/write within allowed paths; no commit, no identity |
-| Filesystem | Sandbox / container | Files at `/workspace`; capture-on-flush | Native file IO inside the runtime; commit stays with parent |
+| Scoped file | Dynamic Worker, plugin, generated code | `env.WORKSPACE.{readFile,writeFile,list,stat}` | Read/write within allowed paths; no apply, no identity |
+| Filesystem | Sandbox / container | Files at `/workspace`; explicit capture | Native file IO inside the runtime; apply stays with parent |
 | Module / asset (planned) | Dynamic Worker via Worker Loader | Modules and asset bindings from a Workspace tree | Read-only over the chosen tree or revision |
 
 The first three are built. Module/asset projections are documented in [`known-limitations.md`](./known-limitations.md).
@@ -141,7 +141,7 @@ Product code should only see the first two, and only through the names in [`prod
 
 `copy.files.scoped(...)` wraps a file-copy file API and returns an `RpcTarget` exposing only `readFile`, `writeFile`, `list`, `stat`. It enforces a root prefix, allowed read globs, allowed write globs, path normalisation, and traversal rejection. The lower-level implementation is `packages/workspace/src/workspace/projections/scoped-file-capability.ts`.
 
-It does **not** expose `commit`, `discard`, `beginSession`, `getByName`, revisions, or Workspace identity. This is what gets passed into a Dynamic Worker as `env.WORKSPACE`.
+It does **not** expose `apply`, `discard`, `beginSession`, `getByName`, revisions, or Workspace identity. This is what gets passed into a Dynamic Worker as `env.WORKSPACE`.
 
 ### Filesystem projection
 
@@ -195,11 +195,11 @@ The current implementation scans and hashes. A future implementation can be a re
 
 Wiring choices worth knowing:
 
-- **One draft per `PhotoAgent` instance.** The agent stores `draftEditId` in its own state. The Sandbox and the Dynamic Worker both bind to the same file copy, so a `convert` in Sandbox and a `writeFile('/notes/edit-summary.md')` from a Dynamic Worker land in one draft and publish together.
+- **One draft per `PhotoAgent` instance.** The agent stores `draftEditId` in its own state. The Sandbox and the Dynamic Worker both bind to the same file copy, so a `convert` in Sandbox and a `writeFile('/notes/edit-summary.md')` from a Dynamic Worker land in one draft and apply together.
 - **Sandboxes are scoped per draft.** `getSandbox(env.Sandbox, ${workspaceName}-${draftEditId}, { sleepAfter: "60s" })`. Concurrent users and drafts don't share `/workspace`.
 - **The Dynamic Worker binding goes through a loopback `WorkerEntrypoint`.** `this.ctx.exports.WorkspaceFileCapability({ props: { workspaceName, draftEditId } })`. Worker Loader RPC references can't be serialised through `env`, but service stubs through entrypoint props can.
 - **The UI is event-driven, not polled.** `PhotoAgent.setState({ photo })` pushes change keys over the existing WebSocket; the browser only fetches `/photos/{original|draft|current}` when keys change.
-- **No tool implicitly commits.** `commitDraft` is its own agent tool, gated on user intent.
+- **No tool implicitly publishes.** `commitDraft` is its own agent tool, gated on user intent.
 
 ## Repo layout
 

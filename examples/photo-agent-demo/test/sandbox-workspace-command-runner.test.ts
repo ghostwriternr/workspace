@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { WorkspaceFileAttachmentHost } from "@cloudflare/workspace";
 import { SandboxWorkspaceCommandRunner } from "../src/workspace/sandbox-workspace-command-runner";
 
-const flushSummary = {
+const captureSummary = {
   created: [],
   modified: ["/photos/current"],
   deleted: [],
@@ -30,7 +30,7 @@ describe("SandboxWorkspaceCommandRunner", () => {
       exitCode: 0,
       stdout: "ok",
       stderr: "",
-      flush: flushSummary,
+      capture: captureSummary,
     });
     expect(files.attachCalls).toMatchObject([{ path: "/workspace" }]);
     expect(files.captureCount).toBe(1);
@@ -93,12 +93,12 @@ class FakeAttachableFiles {
     }
 
     this.attachCalls.push({ host, path });
-    await host.resetDirectory(path);
+    await host.resetDirectory?.(path);
     return Result.ok({
       path,
       capture: async () => {
         this.captureCount += 1;
-        return Result.ok(flushSummary);
+        return Result.ok(captureSummary);
       },
     });
   }

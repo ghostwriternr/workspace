@@ -76,6 +76,26 @@ describe("scoped Workspace file capability", () => {
     await expect(workingCopy.read("/notes/2026/edit-summary.md")).resolves.toEqual({ status: "ok", value: noteBytes });
   });
 
+  it("remembers parent directories created by earlier writes", async () => {
+    const workingCopy = new FakeWorkingCopy({ "/": { type: "directory" } });
+    const capability = createWorkspaceFileCapability({
+      files: workingCopy,
+      root: "/",
+      read: [],
+      write: ["/notes/**"],
+    });
+
+    await expect(capability.writeFile("/notes/one.md", noteBytes)).resolves.toEqual({ status: "ok" });
+    await expect(capability.writeFile("/notes/two.md", noteBytes)).resolves.toEqual({ status: "ok" });
+
+    expect(workingCopy.mkdirAttempts).toEqual(["/notes"]);
+    expect(workingCopy.operationLog).toEqual([
+      "mkdir /notes",
+      "write /notes/one.md",
+      "write /notes/two.md",
+    ]);
+  });
+
   it("denies writes outside scope", async () => {
     const capability = createWorkspaceFileCapability({
       files: new FakeWorkingCopy({ "/": { type: "directory" } }),
@@ -153,6 +173,7 @@ type Entry =
   | { type: "file"; contents: Uint8Array };
 
 class FakeWorkingCopy {
+  readonly mkdirAttempts: string[] = [];
   readonly operationLog: string[] = [];
 
   constructor(private readonly entries: Record<string, Entry>) {}
@@ -204,6 +225,7 @@ class FakeWorkingCopy {
   }
 
   async mkdir(path: string): Promise<Result<void, { tag: string; message?: string }>> {
+    this.mkdirAttempts.push(path);
     if (this.entries[path]) return Result.err({ tag: "PathAlreadyExistsError" });
     const parent = parentPath(path);
     if (!this.entries[parent]) return Result.err({ tag: "PathNotFoundError" });

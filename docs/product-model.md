@@ -31,7 +31,7 @@ Workspace doesn't become Sandbox-shaped, Dynamic-Worker-shaped, or container-sha
 
 What a caller can do with a Workspace depends on the capability it received, not on which runtime is calling.
 
-Trusted product code can receive full control: identity, sessions, commit, discard, revisions. Delegated code (Dynamic Worker, plugin, generated code) should usually receive a scoped file capability: read or write under specific paths, no commit, no Workspace identity.
+Trusted product code can receive full control: identity, file copies, apply, discard, revisions. Delegated code (Dynamic Worker, plugin, generated code) should usually receive a scoped file capability: read or write under specific paths, no apply authority, no Workspace identity.
 
 A Sandbox or container sees a filesystem; the publish decision stays with the parent.
 
@@ -39,13 +39,13 @@ A Sandbox or container sees a filesystem; the publish decision stays with the pa
 
 A working copy is durable. It survives crashes, reconnects, and agent turns. That's deliberate — agent and human workflows want to step away and come back to in-progress work.
 
-But durable isn't the same as live. The current files don't change until commit. This matters for previews, drafts, multi-turn agent work, and Dynamic Worker test runs.
+But durable isn't the same as live. The current files don't change until apply. This matters for previews, drafts, multi-turn agent work, and Dynamic Worker test runs.
 
-### Commit and discard are explicit
+### Apply and discard are explicit
 
 Workspace never publishes implicitly. Not when a process writes a file. Not when a command exits. Not when a Dynamic Worker returns. Not when a Sandbox shuts down. Not because execution succeeded.
 
-The publish operation is `commit`. The escape hatch is `discard`. A product can call them "make current" and "throw away", but the semantic is the same.
+The publish operation is `apply`. The escape hatch is `discard`. A product can call them "make current" and "throw away", but the semantic is the same.
 
 ### Product concepts stay above Workspace
 
@@ -75,11 +75,11 @@ Working copies are durable. They can be looked up, listed, resumed, and cleaned 
 
 File copies are the **isolation atom** of Workspace — the unit you fork, edit, and either publish or throw away. Implementation can vary (today it's tables inside the Workspace Durable Object; long-term it's likely Durable Object facets — see [`architecture.md`](./architecture.md)). The product model doesn't change with the implementation.
 
-### Commit and discard
+### Apply and discard
 
-`commit` publishes a working copy to current files and creates a revision. `discard` abandons it without changing current files.
+`apply` publishes a working copy to current files and creates a revision. `discard` abandons it without changing current files.
 
-A working copy that branched from an older head version is rejected at commit (`SessionConflictError`). The product can inspect, retry, or throw it away. There's no merge or rebase yet — see [`known-limitations.md`](./known-limitations.md).
+A working copy that branched from an older head version is rejected at apply (`SessionConflictError`). The product can inspect, retry, or throw it away. There's no merge or rebase yet — see [`known-limitations.md`](./known-limitations.md).
 
 ### Revisions
 
@@ -100,13 +100,19 @@ Each projection is a different shape of access to the same durable state.
 Product Workers and Durable Objects use Workspace directly:
 
 ```ts
-const workspace = env.WORKSPACES.getByName(name);
-const copy = await workspace.beginSession();
-await copy.writeFile("/src/index.ts", source);
-await copy.commit();
+const workspace = Workspace.get(env.WORKSPACES, name);
+const copyResult = await workspace.files.copy("edit");
+if (Result.isError(copyResult)) return copyResult;
+
+const copy = copyResult.value;
+const write = await copy.files.write("/src/index.ts", source);
+if (Result.isError(write)) return write;
+
+const apply = await copy.apply();
+if (Result.isError(apply)) return apply;
 ```
 
-Appropriate for code that owns user intent and decides commit/discard.
+Appropriate for code that owns user intent and decides apply/discard.
 
 ### Scoped file capability
 
@@ -118,11 +124,11 @@ await env.WORKSPACE.writeFile("/output/result.json", bytes);
 await env.WORKSPACE.list("/data");
 ```
 
-Bounded by root prefix, read globs, write globs, optional delete, no commit authority, no Workspace identity. This is what Dynamic Workers get.
+Bounded by root prefix, read globs, write globs, optional delete, no apply authority, no Workspace identity. This is what Dynamic Workers get.
 
 ### Filesystem
 
-Sandboxes and containers see a working copy as a local directory. The product attaches it, runs commands, captures useful changes, and decides on commit:
+Sandboxes and containers see a working copy as a local directory. The product attaches it, runs commands, captures useful changes, and decides on apply:
 
 ```ts
 const copyResult = await workspace.files.copy("photo-edit");
@@ -137,8 +143,13 @@ const result = await sandbox.exec("convert /workspace/photos/original.jpg ... /w
   cwd: attachment.path,
 });
 
-if (result.success) await attachment.capture();
-await copy.apply();
+if (result.success) {
+  const capture = await attachment.capture();
+  if (Result.isError(capture)) return capture;
+}
+
+const apply = await copy.apply();
+if (Result.isError(apply)) return apply;
 ```
 
 The implementation may be FUSE, a native mount, or a Sandbox-specific mechanism. Workspace is not defined as FUSE and won't chase full distributed POSIX. Unsupported filesystem features should fail clearly.
@@ -161,9 +172,9 @@ Useful for code-mode previews, generated apps, and user-uploaded platforms. Not 
 
 The distinction that matters is authority, not runtime type.
 
-- **Trusted code** can receive Workspace identity and control capabilities. It owns commit and discard.
+- **Trusted code** can receive Workspace identity and control capabilities. It owns apply and discard.
 - **Delegated code** should usually receive a scoped capability and propose changes within a working copy. The parent decides whether to publish.
-- **Filesystem tools** mutate files naturally inside a working copy. Those mutations stay in the copy until the parent commits.
+- **Filesystem tools** mutate files naturally inside a working copy. Those mutations stay in the copy until the parent applies it.
 
 The safety rule is consistent across all three:
 
@@ -178,16 +189,16 @@ Built:
 
 - Durable head tree with explicit directories.
 - Content-addressed blobs in R2.
-- Durable working copies (sessions), recoverable by id.
-- Optimistic conflict detection on commit.
+- Durable working copies, recoverable by id.
+- Optimistic conflict detection on apply.
 - Immutable revisions.
-- Scoped file capability projection (used by the demo's Dynamic Worker).
-- Filesystem projection (used by the demo's Sandbox; materialise + flush).
+- Product-facing scoped file capabilities (used by the demo's Dynamic Worker).
+- Product-facing filesystem attachments and capture (used by the demo's Sandbox).
 
 Not built yet — see [`known-limitations.md`](./known-limitations.md):
 
-- The user-facing API from [`product-api.md`](./product-api.md). Today's callers use lower-level session/RPC.
-- Working-copy listing, recovery, cleanup, and TTL.
+- Higher-level import/export and source adapter APIs.
+- Working-copy listing, cleanup, and TTL.
 - Diff or changed-path inspection.
 - Public version/change-token observability.
 - Generic file metadata (content type).

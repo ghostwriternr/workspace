@@ -4,21 +4,27 @@ import {
   type WorkspaceMountError,
   type WorkspaceMountFiles,
   type WorkspaceMountFlushSummary,
-  type WorkspaceMountHost,
 } from "../projections/working-copy-mount";
 
+export type WorkspaceFileAttachmentHostEntry = {
+  path: string;
+  type: "directory" | "file" | "symlink" | "other";
+};
+
 export type WorkspaceFileAttachmentHost = {
-  resetDirectory(path: string): Promise<unknown>;
-  mkdir(path: string, options: { recursive: boolean }): Promise<unknown>;
-  writeFile(path: string, content: ReadableStream<Uint8Array>): Promise<unknown>;
-  readFile(path: string, options: { encoding: "none" }): Promise<{ content: ReadableStream<Uint8Array> }>;
-  listFiles(path: string, options: { recursive: boolean; includeHidden: boolean }): Promise<{
-    files: Array<{ absolutePath: string; type: "directory" | "file" | "symlink" | "other" }>;
-  }>;
+  resetDirectory?(path: string): Promise<void>;
+  mkdir(path: string, options: { recursive: boolean }): Promise<void>;
+  writeFile(path: string, contents: Uint8Array): Promise<void>;
+  readFile(path: string): Promise<Uint8Array>;
+  listTree(path: string): Promise<WorkspaceFileAttachmentHostEntry[]>;
 };
 
 export type WorkspaceFileCaptureSummary = WorkspaceMountFlushSummary;
-export type WorkspaceFileAttachmentError = WorkspaceMountError;
+
+export type WorkspaceFileAttachmentError =
+  | { tag: "WorkspaceFileAttachmentOperationError"; operation: string; errorTag: string; message: string }
+  | { tag: "WorkspaceFileAttachmentUnsupportedEntryError"; path: string; entryType: string; message: string }
+  | { tag: "WorkspaceFileAttachmentPathEscapeError"; root: string; path: string; message: string };
 
 export type WorkspaceFileAttachment = {
   path: string;
@@ -32,79 +38,56 @@ export async function attachWorkspaceFiles(
 ): Promise<BetterResult<WorkspaceFileAttachment, WorkspaceFileAttachmentError>> {
   const mount = await attachWorkspaceMount({
     files,
-    host: new WorkspaceFileAttachmentMountHost(host),
     root: path,
+    host: {
+      resetDirectory: host.resetDirectory?.bind(host),
+      mkdir: (hostPath, options) => host.mkdir(hostPath, options),
+      writeFile: (hostPath, contents) => host.writeFile(hostPath, contents),
+      readFile: (hostPath) => host.readFile(hostPath),
+      listFiles: (hostPath) => host.listTree(hostPath),
+    },
   });
 
   if (Result.isError(mount)) {
-    return Result.err(mount.error);
+    return Result.err(attachmentError(mount.error));
   }
 
   return Result.ok({
     path: mount.value.root,
-    capture: () => mount.value.flush(),
-  });
-}
+    capture: async () => {
+      const capture = await mount.value.flush();
+      if (Result.isError(capture)) {
+        return Result.err(attachmentError(capture.error));
+      }
 
-class WorkspaceFileAttachmentMountHost implements WorkspaceMountHost {
-  constructor(private readonly host: WorkspaceFileAttachmentHost) {}
-
-  async resetDirectory(path: string): Promise<void> {
-    await this.host.resetDirectory(path);
-  }
-
-  async mkdir(path: string, options: { recursive: boolean }): Promise<void> {
-    await this.host.mkdir(path, options);
-  }
-
-  async writeFile(path: string, contents: Uint8Array): Promise<void> {
-    await this.host.writeFile(path, bytesToStream(contents));
-  }
-
-  async readFile(path: string): Promise<Uint8Array> {
-    const result = await this.host.readFile(path, { encoding: "none" });
-    return collectStream(result.content);
-  }
-
-  async listFiles(path: string): Promise<Array<{ path: string; type: "directory" | "file" | "symlink" | "other" }>> {
-    const result = await this.host.listFiles(path, { recursive: true, includeHidden: true });
-    return result.files.map((file) => ({
-      path: file.absolutePath,
-      type: file.type,
-    }));
-  }
-}
-
-function bytesToStream(bytes: Uint8Array): ReadableStream<Uint8Array> {
-  return new ReadableStream({
-    start(controller) {
-      controller.enqueue(bytes);
-      controller.close();
+      return Result.ok(capture.value);
     },
   });
 }
 
-async function collectStream(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-
-  while (true) {
-    const next = await reader.read();
-    if (next.done) {
-      break;
-    }
-
-    chunks.push(next.value);
-    total += next.value.byteLength;
+function attachmentError(error: WorkspaceMountError): WorkspaceFileAttachmentError {
+  if ("operation" in error && "errorTag" in error) {
+    return {
+      tag: "WorkspaceFileAttachmentOperationError",
+      operation: error.operation,
+      errorTag: error.errorTag,
+      message: error.message,
+    };
   }
 
-  const result = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.byteLength;
+  if ("entryType" in error) {
+    return {
+      tag: "WorkspaceFileAttachmentUnsupportedEntryError",
+      path: error.path,
+      entryType: error.entryType,
+      message: error.message,
+    };
   }
 
-  return result;
+  return {
+    tag: "WorkspaceFileAttachmentPathEscapeError",
+    root: error.root,
+    path: error.path,
+    message: error.message,
+  };
 }

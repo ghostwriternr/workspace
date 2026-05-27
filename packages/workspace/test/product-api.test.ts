@@ -231,35 +231,32 @@ class FakeAttachmentHost {
     this.directories.add(path);
   }
 
-  async writeFile(path: string, content: ReadableStream<Uint8Array>) {
-    this.files[path] = await collect(content);
+  async writeFile(path: string, contents: Uint8Array) {
+    this.files[path] = contents;
   }
 
-  async readFile(path: string, _options: { encoding: "none" }) {
+  async readFile(path: string) {
     const content = this.files[path];
     if (!content) throw new Error(`missing fake attachment file: ${path}`);
-    return { success: true as const, content: bytesToStream(content) };
+    return content;
   }
 
-  async listFiles(path: string, _options: { recursive: boolean; includeHidden: boolean }) {
+  async listTree(path: string) {
     const prefix = `${path}/`;
-    return {
-      success: true,
-      files: [
-        ...[...this.directories]
-          .filter((directoryPath) => directoryPath !== path && directoryPath.startsWith(prefix))
-          .map((directoryPath) => ({
-            absolutePath: directoryPath,
-            type: "directory" as const,
-          })),
-        ...Object.keys(this.files)
-          .filter((filePath) => filePath.startsWith(prefix))
-          .map((filePath) => ({
-            absolutePath: filePath,
-            type: "file" as const,
-          })),
-      ],
-    };
+    return [
+      ...[...this.directories]
+        .filter((directoryPath) => directoryPath !== path && directoryPath.startsWith(prefix))
+        .map((directoryPath) => ({
+          path: directoryPath,
+          type: "directory" as const,
+        })),
+      ...Object.keys(this.files)
+        .filter((filePath) => filePath.startsWith(prefix))
+        .map((filePath) => ({
+          path: filePath,
+          type: "file" as const,
+        })),
+    ];
   }
 }
 
@@ -361,36 +358,6 @@ class BrokenAttachmentWorkspaceObject extends FakeWorkspaceObject {
   async sessionList(_sessionId: string, path: string) {
     return { status: "error" as const, error: pathNotFound(path) };
   }
-}
-
-function bytesToStream(value: Uint8Array): ReadableStream<Uint8Array> {
-  return new ReadableStream({
-    start(controller) {
-      controller.enqueue(value);
-      controller.close();
-    },
-  });
-}
-
-async function collect(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-
-  while (true) {
-    const next = await reader.read();
-    if (next.done) break;
-    chunks.push(next.value);
-    total += next.value.byteLength;
-  }
-
-  const result = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return result;
 }
 
 function pathNotFound(path: string) {
