@@ -4,6 +4,8 @@ import {
   Workspace,
   type ScopedWorkspaceFileCapability,
   type ScopedWorkspaceRpcResult,
+  type WorkspaceEntry,
+  type WorkspaceStat,
 } from "@cloudflare/workspace";
 
 type WorkspaceFileCapabilityProps = {
@@ -11,12 +13,7 @@ type WorkspaceFileCapabilityProps = {
   editCopyId: string;
 };
 
-export type DynamicWorkerWorkspaceBinding = {
-  readFile(path: string): Promise<Uint8Array>;
-  writeFile(path: string, contents: Uint8Array): Promise<void>;
-  list(path: string): Promise<Array<{ name: string; path: string; type: "directory" | "file" }>>;
-  stat(path: string): Promise<{ path: string; type: "directory" | "file"; size: number | null; createdAt: number; updatedAt: number }>;
-};
+export type DynamicWorkerWorkspaceBinding = ScopedWorkspaceFileCapability;
 
 export type DynamicWorkerWorkspaceBindingFactory = {
   bindingForEdit(editCopyId: string): DynamicWorkerWorkspaceBinding;
@@ -25,47 +22,54 @@ export type DynamicWorkerWorkspaceBindingFactory = {
 export class WorkspaceFileCapability extends WorkerEntrypoint<Env, WorkspaceFileCapabilityProps> implements DynamicWorkerWorkspaceBinding {
   private capability?: ScopedWorkspaceFileCapability;
 
-  async readFile(path: string): Promise<Uint8Array> {
+  async readFile(path: string): Promise<ScopedWorkspaceRpcResult<Uint8Array>> {
     return this.withCapability((workspace) => workspace.readFile(path));
   }
 
-  async writeFile(path: string, contents: Uint8Array): Promise<void> {
-    await this.withCapability((workspace) => workspace.writeFile(path, contents));
+  async writeFile(path: string, contents: Uint8Array): Promise<ScopedWorkspaceRpcResult> {
+    return this.withCapability((workspace) => workspace.writeFile(path, contents));
   }
 
-  async list(path: string): Promise<Array<{ name: string; path: string; type: "directory" | "file" }>> {
+  async list(path: string): Promise<ScopedWorkspaceRpcResult<WorkspaceEntry[]>> {
     return this.withCapability((workspace) => workspace.list(path));
   }
 
-  async stat(path: string): Promise<{ path: string; type: "directory" | "file"; size: number | null; createdAt: number; updatedAt: number }> {
+  async stat(path: string): Promise<ScopedWorkspaceRpcResult<WorkspaceStat>> {
     return this.withCapability((workspace) => workspace.stat(path));
   }
 
   private async withCapability<T>(
     useCapability: (workspace: ScopedWorkspaceFileCapability) => Promise<ScopedWorkspaceRpcResult<T>>,
-  ): Promise<T> {
-    this.capability ??= await this.createCapability();
-    return unwrapScopedResult(await useCapability(this.capability));
+  ): Promise<ScopedWorkspaceRpcResult<T>> {
+    const capability = await this.getCapability();
+    if (capability.status === "error") {
+      return capability;
+    }
+
+    return useCapability(capability.value);
   }
 
-  private async createCapability(): Promise<ScopedWorkspaceFileCapability> {
+  private async getCapability(): Promise<ScopedWorkspaceRpcResult<ScopedWorkspaceFileCapability>> {
+    if (this.capability) {
+      return { status: "ok", value: this.capability };
+    }
+
     const workspace = Workspace.get(this.env.WORKSPACES, this.ctx.props.workspaceName);
     const copy = await workspace.files.getCopy(this.ctx.props.editCopyId);
     if (Result.isError(copy)) {
-      throw new Error(`edit copy not found: ${copy.error.tag}`);
+      return {
+        status: "error",
+        error: {
+          tag: copy.error.tag,
+          message: copy.error.message ?? `edit copy not found: ${copy.error.tag}`,
+        },
+      };
     }
 
-    return copy.value.files.scoped({
+    this.capability = copy.value.files.scoped({
       read: ["/**"],
       write: ["/**"],
     });
+    return { status: "ok", value: this.capability };
   }
-}
-
-function unwrapScopedResult<T>(result: ScopedWorkspaceRpcResult<T>): T {
-  if (result.status === "error") {
-    throw new Error(result.error.message ?? result.error.tag);
-  }
-
-  return (result as { status: "ok"; value?: T }).value as T;
 }

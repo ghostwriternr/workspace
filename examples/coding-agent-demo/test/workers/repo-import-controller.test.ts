@@ -9,6 +9,56 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 describe("RepoImportController", () => {
+  it("discards the import copy when apply fails", async () => {
+    const calls: string[] = [];
+    const controller = new RepoImportController({
+      workspaces: {
+        getByName: () => ({
+          beginSession: async () => {
+            calls.push("copy");
+            return { status: "ok", value: { sessionId: "copy-1", createdAt: 1 } };
+          },
+          sessionWriteTreeBatch: async () => {
+            calls.push("writeTree");
+            return { status: "ok" };
+          },
+          sessionCommit: async () => {
+            calls.push("apply");
+            return { status: "error", error: { tag: "SessionConflictError" } };
+          },
+          sessionDiscard: async () => {
+            calls.push("discard");
+            return { status: "ok" };
+          },
+        } as never),
+      },
+      resolveSource: async () => Result.ok({
+        snapshot: {
+          type: "github",
+          owner: "cloudflare",
+          repo: "example",
+          ref: "main",
+          commitSha: "abc123",
+        },
+        async *entries() {
+          yield { path: "README.md", contents: encoder.encode("# Imported") };
+        },
+      }),
+    });
+
+    const result = await controller.importGitHubRepo({
+      workspaceName: "apply-conflict",
+      owner: "cloudflare",
+      repo: "example",
+    });
+
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isError(result)) {
+      expect(result.error.tag).toBe("SessionConflictError");
+    }
+    expect(calls).toEqual(["copy", "writeTree", "apply", "discard"]);
+  });
+
   it("imports fake GitHub source entries and applies them to current Workspace files", async () => {
     const workspaceName = `repo-import-${crypto.randomUUID()}`;
     const controller = new RepoImportController({

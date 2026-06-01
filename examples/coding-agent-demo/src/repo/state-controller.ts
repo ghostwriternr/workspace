@@ -1,31 +1,15 @@
 import { Result, type Result as BetterResult } from "better-result";
-import { Workspace, type WorkspaceNamespace } from "@cloudflare/workspace";
+import { Workspace, type WorkspaceEntry, type WorkspaceNamespace } from "@cloudflare/workspace";
 
-type WorkspaceOperationError = { tag: string };
-
-type WorkspaceEntry = {
-  name: string;
-  path: string;
-  type: "directory" | "file";
-};
-
-type WorkspaceStat = {
-  path: string;
-  type: "directory" | "file";
-  size: number | null;
-  createdAt: number;
-  updatedAt: number;
-};
+type WorkspaceOperationError = { tag: string; message?: string };
 
 type RepoReadableFiles = {
   list(path: string): Promise<BetterResult<WorkspaceEntry[], WorkspaceOperationError>>;
-  stat(path: string): Promise<BetterResult<WorkspaceStat, WorkspaceOperationError>>;
 };
 
 type RepoFileState = {
   path: string;
   type: "directory" | "file";
-  size: number | null;
 };
 
 export type RepoState = {
@@ -33,6 +17,8 @@ export type RepoState = {
   editCopyId?: string;
   files: RepoFileState[];
 };
+
+export type RepoStateError = WorkspaceOperationError;
 
 export type RepoStateControllerDependencies = {
   workspaces: WorkspaceNamespace;
@@ -43,59 +29,73 @@ export type RepoStateControllerDependencies = {
 export class RepoStateController {
   constructor(private readonly dependencies: RepoStateControllerDependencies) {}
 
-  async listRepoState(): Promise<RepoState> {
+  async listRepoState(): Promise<BetterResult<RepoState, RepoStateError>> {
     const workspace = Workspace.get(this.dependencies.workspaces, this.dependencies.workspaceName);
     const source = await this.filesToList(workspace);
-    const files = await listTree(source, "/");
+    if (Result.isError(source)) {
+      return Result.err(source.error);
+    }
 
-    return {
+    const files = await listTree(source.value, "/");
+    if (Result.isError(files)) {
+      return Result.err(files.error);
+    }
+
+    return Result.ok({
       workspaceName: this.dependencies.workspaceName,
       editCopyId: this.dependencies.editCopyId,
-      files,
-    };
+      files: files.value,
+    });
   }
 
-  private async filesToList(workspace: Workspace): Promise<RepoReadableFiles> {
+  private async filesToList(workspace: Workspace): Promise<BetterResult<RepoReadableFiles, RepoStateError>> {
     if (!this.dependencies.editCopyId) {
-      return workspace.files;
+      return Result.ok(workspace.files);
     }
 
     const copy = await workspace.files.getCopy(this.dependencies.editCopyId);
     if (Result.isError(copy)) {
-      throw new Error(`edit copy not found: ${copy.error.tag}`);
+      return Result.err(copy.error);
     }
-    return copy.value.files;
+    return Result.ok(copy.value.files);
   }
 }
 
-async function listTree(files: RepoReadableFiles, root: string): Promise<RepoFileState[]> {
-  const entries = await files.list(root);
-  if (Result.isError(entries)) {
-    if (entries.error.tag === "PathNotFoundError") {
-      return [];
-    }
-    throw new Error(`list repo state failed with ${entries.error.tag}`);
+async function listTree(files: RepoReadableFiles, root: string): Promise<BetterResult<RepoFileState[], RepoStateError>> {
+  const result: RepoFileState[] = [];
+  const listed = await visitTree(files, root, result);
+  if (Result.isError(listed)) {
+    return Result.err(listed.error);
   }
 
-  const result: RepoFileState[] = [];
-  for (const entry of entries.value) {
-    const stat = await files.stat(entry.path);
-    if (Result.isError(stat)) {
-      throw new Error(`stat ${entry.path} failed with ${stat.error.tag}`);
-    }
+  return Result.ok(result.sort((left, right) => comparePath(left.path, right.path)));
+}
 
-    result.push({
-      path: entry.path,
-      type: entry.type,
-      size: stat.value.size,
-    });
+async function visitTree(
+  files: RepoReadableFiles,
+  path: string,
+  result: RepoFileState[],
+): Promise<BetterResult<void, RepoStateError>> {
+  const entries = await files.list(path);
+  if (Result.isError(entries)) {
+    if (entries.error.tag === "PathNotFoundError" && path === "/") {
+      return Result.ok(undefined);
+    }
+    return Result.err(entries.error);
+  }
+
+  for (const entry of entries.value) {
+    result.push({ path: entry.path, type: entry.type });
 
     if (entry.type === "directory") {
-      result.push(...await listTree(files, entry.path));
+      const child = await visitTree(files, entry.path, result);
+      if (Result.isError(child)) {
+        return Result.err(child.error);
+      }
     }
   }
 
-  return result.sort((left, right) => comparePath(left.path, right.path));
+  return Result.ok(undefined);
 }
 
 function comparePath(left: string, right: string): number {

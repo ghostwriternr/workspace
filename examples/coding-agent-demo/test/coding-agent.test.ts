@@ -27,6 +27,7 @@ describe("coding agent slice", () => {
     const agent = await readProjectFile("src/agent/coding-agent.ts");
 
     expect(agent).toContain("class CodingAgent extends Agent<Env, CodingAgentState>");
+    expect(agent).not.toContain("repo?: RepoState");
     expect(agent).toContain('"listRepoState"');
     expect(agent).toContain('"runDynamicWorker"');
     expect(agent).toContain("async listRepoState()");

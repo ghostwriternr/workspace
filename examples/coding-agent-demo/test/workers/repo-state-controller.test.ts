@@ -23,14 +23,16 @@ describe("RepoStateController", () => {
 
     const state = await new RepoStateController({ workspaces: env.WORKSPACES, workspaceName }).listRepoState();
 
-    expect(state).toEqual({
+    expect(Result.isOk(state)).toBe(true);
+    if (Result.isError(state)) throw new Error("repo state failed");
+    expect(state.value).toEqual({
       workspaceName,
       files: [
-        { path: "/README.md", type: "file", size: 6 },
-        { path: "/src", type: "directory", size: null },
-        { path: "/src/index.ts", type: "file", size: 10 },
-        { path: "/src/lib", type: "directory", size: null },
-        { path: "/src/lib/util.ts", type: "file", size: 25 },
+        { path: "/README.md", type: "file" },
+        { path: "/src", type: "directory" },
+        { path: "/src/index.ts", type: "file" },
+        { path: "/src/lib", type: "directory" },
+        { path: "/src/lib/util.ts", type: "file" },
       ],
     });
   });
@@ -56,13 +58,28 @@ describe("RepoStateController", () => {
       editCopyId: edit.value.id,
     }).listRepoState();
 
-    expect(state).toEqual({
+    expect(Result.isOk(state)).toBe(true);
+    if (Result.isError(state)) throw new Error("repo state failed");
+    expect(state.value).toEqual({
       workspaceName,
       editCopyId: edit.value.id,
       files: [
-        { path: "/README.md", type: "file", size: 6 },
-        { path: "/notes.md", type: "file", size: 10 },
+        { path: "/README.md", type: "file" },
+        { path: "/notes.md", type: "file" },
       ],
     });
+  });
+
+  it("returns a value error when an active edit copy is missing", async () => {
+    const state = await new RepoStateController({
+      workspaces: env.WORKSPACES,
+      workspaceName: `repo-state-missing-edit-${crypto.randomUUID()}`,
+      editCopyId: "missing-copy",
+    }).listRepoState();
+
+    expect(Result.isError(state)).toBe(true);
+    if (Result.isError(state)) {
+      expect(state.error.tag).toBe("SessionNotFoundError");
+    }
   });
 });

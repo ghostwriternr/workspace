@@ -44,16 +44,31 @@ describe("DynamicWorkerRunner", () => {
       hasCopy: false,
     });
   });
+
+  it("uses RPC entrypoint proxies without static property checks", async () => {
+    const workspace = createWorkspaceBinding(new FakeWorkingCopy({ "/": { type: "directory" } }));
+    const loader = new ProxyEntrypointLoader(async () => ({ ok: true }));
+    const runner = new DynamicWorkerRunner(loader, { bindingForEdit: () => workspace });
+
+    await expect(runner.runDynamicWorker({ editCopyId: "copy-1", code: "export default async function() {}" })).resolves.toEqual({ ok: true });
+  });
 });
 
 type WorkspaceBinding = {
+  readFile(path: string): Promise<RpcResult<Uint8Array>>;
+  writeFile(path: string, bytes: Uint8Array): Promise<RpcResult>;
+  list(path: string): Promise<RpcResult<Array<{ name: string; path: string; type: "directory" | "file" }>>>;
+  stat(path: string): Promise<RpcResult<{ path: string; type: "directory" | "file"; size: number | null; createdAt: number; updatedAt: number }>>;
+};
+
+type UserWorkspaceBinding = {
   readFile(path: string): Promise<Uint8Array>;
   writeFile(path: string, bytes: Uint8Array): Promise<void>;
   list(path: string): Promise<Array<{ name: string; path: string; type: "directory" | "file" }>>;
   stat(path: string): Promise<{ path: string; type: "directory" | "file"; size: number | null; createdAt: number; updatedAt: number }>;
 };
 
-type DelegatedEnv = { WORKSPACE: WorkspaceBinding };
+type DelegatedEnv = { WORKSPACE: UserWorkspaceBinding };
 
 class FakeWorkerLoader {
   loaded?: { env?: DelegatedEnv; modules: Record<string, string> };
@@ -66,14 +81,26 @@ class FakeWorkerLoader {
     return {
       getEntrypoint: (_name?: string, options?: { props: { WORKSPACE: WorkspaceBinding } }) => {
         this.entrypointOptions = options;
-        return { run: () => this.run({ WORKSPACE: options!.props.WORKSPACE }) };
+        return { run: () => this.run({ WORKSPACE: workspaceForUserCode(options!.props.WORKSPACE) }) };
       },
     };
   }
 }
 
-type RpcResult<T = unknown> =
-  | { status: "ok"; value?: T }
+class ProxyEntrypointLoader {
+  constructor(private readonly run: () => Promise<unknown>) {}
+
+  load() {
+    return {
+      getEntrypoint: () => new Proxy({}, {
+        get: (_target, property) => property === "run" ? this.run : undefined,
+      }),
+    };
+  }
+}
+
+type RpcResult<T = void> =
+  | (T extends void ? { status: "ok" } : { status: "ok"; value: T })
   | { status: "error"; error: { tag: string } };
 
 type Entry =
@@ -118,16 +145,25 @@ class FakeWorkingCopy {
 
 function createWorkspaceBinding(workingCopy: FakeWorkingCopy): WorkspaceBinding {
   return {
-    readFile: async (path) => unwrap(await workingCopy.readFile(path)),
-    writeFile: async (path, bytes) => { unwrap(await workingCopy.writeFile(path, bytes)); },
-    list: async (path) => unwrap(await workingCopy.list(path)),
-    stat: async (path) => unwrap(await workingCopy.stat(path)),
+    readFile: (path) => workingCopy.readFile(path),
+    writeFile: (path, bytes) => workingCopy.writeFile(path, bytes),
+    list: (path) => workingCopy.list(path),
+    stat: (path) => workingCopy.stat(path),
+  };
+}
+
+function workspaceForUserCode(workspace: WorkspaceBinding): UserWorkspaceBinding {
+  return {
+    readFile: async (path) => unwrap(await workspace.readFile(path)),
+    writeFile: async (path, bytes) => { unwrap(await workspace.writeFile(path, bytes)); },
+    list: async (path) => unwrap(await workspace.list(path)),
+    stat: async (path) => unwrap(await workspace.stat(path)),
   };
 }
 
 function unwrap<T>(result: RpcResult<T>): T {
   if (result.status === "error") throw new Error(result.error.tag);
-  return result.value as T;
+  return (result as { status: "ok"; value?: T }).value as T;
 }
 
 function parentPath(path: string): string {

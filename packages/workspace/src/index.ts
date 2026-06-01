@@ -30,6 +30,7 @@ export {
   type WorkspaceTreeSourceError,
   type WorkspaceNamespace,
 } from "./workspace/product/workspace";
+export { type WorkspaceEntry, type WorkspaceStat } from "./workspace/model/rpc";
 export { type WorkspaceTreeEntry } from "./workspace/model/write-tree";
 export {
   type WorkspaceFileAttachment,

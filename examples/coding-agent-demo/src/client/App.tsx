@@ -2,25 +2,30 @@ import { useAgent } from "agents/react";
 import { useEffect, useState, type FormEvent } from "react";
 
 import type { CodingAgentState } from "../agent/coding-agent";
+import type { RepoState } from "../repo/state-controller";
 import { UI_COPY } from "./ui-copy";
 import "./styles.css";
 
 const DEFAULT_WORKSPACE = "coding-demo";
 
 type ImportStatus = { tone: "idle" | "ok" | "error"; message: string };
+type RepoStateResult =
+  | { status: "ok"; value: RepoState }
+  | { status: "error"; error: { tag: string; message?: string } };
 
 export function App() {
   const [workspaceName, setWorkspaceName] = useState(DEFAULT_WORKSPACE);
   const [repoInput, setRepoInput] = useState("cloudflare/workspace");
   const [refInput, setRefInput] = useState("");
   const [status, setStatus] = useState<ImportStatus>({ tone: "idle", message: "Import a public GitHub repo to begin." });
+  const [repo, setRepo] = useState<RepoState>();
 
   const agent = useAgent<CodingAgentState>({
     agent: "CodingAgent",
     name: workspaceName,
   });
-  const repo = agent.state?.repo;
   const lastImport = agent.state?.lastImport;
+  const lastImportKey = lastImport?.revisionId;
 
   useEffect(() => {
     let cancelled = false;
@@ -28,7 +33,7 @@ export function App() {
       try {
         await agent.ready;
         if (!cancelled) {
-          await agent.call("refreshRepoState");
+          setRepo(await loadRepoState(agent, "refreshRepoState"));
         }
       } catch (error) {
         if (!cancelled) {
@@ -40,7 +45,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [workspaceName]);
+  }, [workspaceName, lastImportKey]);
 
   async function importRepo(event: FormEvent) {
     event.preventDefault();
@@ -62,7 +67,7 @@ export function App() {
       return;
     }
 
-    await agent.call("refreshRepoState");
+    setRepo(await loadRepoState(agent, "refreshRepoState"));
     setStatus({ tone: "ok", message: "Repository imported into current Workspace files." });
   }
 
@@ -119,7 +124,7 @@ export function App() {
   );
 }
 
-function RepoFilesPanel({ files }: { files: NonNullable<CodingAgentState["repo"]>["files"] }) {
+function RepoFilesPanel({ files }: { files: RepoState["files"] }) {
   return (
     <article className="panel files-panel">
       <div className="panel-heading">
@@ -134,7 +139,7 @@ function RepoFilesPanel({ files }: { files: NonNullable<CodingAgentState["repo"]
             <li key={file.path}>
               <span className={file.type}>{file.type === "directory" ? "dir" : "file"}</span>
               <code>{file.path}</code>
-              <small>{file.size == null ? "—" : formatBytes(file.size)}</small>
+              <small>{file.type}</small>
             </li>
           ))}
         </ol>
@@ -163,7 +168,7 @@ function AgentChat({ agent }: { agent: ReturnType<typeof useAgent<CodingAgentSta
     setBusy(true);
     setMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", text }]);
     try {
-      const repo = await agent.call("listRepoState") as NonNullable<CodingAgentState["repo"]>;
+      const repo = await loadRepoState(agent, "listRepoState");
       setMessages((current) => [
         ...current,
         {
@@ -224,8 +229,13 @@ function parseRepoInput(value: string): { owner: string; repo: string } | undefi
   return { owner, repo };
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+async function loadRepoState(
+  agent: ReturnType<typeof useAgent<CodingAgentState>>,
+  method: "listRepoState" | "refreshRepoState",
+): Promise<RepoState> {
+  const result = await agent.call(method) as RepoStateResult;
+  if (result.status === "error") {
+    throw new Error(result.error.message ?? result.error.tag);
+  }
+  return result.value;
 }

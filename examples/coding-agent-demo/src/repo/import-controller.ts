@@ -80,6 +80,7 @@ export class RepoImportController {
 
     const apply = await copy.value.apply();
     if (Result.isError(apply)) {
+      await copy.value.discard();
       return Result.err(apply.error);
     }
 

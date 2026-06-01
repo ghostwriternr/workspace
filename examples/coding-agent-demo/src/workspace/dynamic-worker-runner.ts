@@ -35,7 +35,7 @@ import worker from "worker.js";
 
 export default class extends WorkerEntrypoint {
   async run() {
-    const env = { WORKSPACE: this.ctx.props.WORKSPACE };
+    const env = { WORKSPACE: workspaceForUserCode(this.ctx.props.WORKSPACE) };
     if (typeof worker === "function") {
       return await worker(env);
     }
@@ -44,6 +44,22 @@ export default class extends WorkerEntrypoint {
     }
     throw new Error("Dynamic Worker module must default-export a function or { run(env) }.");
   }
+}
+
+function workspaceForUserCode(workspace) {
+  return {
+    readFile: async (path) => unwrapWorkspaceResult(await workspace.readFile(path)),
+    writeFile: async (path, contents) => unwrapWorkspaceResult(await workspace.writeFile(path, contents)),
+    list: async (path) => unwrapWorkspaceResult(await workspace.list(path)),
+    stat: async (path) => unwrapWorkspaceResult(await workspace.stat(path)),
+  };
+}
+
+function unwrapWorkspaceResult(result) {
+  if (result.status === "error") {
+    throw new Error(result.error.message || result.error.tag);
+  }
+  return result.value;
 }
 `;
 
@@ -67,11 +83,7 @@ export class DynamicWorkerRunner implements DemoDynamicWorkerRunner {
     });
 
     const workspace = this.workspaceBindings.bindingForEdit(options.editCopyId);
-    const entrypoint = worker.getEntrypoint(undefined, { props: { WORKSPACE: workspace } });
-    if (!isDynamicWorkerEntrypoint(entrypoint)) {
-      throw new Error("Dynamic Worker entrypoint does not expose run().");
-    }
-
+    const entrypoint = worker.getEntrypoint(undefined, { props: { WORKSPACE: workspace } }) as DynamicWorkerEntrypoint;
     return entrypoint.run();
   }
 }
@@ -81,8 +93,4 @@ export function createDynamicWorkerRunner(
   workspaceBindings: DynamicWorkerWorkspaceBindingFactory,
 ): DemoDynamicWorkerRunner {
   return new DynamicWorkerRunner(loader, workspaceBindings);
-}
-
-function isDynamicWorkerEntrypoint(value: unknown): value is DynamicWorkerEntrypoint {
-  return typeof value === "object" && value !== null && "run" in value && typeof value.run === "function";
 }

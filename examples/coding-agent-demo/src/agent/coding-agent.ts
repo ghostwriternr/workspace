@@ -1,13 +1,12 @@
 import { Agent, callable } from "agents";
 
 import { RepoEditController } from "../repo/edit-controller";
-import { RepoStateController, type RepoState } from "../repo/state-controller";
+import { RepoStateController } from "../repo/state-controller";
 import { createDynamicWorkerRunner } from "../workspace/dynamic-worker-runner";
 import type { RepoImportSummary } from "../repo/import-controller";
 
 export type CodingAgentState = {
   lastImport?: RepoImportSummary;
-  repo?: RepoState;
   editCopyId?: string;
 };
 
@@ -34,7 +33,7 @@ export class CodingAgent extends Agent<Env, CodingAgentState> {
     }).runDynamicWorker({ code });
 
     await this.refreshRepoState();
-    return result;
+    return resultToRpc(result);
   }
 
   @callable()
@@ -45,12 +44,16 @@ export class CodingAgent extends Agent<Env, CodingAgentState> {
       editCopyId: this.state.editCopyId,
     }).listRepoState();
 
-    const nextState = {
-      ...this.state,
-      repo,
-      lastImport: lastImport ?? this.state.lastImport,
-    };
-    this.setState(nextState);
-    return repo;
+    if (lastImport) {
+      this.setState({ ...this.state, lastImport });
+    }
+    return resultToRpc(repo);
   }
+}
+
+function resultToRpc<T, E>(result: { status: "ok"; value: T } | { status: "error"; error: E }): { status: "ok"; value: T } | { status: "error"; error: E } {
+  if (result.status === "error") {
+    return { status: "error", error: result.error };
+  }
+  return { status: "ok", value: result.value };
 }

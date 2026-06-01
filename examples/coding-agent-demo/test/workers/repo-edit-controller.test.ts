@@ -47,7 +47,9 @@ describe("RepoEditController", () => {
     if (Result.isError(edit)) throw new Error("edit copy missing");
     const editRead = await edit.value.files.read("/notes/edit.md");
 
-    expect(result).toEqual({
+    expect(Result.isOk(result)).toBe(true);
+    if (Result.isError(result)) throw new Error("edit failed");
+    expect(result.value).toEqual({
       status: "dynamic-worker-completed",
       editCopyId,
       result: { wrote: "/notes/edit.md" },
