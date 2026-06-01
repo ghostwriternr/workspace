@@ -10,7 +10,7 @@
     "deploy": "vite build && wrangler deploy",
     "dev": "vite dev",
     "start": "vite dev",
-    "test": "vitest run && vitest run --config vitest.workers.config.ts",
+    "test": "vitest run",
     "typegen": "wrangler types"
   },
   "dependencies": {
