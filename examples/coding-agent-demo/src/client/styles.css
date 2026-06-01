@@ -39,6 +39,11 @@ button {
 }
 
 button:disabled { cursor: not-allowed; opacity: 0.55; }
+button.secondary {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--ink);
+}
 
 input,
 textarea {
@@ -148,6 +153,18 @@ label {
   margin: 0;
   padding: 1rem;
 }
+
+.edit-actions {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 1rem;
+}
+
+.edit-actions span { color: var(--muted); font-size: 0.8rem; }
+.edit-actions code { color: var(--blue); overflow-wrap: anywhere; }
 
 .file-list {
   display: grid;

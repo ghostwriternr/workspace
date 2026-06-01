@@ -7,6 +7,9 @@ export const UI_COPY = {
   refPlaceholder: "optional ref",
   importAction: "Import repo",
   filesTitle: "Workspace files",
+  activeEditLabel: "Active edit copy",
+  applyEditAction: "Apply edit",
+  discardEditAction: "Discard edit",
   chatTitle: "Coding agent",
   chatPlaceholder: "Ask what files are in this repo…",
 } as const;

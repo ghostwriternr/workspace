@@ -9,6 +9,9 @@ describe("coding demo browser UI", () => {
     expect(UI_COPY.importPlaceholder).toBe("owner/repo");
     expect(UI_COPY.importAction).toBe("Import repo");
     expect(UI_COPY.filesTitle).toBe("Workspace files");
+    expect(UI_COPY.activeEditLabel).toBe("Active edit copy");
+    expect(UI_COPY.applyEditAction).toBe("Apply edit");
+    expect(UI_COPY.discardEditAction).toBe("Discard edit");
     expect(UI_COPY.chatTitle).toBe("Coding agent");
     expect(UI_COPY.chatPlaceholder).toBe("Ask what files are in this repo…");
   });

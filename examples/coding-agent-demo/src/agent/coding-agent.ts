@@ -11,7 +11,7 @@ export type CodingAgentState = {
 };
 
 export class CodingAgent extends Agent<Env, CodingAgentState> {
-  static readonly actions = ["listRepoState", "runDynamicWorker"] as const;
+  static readonly actions = ["listRepoState", "refreshRepoState", "runDynamicWorker", "applyEdit", "discardEdit"] as const;
 
   initialState: CodingAgentState = {};
 
@@ -22,16 +22,22 @@ export class CodingAgent extends Agent<Env, CodingAgentState> {
 
   @callable()
   async runDynamicWorker({ code }: { code: string }) {
-    const result = await new RepoEditController({
-      workspaces: this.env.WORKSPACES,
-      workspaceName: this.name,
-      dynamicWorkerRunner: createWorkspaceDynamicWorkerRunner(this.env.DYNAMIC_WORKERS),
-      workspaceForEdit: (editCopyId) => this.ctx.exports.WorkspaceFileCapability({ props: { workspaceName: this.name, editCopyId } }),
-      getEditCopyId: () => this.state.editCopyId,
-      setEditCopyId: (editCopyId) => this.setState({ ...this.state, editCopyId }),
-    }).runDynamicWorker({ code });
+    const result = await this.editController().runDynamicWorker({ code });
 
-    await this.refreshRepoState();
+    return resultToRpc(result);
+  }
+
+  @callable()
+  async applyEdit() {
+    const result = await this.editController().applyEdit();
+
+    return resultToRpc(result);
+  }
+
+  @callable()
+  async discardEdit() {
+    const result = await this.editController().discardEdit();
+
     return resultToRpc(result);
   }
 
@@ -47,6 +53,17 @@ export class CodingAgent extends Agent<Env, CodingAgentState> {
       this.setState({ ...this.state, lastImport });
     }
     return resultToRpc(repo);
+  }
+
+  private editController(): RepoEditController {
+    return new RepoEditController({
+      workspaces: this.env.WORKSPACES,
+      workspaceName: this.name,
+      dynamicWorkerRunner: createWorkspaceDynamicWorkerRunner(this.env.DYNAMIC_WORKERS),
+      workspaceForEdit: (editCopyId) => this.ctx.exports.WorkspaceFileCapability({ props: { workspaceName: this.name, editCopyId } }),
+      getEditCopyId: () => this.state.editCopyId,
+      setEditCopyId: (editCopyId) => this.setState({ ...this.state, editCopyId }),
+    });
   }
 }
 

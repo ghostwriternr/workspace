@@ -29,9 +29,14 @@ describe("coding agent slice", () => {
     expect(agent).toContain("class CodingAgent extends Agent<Env, CodingAgentState>");
     expect(agent).not.toContain("repo?: RepoState");
     expect(agent).toContain('"listRepoState"');
+    expect(agent).toContain('"refreshRepoState"');
     expect(agent).toContain('"runDynamicWorker"');
+    expect(agent).toContain('"applyEdit"');
+    expect(agent).toContain('"discardEdit"');
     expect(agent).toContain("async listRepoState()");
     expect(agent).toContain("async runDynamicWorker");
+    expect(agent).toContain("async applyEdit()");
+    expect(agent).toContain("async discardEdit()");
     expect(agent).not.toContain("runSandboxCommand");
   });
 });

@@ -12,6 +12,9 @@ type ImportStatus = { tone: "idle" | "ok" | "error"; message: string };
 type RepoStateResult =
   | { status: "ok"; value: RepoState }
   | { status: "error"; error: { tag: string; message?: string } };
+type EditActionResult =
+  | { status: "ok"; value: unknown }
+  | { status: "error"; error: { tag: string; message?: string } };
 
 export function App() {
   const [workspaceName, setWorkspaceName] = useState(DEFAULT_WORKSPACE);
@@ -26,6 +29,7 @@ export function App() {
   });
   const lastImport = agent.state?.lastImport;
   const lastImportKey = lastImport?.revisionId;
+  const activeEditId = repo?.editCopyId ?? agent.state?.editCopyId;
 
   useEffect(() => {
     let cancelled = false;
@@ -33,7 +37,7 @@ export function App() {
       try {
         await agent.ready;
         if (!cancelled) {
-          setRepo(await loadRepoState(agent, "refreshRepoState"));
+          setRepo(await loadRepoState(agent, "listRepoState"));
         }
       } catch (error) {
         if (!cancelled) {
@@ -45,7 +49,30 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [workspaceName, lastImportKey]);
+  }, [workspaceName, lastImportKey, agent.state?.editCopyId]);
+
+  async function applyEdit() {
+    await runEditAction("applyEdit", "Applying edit to current Workspace files…", "Edit applied to current Workspace files.");
+  }
+
+  async function discardEdit() {
+    await runEditAction("discardEdit", "Discarding edit copy…", "Edit copy discarded.");
+  }
+
+  async function runEditAction(method: "applyEdit" | "discardEdit", pending: string, done: string) {
+    setStatus({ tone: "idle", message: pending });
+    try {
+      await agent.ready;
+      const result = await agent.call(method) as EditActionResult;
+      if (result.status === "error") {
+        throw new Error(result.error.message ?? result.error.tag);
+      }
+      setRepo(await loadRepoState(agent, "listRepoState"));
+      setStatus({ tone: "ok", message: done });
+    } catch (error) {
+      setStatus({ tone: "error", message: error instanceof Error ? error.message : "Could not update edit copy." });
+    }
+  }
 
   async function importRepo(event: FormEvent) {
     event.preventDefault();
@@ -67,7 +94,7 @@ export function App() {
       return;
     }
 
-    setRepo(await loadRepoState(agent, "refreshRepoState"));
+    setRepo(await loadRepoState(agent, "listRepoState"));
     setStatus({ tone: "ok", message: "Repository imported into current Workspace files." });
   }
 
@@ -117,20 +144,43 @@ export function App() {
       </section>
 
       <section className="workspace-grid">
-        <RepoFilesPanel files={repo?.files ?? []} />
+        <RepoFilesPanel
+          files={repo?.files ?? []}
+          activeEditId={activeEditId}
+          onApplyEdit={applyEdit}
+          onDiscardEdit={discardEdit}
+        />
         <AgentChat agent={agent} />
       </section>
     </main>
   );
 }
 
-function RepoFilesPanel({ files }: { files: RepoState["files"] }) {
+function RepoFilesPanel({
+  files,
+  activeEditId,
+  onApplyEdit,
+  onDiscardEdit,
+}: {
+  files: RepoState["files"];
+  activeEditId?: string;
+  onApplyEdit(): void;
+  onDiscardEdit(): void;
+}) {
   return (
     <article className="panel files-panel">
       <div className="panel-heading">
         <p className="eyebrow">Passive state</p>
         <h2>{UI_COPY.filesTitle}</h2>
       </div>
+      {activeEditId ? (
+        <div className="edit-actions">
+          <span>{UI_COPY.activeEditLabel}</span>
+          <code>{activeEditId}</code>
+          <button type="button" onClick={onApplyEdit}>{UI_COPY.applyEditAction}</button>
+          <button type="button" className="secondary" onClick={onDiscardEdit}>{UI_COPY.discardEditAction}</button>
+        </div>
+      ) : null}
       {files.length === 0 ? (
         <p className="empty">No repository files imported yet.</p>
       ) : (
@@ -231,7 +281,7 @@ function parseRepoInput(value: string): { owner: string; repo: string } | undefi
 
 async function loadRepoState(
   agent: ReturnType<typeof useAgent<CodingAgentState>>,
-  method: "listRepoState" | "refreshRepoState",
+  method: "listRepoState",
 ): Promise<RepoState> {
   const result = await agent.call(method) as RepoStateResult;
   if (result.status === "error") {
