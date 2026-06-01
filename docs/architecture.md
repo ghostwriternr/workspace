@@ -141,7 +141,9 @@ Product code should only see the first two, and only through the names in [`prod
 
 `copy.files.scoped(...)` wraps a file-copy file API and returns an `RpcTarget` exposing only `readFile`, `writeFile`, `list`, `stat`. It enforces a root prefix, allowed read globs, allowed write globs, path normalisation, and traversal rejection. The lower-level implementation is `packages/workspace/src/workspace/projections/scoped-file-capability.ts`.
 
-It does **not** expose `apply`, `discard`, `beginSession`, `getByName`, revisions, or Workspace identity. This is what gets passed into a Dynamic Worker as `env.WORKSPACE`.
+It does **not** expose `apply`, `discard`, `beginSession`, `getByName`, revisions, or Workspace identity. This is the capability shape delegated code receives.
+
+`packages/adapters/dynamic-worker` adapts that capability to Worker Loader. It keeps the WorkerEntrypoint RPC boundary serializable by forwarding `ScopedWorkspaceRpcResult` DTOs, then unwraps those DTOs inside the loaded Worker harness so delegated code sees ordinary `env.WORKSPACE.readFile(...)` / `writeFile(...)` methods. The adapter owns Dynamic Worker loading mechanics; examples still own copy lookup, scopes, agent state, and apply/discard policy.
 
 ### Filesystem projection
 
@@ -215,9 +217,15 @@ examples/photo-agent-demo/
   src/
     agent/        PhotoAgent (Think) + prompt
     photo/        draft-controller (product glue) + upload
-    workspace/    Sandbox runner, Dynamic Worker runner, loopback capability
+    workspace/    Sandbox runner, loopback Workspace capability
     http/         upload / read / state / demo routes
     client/       React/Vite UI (useAgent, useAgentChat)
+
+packages/source/github/
+  src/             GitHub REST source adapter yielding WorkspaceTreeEntry values
+
+packages/adapters/dynamic-worker/
+  src/             Worker Loader runner and reusable Workspace capability entrypoint
 ```
 
 See [`AGENTS.md`](../AGENTS.md) for the short map, conventions (`Result`, `better-result`, no `unwrap()`), and commands.
