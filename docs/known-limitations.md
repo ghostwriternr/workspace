@@ -14,7 +14,11 @@ Every file entry points at a blob in `WORKSPACE_BLOBS`. That bakes in two assump
 
 ## No source provenance
 
-Files imported from a GitHub commit, an S3 prefix, or any other external source aren't tagged with where they came from. Adapters can't tell which files have changed relative to their source, can't skip re-imports, and can't generate a clean export patch without doing their own bookkeeping. See [`sources.md`](./sources.md) for the shape this should take.
+Files imported from a GitHub commit, an S3 prefix, or any other external source aren't tagged with where they came from. Adapters can't tell which files have changed relative to their source, can't skip re-imports, and can't generate a clean export patch without doing their own bookkeeping. See [`sources.md`](./sources.md) and the metadata categories in [`product-model.md`](./product-model.md) for the shape this should take.
+
+## No bulk import primitive
+
+Source adapters, uploads, and any code that needs to materialise a tree of files into Workspace has to call `write` per file and `mkdir` per directory by hand. The product API should expose `writeTree(...)` on both current files and file copies — see [`product-api.md`](./product-api.md) — but it doesn't yet. Until then, adapters carry the boilerplate.
 
 ## No blob garbage collection
 
@@ -38,22 +42,10 @@ The prototype validates scoped Dynamic Worker file capabilities over a draft. It
 
 These are documented projections in [`product-model.md`](./product-model.md); they're just unimplemented.
 
-## No session garbage collection
+## No file-copy cleanup
 
-File copies left open indefinitely retain `session_entries` indefinitely. No TTL, sweep, list, or purge API. Callers must explicitly apply or discard them.
-
-Needed before high-volume or untrusted session creation.
-
-## No merge or rebase
-
-File copies record the head version they started from. Applying rejects stale copies. That's the safety boundary; there's no merge, rebase, or conflict-detail model yet. Callers can inspect and discard, but Workspace doesn't yet help reconcile.
+File copies left open indefinitely retain `session_entries` indefinitely. Callers must explicitly apply or discard them; there's no sweep, no TTL, and no orphan recovery. Needed before high-volume or untrusted copy creation.
 
 ## No revision pruning
 
 Revisions and the blobs they reference are retained indefinitely. No retention policy, pruning, or export semantics. Keep this outside the core model until revision usage patterns are clearer.
-
-## The user-facing API is still shallow
-
-The package now exposes the first product-facing layer: `Workspace.get(...)`, `workspace.files`, durable file copies, `copy.files.attach(...)`, `attachment.capture()`, `copy.files.scoped(...)`, `copy.apply()`, and `copy.discard()`. It hides sessions, raw RPC result DTOs, RPC stub disposal, direct filesystem projection setup, and scoped capability construction for that path.
-
-The API is still a thin layer over the prototype internals. It does not yet cover source adapters, module/asset projections, lifecycle tooling, retention, or higher-level import/export workflows.

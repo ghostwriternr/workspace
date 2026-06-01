@@ -8,6 +8,8 @@ Workspace is durable file state, not execution. Do not add `run`/`exec`, contain
 
 Do not add broad scaffolding, placeholder files, or speculative config. If a feature isn't paying for itself today, it shouldn't be in the tree.
 
+Build only what is needed. Don't add inspection methods, convenience helpers, status fields, or pre-flight checks until a real caller needs them.
+
 ## Repo map
 
 - `packages/workspace/` — the Workspace package. Keep durable file-state primitives here.

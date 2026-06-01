@@ -77,7 +77,7 @@ Directories are **explicit** durable entries.
 - `delete` removes files and empty directories only.
 - No implicit parent creation. No auto-pruning.
 
-This trades convenience for clarity. It makes diff, capture, and future projections tractable.
+This trades convenience for clarity. It keeps the capture path, projections, and any comparison products want to build above Workspace well-defined.
 
 ## Storage shape, and where it's heading
 

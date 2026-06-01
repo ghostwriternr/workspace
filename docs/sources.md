@@ -44,6 +44,18 @@ Anyone should be able to write one. The interface Workspace needs to support the
 
 No part of Workspace core depends on a specific adapter, and no adapter needs Workspace's permission to exist.
 
+## What an adapter does
+
+An adapter is small. The shape it exposes to product code is roughly:
+
+- **Resolve a snapshot.** Take whatever the user gave you (`github:owner/repo@main`, `s3:bucket/prefix`, …) and return an identity plus a strongly-versioned snapshot — a commit SHA, an etag manifest, a revision id. Strong versioning is what lets a product reason about reproducibility.
+- **List files in that snapshot.** Yield file records — `{ path, contents, metadata? }` — typically as an async iterable so large sources can stream rather than buffer.
+- **Optionally exclude paths.** Skip `.git/`, `node_modules/`, build caches, secrets, anything the product doesn't want imported.
+
+The adapter then hands its iterable to `workspace.files.writeTree(...)` or `copy.files.writeTree(...)` (see [`product-api.md`](./product-api.md)). It doesn't call `apply` and doesn't hold Workspace identity.
+
+A trivial GitHub adapter resolves a ref to a commit SHA, walks the tree API, and streams blobs. A trivial S3 or external-R2 adapter does the same against object APIs. Adapters stay small: the cost of supporting a new source is bounded, and the surface a product has to trust stays narrow.
+
 ## Provenance, not auto-sync
 
 Workspace can record where a file came from as part of its metadata — adapter id, source ref, source version, source path. That's useful for products that want to:

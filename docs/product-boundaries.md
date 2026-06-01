@@ -21,7 +21,8 @@ For the conceptual model, see [`product-model.md`](./product-model.md). For the 
 - Sandbox, container, or Dynamic Worker lifecycle.
 - Dynamic Worker loading (Worker Loader is the consumer).
 - Agent orchestration or task scheduling.
-- Git history, branches, refs, remotes, rebase, merge.
+- Git history, branches, refs, remotes.
+- Diff, patch, merge, or rebase between trees. Workspace tells you what's in a tree; it does not compute how trees differ. Products that need diffs build them above Workspace.
 - Artifacts semantics.
 - Source adapters — GitHub, GitLab, Hugging Face, S3, external R2, Artifacts, user uploads. Bridging external systems into Workspace is product work; see [`sources.md`](./sources.md).
 - Policy, approval, grant, or audit systems.

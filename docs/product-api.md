@@ -86,6 +86,21 @@ if (Result.isError(write)) return write;
 
 A copy is durable but not live. It can outlive a request, an agent turn, or a process. Applying is a separate decision.
 
+## Writing many files
+
+Source adapters, uploads, and anything that materialises a tree of files at once shouldn't have to call `write` per file and `mkdir` per directory. The product API should let them write a tree:
+
+```ts
+await workspace.files.writeTree(entries);
+await copy.files.writeTree(entries);
+```
+
+Each entry is `{ path, contents, metadata? }`. Parent directories are created implicitly. Returns a `Result`.
+
+Directories remain explicit underneath: writing `/a/b/c.txt` ensures `/a` and `/a/b` exist after the call. Bulk import is the natural integration point for source adapters — see [`sources.md`](./sources.md).
+
+Not built yet — see [`known-limitations.md`](./known-limitations.md).
+
 ## Attachments and capture
 
 Attachments are how file copies become usable from a runtime. For Sandboxes and containers, that means files appear under a local path like `/workspace`.

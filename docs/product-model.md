@@ -61,9 +61,12 @@ Workspace can record where a file came from as metadata. It does not watch the s
 
 ### Durable tree
 
-A Workspace contains a tree of files and directories. Each entry has path, type, size, and timestamps. Generic metadata (content type, content digest, small string metadata) is part of the long-term model.
+A Workspace contains a tree of files and directories. Each entry has path, type, size, and timestamps. Two categories of metadata are part of the long-term model:
 
-Directories are explicit. `mkdir` creates one; `writeFile` requires the parent to exist; `delete` removes empty directories only. The cost is a little extra explicit work; the benefit is that diff, capture, and projection behavior are well-defined.
+- **Generic file metadata** — content type, content digest, small string metadata.
+- **Provenance metadata** — adapter id, source ref, source version, source path — for files imported from an external source. See [`sources.md`](./sources.md).
+
+Directories are explicit. `mkdir` creates one; `writeFile` requires the parent to exist; `delete` removes empty directories only. The cost is a little extra explicit work; the benefit is that capture, projections, and any tree comparison products want to build above Workspace are well-defined.
 
 ### Working copies (file copies)
 
@@ -197,14 +200,14 @@ Built:
 
 Not built yet — see [`known-limitations.md`](./known-limitations.md):
 
-- Higher-level import/export and source adapter APIs.
-- Working-copy listing, cleanup, and TTL.
-- Diff or changed-path inspection.
-- Public version/change-token observability.
-- Generic file metadata (content type).
+- Bulk import (`writeTree`) on current files and copies.
+- Provenance metadata for files imported from external sources.
+- Generic file metadata (content type, digest).
+- File-copy cleanup / orphan recovery.
 - Production filesystem projection (no scan, no rehash).
 - Dynamic Worker module and asset projections.
 
 Deliberately out of scope:
 
+- Diff, patch, merge, or rebase between trees. Workspace inventories trees; it doesn't compare them.
 - Full POSIX, Git semantics, agent orchestration, Dynamic Worker loading, Sandbox lifecycle, policy systems. See [`product-boundaries.md`](./product-boundaries.md).
