@@ -162,7 +162,7 @@ function ToolCard({ part }: { part: ToolPart }) {
 }
 
 function formatToolPayload(toolName: string, input: unknown) {
-  if (toolName === "runWorkspaceWorker" && isRecord(input) && typeof input.code === "string") {
+  if (toolName === "run" && isRecord(input) && typeof input.code === "string") {
     return input.code;
   }
 
