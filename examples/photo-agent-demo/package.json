@@ -18,6 +18,7 @@
     "@cloudflare/sandbox": "^0.10.2",
     "@cloudflare/think": "^0.7.2",
     "@cloudflare/workspace": "file:../../packages/workspace",
+    "@cloudflare/workspace-adapter-dynamic-worker": "file:../../packages/adapters/dynamic-worker",
     "agents": "^0.13.2",
     "ai": "^6.0.191",
     "better-result": "^2.9.2",

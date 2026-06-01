@@ -1,17 +1,22 @@
 import { Result, type Result as BetterResult } from "better-result";
 import {
   Workspace,
+  type ScopedWorkspaceFileCapability,
   type WorkspaceCopyError,
   type WorkspaceFileCopy,
   type WorkspaceNamespace,
 } from "@cloudflare/workspace";
-
-import type { DemoDynamicWorkerRunner, DynamicWorkerResult } from "../workspace/dynamic-worker-runner";
+import type {
+  WorkspaceDynamicWorkerExecutionError,
+  WorkspaceDynamicWorkerResult,
+  WorkspaceDynamicWorkerRunner,
+} from "@cloudflare/workspace-adapter-dynamic-worker";
 
 export type RepoEditControllerDependencies = {
   workspaceName: string;
   workspaces: WorkspaceNamespace;
-  dynamicWorkerRunner: Pick<DemoDynamicWorkerRunner, "runDynamicWorker">;
+  dynamicWorkerRunner: WorkspaceDynamicWorkerRunner;
+  workspaceForEdit(editCopyId: string): ScopedWorkspaceFileCapability;
   getEditCopyId(): string | undefined;
   setEditCopyId(editCopyId: string | undefined): void;
 };
@@ -19,15 +24,10 @@ export type RepoEditControllerDependencies = {
 export type RepoEditResult = {
   status: "dynamic-worker-completed";
   editCopyId: string;
-  result: DynamicWorkerResult;
+  result: WorkspaceDynamicWorkerResult;
 };
 
-type DynamicWorkerExecutionError = {
-  tag: "DynamicWorkerExecutionError";
-  message: string;
-};
-
-export type RepoEditError = WorkspaceCopyError | DynamicWorkerExecutionError;
+export type RepoEditError = WorkspaceCopyError | WorkspaceDynamicWorkerExecutionError;
 
 export class RepoEditController {
   constructor(private readonly dependencies: RepoEditControllerDependencies) {}
@@ -38,20 +38,19 @@ export class RepoEditController {
       return Result.err(copy.error);
     }
 
-    try {
-      const result = await this.dependencies.dynamicWorkerRunner.runDynamicWorker({
-        editCopyId: copy.value.id,
-        code,
-      });
-
-      return Result.ok({
-        status: "dynamic-worker-completed",
-        editCopyId: copy.value.id,
-        result,
-      });
-    } catch (error) {
-      return Result.err(dynamicWorkerExecutionError(error));
+    const result = await this.dependencies.dynamicWorkerRunner.run({
+      code,
+      workspace: this.dependencies.workspaceForEdit(copy.value.id),
+    });
+    if (Result.isError(result)) {
+      return Result.err(result.error);
     }
+
+    return Result.ok({
+      status: "dynamic-worker-completed",
+      editCopyId: copy.value.id,
+      result: result.value,
+    });
   }
 
   private async editCopy(): Promise<BetterResult<WorkspaceFileCopy, WorkspaceCopyError>> {
@@ -72,11 +71,4 @@ export class RepoEditController {
     this.dependencies.setEditCopyId(copy.value.id);
     return Result.ok(copy.value);
   }
-}
-
-function dynamicWorkerExecutionError(error: unknown): DynamicWorkerExecutionError {
-  return {
-    tag: "DynamicWorkerExecutionError",
-    message: error instanceof Error ? error.message : "Dynamic Worker execution failed.",
-  };
 }

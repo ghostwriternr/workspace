@@ -6,7 +6,11 @@ import {
 } from "@cloudflare/workspace";
 import type { WorkspaceFileCaptureSummary } from "@cloudflare/workspace";
 import type { DemoWorkspaceCommandRunner } from "../workspace/sandbox-workspace-command-runner";
-import type { DemoDynamicWorkerRunner, DynamicWorkerResult } from "../workspace/dynamic-worker-runner";
+import type {
+  WorkspaceDynamicWorkerResult,
+  WorkspaceDynamicWorkerRunner,
+} from "@cloudflare/workspace-adapter-dynamic-worker";
+import type { ScopedWorkspaceFileCapability } from "@cloudflare/workspace";
 
 const ORIGINAL_CANDIDATES = [
   { path: "/photos/original.png", contentType: "image/png" },
@@ -66,7 +70,8 @@ export type PhotoDraftControllerDependencies = {
   workspaceName: string;
   workspaces: WorkspaceNamespace;
   commandRunner: Pick<DemoWorkspaceCommandRunner, "runWorkspaceCommand">;
-  dynamicWorkerRunner: Pick<DemoDynamicWorkerRunner, "runDynamicWorker">;
+  dynamicWorkerRunner: WorkspaceDynamicWorkerRunner;
+  workspaceForDraft(draftEditId: string): ScopedWorkspaceFileCapability;
   getDraftEditId(): string | undefined;
   setDraftEditId(draftEditId: string | undefined): void;
 };
@@ -149,18 +154,21 @@ export class PhotoDraftController {
   async runDynamicWorker({ code }: { code: string }): Promise<{
     status: "dynamic-worker-completed";
     summary: string;
-    result: DynamicWorkerResult;
+    result: WorkspaceDynamicWorkerResult;
   }> {
     return this.withDraftCopy(async (_copy, draftEditId) => {
-      const result = await this.dependencies.dynamicWorkerRunner.runDynamicWorker({
-        draftEditId,
+      const result = await this.dependencies.dynamicWorkerRunner.run({
         code,
+        workspace: this.dependencies.workspaceForDraft(draftEditId),
       });
+      if (Result.isError(result)) {
+        throw new Error(result.error.message);
+      }
 
       return {
         status: "dynamic-worker-completed",
         summary: "Dynamic Worker finished.",
-        result,
+        result: result.value,
       };
     });
   }

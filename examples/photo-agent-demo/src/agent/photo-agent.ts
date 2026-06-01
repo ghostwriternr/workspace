@@ -5,7 +5,7 @@ import { createWorkersAI } from "workers-ai-provider";
 import { z } from "zod";
 
 import { createSandboxWorkspaceCommandRunner } from "../workspace/cloudflare-sandbox";
-import { createDynamicWorkerRunner } from "../workspace/dynamic-worker-runner";
+import { createWorkspaceDynamicWorkerRunner } from "@cloudflare/workspace-adapter-dynamic-worker";
 import { PhotoDraftController, type PhotoState } from "../photo/draft-controller";
 import { photoAgentPrompt } from "./prompt";
 
@@ -121,10 +121,9 @@ export class PhotoAgent extends Think<Env, PhotoAgentState> {
       workspaceName: this.name,
       workspaces: this.env.WORKSPACES,
       commandRunner: createSandboxWorkspaceCommandRunner(this.env.Sandbox, this.name),
-      dynamicWorkerRunner: createDynamicWorkerRunner(this.env.DYNAMIC_WORKERS, {
-        bindingForDraft: (draftEditId) =>
-          this.ctx.exports.WorkspaceFileCapability({ props: { workspaceName: this.name, draftEditId } }),
-      }),
+      dynamicWorkerRunner: createWorkspaceDynamicWorkerRunner(this.env.DYNAMIC_WORKERS),
+      workspaceForDraft: (draftEditId) =>
+        this.ctx.exports.WorkspaceFileCapability({ props: { workspaceName: this.name, draftEditId } }),
       getDraftEditId: () => this.state.draftEditId,
       setDraftEditId: (draftEditId) => this.setState({ ...this.state, draftEditId }),
     });

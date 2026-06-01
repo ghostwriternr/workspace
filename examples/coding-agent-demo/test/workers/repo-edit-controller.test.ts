@@ -21,22 +21,23 @@ describe("RepoEditController", () => {
 
     let editCopyId: string | undefined;
     const runner = {
-      calls: [] as Array<{ editCopyId: string; code: string }>,
-      async runDynamicWorker(options: { editCopyId: string; code: string }) {
-        this.calls.push(options);
-        const copy = await workspace.files.getCopy(options.editCopyId);
-        if (Result.isError(copy)) throw new Error(copy.error.tag);
+      calls: [] as Array<{ code: string }>,
+      async run(options: { code: string }) {
+        this.calls.push({ code: options.code });
+        const copy = await workspace.files.getCopy(editCopyId!);
+        if (Result.isError(copy)) return Result.err({ tag: "WorkspaceDynamicWorkerExecutionError" as const, message: copy.error.tag });
         const readme = await copy.value.files.read("/README.md");
-        if (Result.isError(readme)) throw new Error(readme.error.tag);
+        if (Result.isError(readme)) return Result.err({ tag: "WorkspaceDynamicWorkerExecutionError" as const, message: readme.error.tag });
         await copy.value.files.mkdir("/notes");
         await copy.value.files.write("/notes/edit.md", encoder.encode(`read ${decoder.decode(readme.value)}`));
-        return { wrote: "/notes/edit.md" };
+        return Result.ok({ wrote: "/notes/edit.md" });
       },
     };
     const controller = new RepoEditController({
       workspaces: env.WORKSPACES,
       workspaceName,
       dynamicWorkerRunner: runner,
+      workspaceForEdit: () => ({}) as never,
       getEditCopyId: () => editCopyId,
       setEditCopyId: (next) => { editCopyId = next; },
     });
@@ -54,7 +55,7 @@ describe("RepoEditController", () => {
       editCopyId,
       result: { wrote: "/notes/edit.md" },
     });
-    expect(runner.calls).toEqual([{ editCopyId, code: "export default async function(env) {}" }]);
+    expect(runner.calls).toEqual([{ code: "export default async function(env) {}" }]);
     expect(Result.isError(currentRead)).toBe(true);
     expect(Result.isOk(editRead)).toBe(true);
     if (Result.isOk(editRead)) {

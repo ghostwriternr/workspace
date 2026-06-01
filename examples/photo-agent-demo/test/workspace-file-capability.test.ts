@@ -12,19 +12,39 @@ describe("WorkspaceFileCapability", () => {
       { WORKSPACES: { getByName: () => workspace } } as never,
     );
 
-    await expect(capability.readFile("/photos/current")).resolves.toEqual(photoBytes);
+    await expect(capability.readFile("/photos/current")).resolves.toEqual({ status: "ok", value: photoBytes });
     await expect(capability.stat("/photos/current")).resolves.toMatchObject({
-      path: "/photos/current",
-      type: "file",
-      size: photoBytes.byteLength,
+      status: "ok",
+      value: {
+        path: "/photos/current",
+        type: "file",
+        size: photoBytes.byteLength,
+      },
     });
 
+    expect(workspace.getSessionCount).toBe(1);
+  });
+
+  it("shares capability initialization across concurrent file operations", async () => {
+    const workspace = new FakeWorkspaceObject();
+    workspace.getSessionDelay = Promise.withResolvers<void>();
+    const capability = new WorkspaceFileCapability(
+      { props: { workspaceName: "demo", draftEditId: "draft-1" }, exports: {} } as never,
+      { WORKSPACES: { getByName: () => workspace } } as never,
+    );
+
+    const read = capability.readFile("/photos/current");
+    const stat = capability.stat("/photos/current");
+    workspace.getSessionDelay.resolve();
+
+    await expect(Promise.all([read, stat])).resolves.toHaveLength(2);
     expect(workspace.getSessionCount).toBe(1);
   });
 });
 
 class FakeWorkspaceObject {
   getSessionCount = 0;
+  getSessionDelay?: PromiseWithResolvers<void>;
 
   async beginSession() {
     throw new Error("not used");
@@ -32,6 +52,7 @@ class FakeWorkspaceObject {
 
   async getSession(sessionId: string) {
     this.getSessionCount += 1;
+    await this.getSessionDelay?.promise;
     return { status: "ok" as const, value: { sessionId, createdAt: 1 } };
   }
 

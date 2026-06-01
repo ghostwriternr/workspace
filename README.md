@@ -27,9 +27,10 @@ Workspace is source-agnostic: files might come from a user upload, a GitHub chec
 ## Layout
 
 ```
-packages/workspace/         Reusable Workspace package (DO + R2, sessions, projections)
-packages/source/github/     GitHub REST source adapter for streaming repo files
-examples/photo-agent-demo/   Worker app: Think agent edits photos via Sandbox + Dynamic Worker
+packages/workspace/                 Reusable Workspace package (DO + R2, sessions, projections)
+packages/source/github/             GitHub REST source adapter for streaming repo files
+packages/adapters/dynamic-worker/   Dynamic Worker adapter for scoped Workspace files
+examples/photo-agent-demo/           Worker app: Think agent edits photos via Sandbox + Dynamic Worker
                              over a single Workspace draft
 examples/coding-agent-demo/  Worker app: imports public GitHub repos into Workspace for
                              agent-oriented coding flows

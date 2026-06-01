@@ -14,6 +14,7 @@ Build only what is needed. Don't add inspection methods, convenience helpers, st
 
 - `packages/workspace/` — the Workspace package. Keep durable file-state primitives here.
 - `packages/source/github/` — GitHub source adapter. Keep GitHub API/import concerns outside Workspace core.
+- `packages/adapters/dynamic-worker/` — Dynamic Worker adapter. Keep execution integration here, not in Workspace core.
 - `examples/photo-agent-demo/` — example Worker. Agent/Sandbox/Dynamic Worker concerns live here, not in the package.
 - `examples/coding-agent-demo/` — example Worker for importing public GitHub repos into Workspace before agent edits.
 - `docs/architecture.md` — how things actually work in code.
