@@ -1,0 +1,15 @@
+export const UI_COPY = {
+  title: "Workspace Coding Agent Demo",
+  eyebrow: "Cloudflare Workspace × GitHub × Agents",
+  subtitle: "Import a public GitHub repository, inspect its Workspace files, and then continue the edit loop through chat.",
+  importLabel: "GitHub repository",
+  importPlaceholder: "owner/repo",
+  refPlaceholder: "optional ref",
+  importAction: "Import repo",
+  filesTitle: "Workspace files",
+  activeEditLabel: "Active edit copy",
+  applyEditAction: "Apply edit",
+  discardEditAction: "Discard edit",
+  chatTitle: "Coding agent",
+  chatPlaceholder: "Ask the agent to inspect or edit this repo…",
+} as const;

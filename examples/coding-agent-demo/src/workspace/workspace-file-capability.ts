@@ -4,19 +4,19 @@ import { WorkspaceFileCapabilityEntrypoint } from "@cloudflare/workspace-adapter
 
 type WorkspaceFileCapabilityProps = {
   workspaceName: string;
-  draftEditId: string;
+  editCopyId: string;
 };
 
 export class WorkspaceFileCapability extends WorkspaceFileCapabilityEntrypoint<Env, WorkspaceFileCapabilityProps> {
   protected async getWorkspaceFileCapability(): Promise<ScopedWorkspaceRpcResult<ScopedWorkspaceFileCapability>> {
     const workspace = Workspace.get(this.env.WORKSPACES, this.ctx.props.workspaceName);
-    const copy = await workspace.files.getCopy(this.ctx.props.draftEditId);
+    const copy = await workspace.files.getCopy(this.ctx.props.editCopyId);
     if (Result.isError(copy)) {
       return {
         status: "error",
         error: {
           tag: copy.error.tag,
-          message: copy.error.message ?? `draft edit not found: ${copy.error.tag}`,
+          message: copy.error.message ?? `edit copy not found: ${copy.error.tag}`,
         },
       };
     }
@@ -24,8 +24,8 @@ export class WorkspaceFileCapability extends WorkspaceFileCapabilityEntrypoint<E
     return {
       status: "ok",
       value: copy.value.files.scoped({
-        read: ["/photos/**"],
-        write: ["/photos/**", "/notes/**"],
+        read: ["/**"],
+        write: ["/**"],
       }),
     };
   }

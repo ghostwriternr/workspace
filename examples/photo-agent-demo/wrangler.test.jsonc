@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "workspace-photo-agent-demo-test",
+  "main": "test/worker.ts",
+  "compatibility_date": "2026-05-25",
+  "compatibility_flags": ["nodejs_compat", "experimental"],
+  "durable_objects": {
+    "bindings": [
+      { "name": "WORKSPACES", "class_name": "WorkspaceObject" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["WorkspaceObject"] }
+  ],
+  "r2_buckets": [
+    { "binding": "WORKSPACE_BLOBS", "bucket_name": "workspace-photo-agent-demo-test-blobs" }
+  ],
+  "observability": { "enabled": true }
+}

@@ -3,11 +3,11 @@
   "entry": ["test/**/*.test.ts", "test/worker.ts"],
   "project": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "vitest*.config.ts"],
   "ignoreDependencies": [
+    // `cloudflare:workers` is a Workers runtime/vitest-pool virtual module,
+    // not an npm package named `cloudflare`.
     "cloudflare"
   ],
   "rules": {
-    // The example is an app, not a package API surface. Keep exported symbols
-    // intentional while preserving the Workspace prototype imports above.
     "exports": "error",
     "types": "error"
   }

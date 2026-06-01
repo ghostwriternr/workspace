@@ -1,7 +1,8 @@
+import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 import type { WorkspaceFileCopyFiles } from "@cloudflare/workspace";
 
-import { PhotoDraftController } from "../src/photo/draft-controller";
+import { PhotoDraftController } from "../../src/photo/draft-controller";
 
 const originalPng = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1]);
 const currentPng = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 2]);
@@ -111,7 +112,6 @@ describe("PhotoDraftController", () => {
     expect(dependencies.workspace.beginSessionCount).toBe(0);
     expect(dependencies.dynamicWorkerRunner.calls).toEqual([
       {
-        draftEditId: "session-1",
         code: "export default async function(env) { await env.WORKSPACE.writeFile('/notes/edit-summary.md', new TextEncoder().encode('cropped square')); }",
       },
     ]);
@@ -201,6 +201,7 @@ function createDependencies(options: CreateDependenciesOptions) {
     workspaces: { getByName: () => workspace },
     commandRunner,
     dynamicWorkerRunner,
+    workspaceForDraft: () => ({}) as never,
     getDraftEditId: () => dependencies.draftEditId,
     setDraftEditId: (draftEditId: string | undefined) => {
       dependencies.draftEditId = draftEditId;
@@ -405,15 +406,15 @@ class FakeSession {
 }
 
 class FakeDynamicWorkerRunner {
-  readonly calls: Array<{ draftEditId: string; code: string }> = [];
+  readonly calls: Array<{ code: string }> = [];
 
   constructor(private readonly session: FakeSession) {}
 
-  async runDynamicWorker(options: { draftEditId: string; code: string }) {
-    this.calls.push({ draftEditId: options.draftEditId, code: options.code });
+  async run(options: { code: string }) {
+    this.calls.push({ code: options.code });
     await this.session.mkdir("/notes");
     await this.session.writeFile("/notes/edit-summary.md", new TextEncoder().encode("cropped square"));
-    return { wrote: "/notes/edit-summary.md" };
+    return Result.ok({ wrote: "/notes/edit-summary.md" });
   }
 }
 
