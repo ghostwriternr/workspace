@@ -28,13 +28,14 @@ Workspace is source-agnostic: files might come from a user upload, a GitHub chec
 
 ```
 packages/workspace/         Reusable Workspace package (DO + R2, sessions, projections)
+packages/adapters/github/  GitHub REST source adapter for streaming repo files
 examples/photo-agent-demo/  Worker app: Think agent edits photos via Sandbox + Dynamic Worker
                             over a single Workspace draft
 ```
 
 ## Status
 
-Prototype. The core durable semantics work (head tree, working copies, revisions, scoped file capabilities, filesystem projection). The first product-facing API layer exists for current files, file copies, streaming bulk tree writes into copies, filesystem attachments, capture, scoped file capabilities, apply, and discard. See `docs/known-limitations.md` for the full list.
+Prototype. The core durable semantics work (head tree, working copies, revisions, scoped file capabilities, filesystem projection). The first product-facing API layer exists for current files, file copies, streaming bulk tree writes into copies, filesystem attachments, capture, scoped file capabilities, apply, and discard. A first GitHub source adapter streams repository files into that import path. See `docs/known-limitations.md` for the full list.
 
 The photo agent example is deployed at <https://workspace-photo-agent-demo.ghostwriternr.workers.dev>.
 

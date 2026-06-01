@@ -3,18 +3,22 @@ default:
 
 setup:
     cd packages/workspace && npm install
+    cd packages/adapters/github && npm install
     cd examples/photo-agent-demo && npm install
 
 check:
     cd packages/workspace && npm run check
+    cd packages/adapters/github && npm run check
     cd examples/photo-agent-demo && npm run check
 
 knip:
     cd packages/workspace && npm run knip
+    cd packages/adapters/github && npm run knip
     cd examples/photo-agent-demo && npm run knip
 
 test:
     cd packages/workspace && npm test
+    cd packages/adapters/github && npm test
     cd examples/photo-agent-demo && npm test
 
 typegen:
