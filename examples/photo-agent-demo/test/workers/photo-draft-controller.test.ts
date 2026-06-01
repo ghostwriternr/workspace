@@ -2,7 +2,7 @@ import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 import type { WorkspaceFileCopyFiles } from "@cloudflare/workspace";
 
-import { PhotoDraftController } from "../src/photo/draft-controller";
+import { PhotoDraftController } from "../../src/photo/draft-controller";
 
 const originalPng = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1]);
 const currentPng = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 2]);
