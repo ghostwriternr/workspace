@@ -15,10 +15,10 @@ export type CodingAgentState = {
   editCopyId?: string;
 };
 
-const codingToolNames = ["listRepoState", "runDynamicWorker", "applyEdit", "discardEdit"] as const;
+const codingToolNames = ["runWorkspaceWorker", "applyEdit", "discardEdit"] as const;
 
 export class CodingAgent extends Think<Env, CodingAgentState> {
-  static readonly actions = ["refreshRepoState", ...codingToolNames] as const;
+  static readonly actions = ["listRepoState", "refreshRepoState", ...codingToolNames] as const;
 
   initialState: CodingAgentState = {};
 
@@ -38,22 +38,17 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
 
   getTools(): ToolSet {
     return {
-      listRepoState: tool({
-        description: "List repository Workspace files. If an edit copy is active, this lists that editable copy; otherwise it lists current files.",
-        inputSchema: z.object({}),
-        execute: async () => this.listRepoState(),
-      }),
-      runDynamicWorker: tool({
+      runWorkspaceWorker: tool({
         description: [
-          "Run Worker-native JavaScript against the active edit copy through a scoped env.WORKSPACE binding.",
-          "Use this to inspect and edit repository files. The binding exposes readFile, writeFile, list, and stat only.",
+          "Run Worker-native JavaScript against Workspace files through a scoped env.WORKSPACE binding.",
+          "Use this single tool for inspection and edits. The binding exposes readFile, writeFile, list, and stat.",
           "The code must default-export an async function that accepts env.",
           "Example: `export default async function(env) { const bytes = await env.WORKSPACE.readFile('/README.md'); const text = new TextDecoder().decode(bytes); await env.WORKSPACE.writeFile('/README.md', new TextEncoder().encode(text + '\\n\\n## Notes\\nUpdated by the coding agent.\\n')); return { changed: ['/README.md'] }; }`",
         ].join(" "),
         inputSchema: z.object({
-          code: z.string().min(1).describe("ES module code for the Dynamic Worker."),
+          code: z.string().min(1).describe("ES module code for the Workspace Worker."),
         }),
-        execute: async ({ code }) => this.runDynamicWorker({ code }),
+        execute: async ({ code }) => this.runWorkspaceWorker({ code }),
       }),
       applyEdit: tool({
         description: "Apply the active edit copy to current Workspace files. Use only when the user asks to apply, accept, publish, or make the edit current.",
@@ -74,8 +69,8 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
   }
 
   @callable()
-  async runDynamicWorker({ code }: { code: string }) {
-    const result = await this.editController().runDynamicWorker({ code });
+  async runWorkspaceWorker({ code }: { code: string }) {
+    const result = await this.editController().runWorkspaceWorker({ code });
 
     return resultToRpc(result);
   }

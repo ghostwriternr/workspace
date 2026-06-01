@@ -43,6 +43,7 @@ export type GitHubSourceResolver = (options: GitHubSourceOptions) => Promise<Bet
 export type RepoImportControllerDependencies = {
   workspaces: WorkspaceNamespace;
   resolveSource?: GitHubSourceResolver;
+  githubToken?: string;
 };
 
 export class RepoImportController {
@@ -57,6 +58,7 @@ export class RepoImportController {
       owner: request.owner,
       repo: request.repo,
       ref: request.ref,
+      token: this.dependencies.githubToken,
     });
     if (Result.isError(source)) {
       return Result.err(source.error);

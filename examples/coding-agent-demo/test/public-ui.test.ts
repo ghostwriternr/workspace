@@ -33,6 +33,7 @@ describe("coding demo browser UI", () => {
     expect(client).toContain("getToolInput(part)");
     expect(client).toContain("getToolOutput(part)");
     expect(client).toContain("Tool result");
+    expect(client).toContain('toolName === "runWorkspaceWorker"');
     expect(client).not.toContain("setMessages(");
   });
 });

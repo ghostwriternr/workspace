@@ -9,10 +9,10 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 describe("RepoEditController", () => {
-  it("runs Dynamic Worker code against an active edit copy", async () => {
+  it("runs Workspace Worker code against an active edit copy", async () => {
     const { controller, workspace, runner, getEditCopyId } = await setupEditController();
 
-    const result = await controller.runDynamicWorker({ code: "export default async function(env) {}" });
+    const result = await controller.runWorkspaceWorker({ code: "export default async function(env) {}" });
     const currentRead = await workspace.files.read("/notes/edit.md");
     const edit = await workspace.files.getCopy(getEditCopyId()!);
     if (Result.isError(edit)) throw new Error("edit copy missing");
@@ -21,7 +21,7 @@ describe("RepoEditController", () => {
     expect(Result.isOk(result)).toBe(true);
     if (Result.isError(result)) throw new Error("edit failed");
     expect(result.value).toEqual({
-      status: "dynamic-worker-completed",
+      status: "workspace-worker-completed",
       editCopyId: getEditCopyId(),
       result: { wrote: "/notes/edit.md" },
     });
@@ -35,7 +35,7 @@ describe("RepoEditController", () => {
 
   it("applies the active edit copy to current Workspace files", async () => {
     const { controller, workspace, getEditCopyId } = await setupEditController();
-    await controller.runDynamicWorker({ code: "export default async function(env) {}" });
+    await controller.runWorkspaceWorker({ code: "export default async function(env) {}" });
     const editCopyId = getEditCopyId();
 
     const result = await controller.applyEdit();
@@ -54,7 +54,7 @@ describe("RepoEditController", () => {
 
   it("discards the active edit copy without changing current Workspace files", async () => {
     const { controller, workspace, getEditCopyId } = await setupEditController();
-    await controller.runDynamicWorker({ code: "export default async function(env) {}" });
+    await controller.runWorkspaceWorker({ code: "export default async function(env) {}" });
     const editCopyId = getEditCopyId();
 
     const result = await controller.discardEdit();

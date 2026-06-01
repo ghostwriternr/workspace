@@ -23,8 +23,8 @@ export type RepoEditControllerDependencies = {
   setEditCopyId(editCopyId: string | undefined): void;
 };
 
-export type RepoDynamicWorkerEditResult = {
-  status: "dynamic-worker-completed";
+export type RepoWorkspaceWorkerResult = {
+  status: "workspace-worker-completed";
   editCopyId: string;
   result: WorkspaceDynamicWorkerResult;
 };
@@ -53,7 +53,7 @@ export type RepoDiscardEditError = NoActiveRepoEditError | WorkspaceCopyError | 
 export class RepoEditController {
   constructor(private readonly dependencies: RepoEditControllerDependencies) {}
 
-  async runDynamicWorker({ code }: { code: string }): Promise<BetterResult<RepoDynamicWorkerEditResult, RepoEditError>> {
+  async runWorkspaceWorker({ code }: { code: string }): Promise<BetterResult<RepoWorkspaceWorkerResult, RepoEditError>> {
     const copy = await this.editCopy();
     if (Result.isError(copy)) {
       return Result.err(copy.error);
@@ -68,7 +68,7 @@ export class RepoEditController {
     }
 
     return Result.ok({
-      status: "dynamic-worker-completed",
+      status: "workspace-worker-completed",
       editCopyId: copy.value.id,
       result: result.value,
     });

@@ -17,7 +17,7 @@ describe("repo import HTTP", () => {
         body: JSON.stringify({ owner: "cloudflare", repo: "example", ref: "main" }),
         headers: { "content-type": "application/json" },
       }),
-      env.WORKSPACES,
+      { workspaces: env.WORKSPACES },
       async (options) => Result.ok({
         snapshot: {
           type: "github",
@@ -60,7 +60,7 @@ describe("repo import HTTP", () => {
         body: "null",
         headers: { "content-type": "application/json" },
       }),
-      env.WORKSPACES,
+      { workspaces: env.WORKSPACES },
     );
 
     expect(response).toBeDefined();
@@ -71,6 +71,38 @@ describe("repo import HTTP", () => {
     });
   });
 
+  it("passes an optional GitHub token to the source resolver", async () => {
+    const resolveSource = vi.fn(async (options) => Result.ok({
+      snapshot: {
+        type: "github" as const,
+        owner: options.owner,
+        repo: options.repo,
+        ref: "main",
+        commitSha: "abc123",
+      },
+      async *entries() {
+        yield { path: "README.md", contents: encoder.encode("# Token import") };
+      },
+    }));
+
+    const response = await handleRepoImportRequest(
+      new Request("http://example.com/api/workspaces/tokened/imports/github", {
+        method: "POST",
+        body: JSON.stringify({ owner: "cloudflare", repo: "example" }),
+        headers: { "content-type": "application/json" },
+      }),
+      { workspaces: env.WORKSPACES, githubToken: "github-token" },
+      resolveSource,
+    );
+
+    expect(response?.status).toBe(200);
+    expect(resolveSource).toHaveBeenCalledWith(expect.objectContaining({
+      owner: "cloudflare",
+      repo: "example",
+      token: "github-token",
+    }));
+  });
+
   it("syncs agent repo state after imports", async () => {
     const refreshRepoState = vi.fn();
     const response = await handleRepoImportRequest(
@@ -79,7 +111,7 @@ describe("repo import HTTP", () => {
         body: JSON.stringify({ owner: "cloudflare", repo: "example" }),
         headers: { "content-type": "application/json" },
       }),
-      env.WORKSPACES,
+      { workspaces: env.WORKSPACES },
       async (options) => Result.ok({
         snapshot: {
           type: "github",
@@ -106,7 +138,7 @@ describe("repo import HTTP", () => {
     await expect(
       handleRepoImportRequest(
         new Request("http://example.com/api/other", { method: "POST" }),
-        env.WORKSPACES,
+        { workspaces: env.WORKSPACES },
       ),
     ).resolves.toBeUndefined();
   });

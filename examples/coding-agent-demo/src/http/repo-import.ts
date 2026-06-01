@@ -14,9 +14,14 @@ type CodingAgentNamespace = {
   getByName(name: string): { refreshRepoState(lastImport?: RepoImportSummary): Promise<unknown> };
 };
 
+type RepoImportRuntime = {
+  workspaces: WorkspaceNamespace;
+  githubToken?: string;
+};
+
 export async function handleRepoImportRequest(
   request: Request,
-  workspaces: WorkspaceNamespace,
+  runtime: RepoImportRuntime,
   resolveSourceOrAgents?: GitHubSourceResolver | CodingAgentNamespace,
   agents?: CodingAgentNamespace,
 ): Promise<Response | undefined> {
@@ -37,7 +42,11 @@ export async function handleRepoImportRequest(
 
   const resolveSource = typeof resolveSourceOrAgents === "function" ? resolveSourceOrAgents : undefined;
   const codingAgents = typeof resolveSourceOrAgents === "function" ? agents : resolveSourceOrAgents;
-  const controller = new RepoImportController({ workspaces, resolveSource });
+  const controller = new RepoImportController({
+    workspaces: runtime.workspaces,
+    resolveSource,
+    githubToken: runtime.githubToken,
+  });
   const result = await controller.importGitHubRepo({
     workspaceName: decodeURIComponent(match[1] ?? ""),
     owner: body.value.owner,
