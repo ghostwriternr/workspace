@@ -66,8 +66,8 @@ We avoid implementation terms (session, RPC result, stub disposal, loopback, pro
 `workspace.files` is the current tree.
 
 ```ts
-await workspace.files.read(path);        // Result<Uint8Array, WorkspaceFileError>
-await workspace.files.write(path, bytes); // Result<void, WorkspaceFileError>
+await workspace.files.read(path);        // Result<Uint8Array, WorkspaceCurrentFileReadError>
+await workspace.files.write(path, bytes); // Result<void, WorkspaceCurrentFileWriteError>
 await workspace.files.list(path);
 await workspace.files.stat(path);
 await workspace.files.delete(path);
@@ -88,18 +88,36 @@ A copy is durable but not live. It can outlive a request, an agent turn, or a pr
 
 ## Writing many files
 
-Source adapters, uploads, and anything that materialises a tree of files at once shouldn't have to call `write` per file and `mkdir` per directory. The product API should let them write a tree:
+Source adapters, uploads, and anything that materialises a tree of files at once shouldn't have to call `write` per file and `mkdir` per directory. File copies can write a tree under an explicit Workspace root:
 
 ```ts
-await workspace.files.writeTree(entries);
-await copy.files.writeTree(entries);
+await copy.files.writeTree("/generated", entries);
 ```
 
-Each entry is `{ path, contents, metadata? }`. Parent directories are created implicitly. Returns a `Result`.
+The root is an absolute Workspace directory path. Entry paths are relative to that root. Entries may be an array, a sync iterable, or an async iterable, so source adapters can yield files as they discover them instead of buffering the whole tree.
 
-Directories remain explicit underneath: writing `/a/b/c.txt` ensures `/a` and `/a/b` exist after the call. Bulk import is the natural integration point for source adapters — see [`sources.md`](./sources.md).
+```ts
+const copyResult = await workspace.files.copy("github-import");
+if (Result.isError(copyResult)) return copyResult;
 
-Not built yet — see [`known-limitations.md`](./known-limitations.md).
+const copy = copyResult.value;
+const imported = await copy.files.writeTree("/repo", githubSource.files());
+if (Result.isError(imported)) {
+  await copy.discard();
+  return imported;
+}
+
+const applied = await copy.apply();
+if (Result.isError(applied)) return applied;
+```
+
+Workspace validates and writes bounded batches into the copy. A batch is all-or-nothing, but the whole source stream is staged in the copy over time. If the source stream fails, discard the copy. Current files are unchanged until `apply()` succeeds.
+
+Absolute entry paths, traversal segments, empty segments, and NUL bytes are rejected. Parent directories are created implicitly. Directories remain explicit underneath: writing `src/index.ts` under `/repo` ensures `/repo` and `/repo/src` exist after the call. Existing files may be overwritten. If a source yields the same path more than once, the later entry wins. Omitted files are left alone; this is materialisation, not sync, diff, or replace.
+
+Batches are bounded by entry count and accumulated content bytes before they cross the Worker RPC boundary. A single entry larger than the batch byte limit returns `WorkspaceTreeEntryTooLargeError`. Blob bytes may already have been written to the internal content store before a later metadata conflict is detected; unreferenced blobs are handled by the same future garbage-collection path as other overwritten content.
+
+Bulk import is the natural integration point for source adapters — see [`sources.md`](./sources.md).
 
 ## Attachments and capture
 

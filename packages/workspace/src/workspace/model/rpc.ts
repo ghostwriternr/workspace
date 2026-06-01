@@ -24,8 +24,10 @@ import {
   type WorkspaceSessionReadError,
   type WorkspaceSessionStatError,
   type WorkspaceSessionWriteError,
+  type WorkspaceSessionWriteTreeError,
   type WorkspaceStatError,
   type WorkspaceWriteError,
+  type WorkspaceWriteTreeError,
   workspaceErrorToDto,
 } from "./errors";
 
@@ -77,6 +79,7 @@ export type WorkspaceMkdirRpcResult =
 export type WorkspaceWriteRpcResult =
   | WorkspaceOk
   | WorkspaceRpcError<InvalidPathErrorDto | IsDirectoryErrorDto | NotDirectoryErrorDto | PathNotFoundErrorDto>;
+
 export type WorkspaceReadRpcResult =
   | WorkspaceOk<Uint8Array>
   | WorkspaceRpcError<InvalidPathErrorDto | IsDirectoryErrorDto | PathNotFoundErrorDto | RevisionNotFoundErrorDto>;
@@ -104,6 +107,9 @@ export type WorkspaceSessionWriteRpcResult =
   | WorkspaceRpcError<
       InvalidPathErrorDto | IsDirectoryErrorDto | NotDirectoryErrorDto | PathNotFoundErrorDto | SessionNotFoundErrorDto
     >;
+export type WorkspaceSessionWriteTreeBatchRpcResult =
+  | WorkspaceOk
+  | WorkspaceRpcError<InvalidPathErrorDto | IsDirectoryErrorDto | NotDirectoryErrorDto | SessionNotFoundErrorDto>;
 export type WorkspaceSessionReadRpcResult =
   | WorkspaceOk<Uint8Array>
   | WorkspaceRpcError<InvalidPathErrorDto | IsDirectoryErrorDto | PathNotFoundErrorDto | SessionNotFoundErrorDto>;

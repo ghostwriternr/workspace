@@ -287,6 +287,10 @@ class FakeWorkspace {
     return this.session.writeFile(path, contents);
   }
 
+  async sessionWriteTreeBatch(_sessionId: string, root: string, entries: Array<{ path: string; contents: Uint8Array }>) {
+    return this.session.writeTree(root, entries);
+  }
+
   async sessionReadFile(_sessionId: string, path: string) {
     return this.session.readFile(path);
   }
@@ -330,6 +334,13 @@ class FakeSession {
 
   async writeFile(path: string, contents: Uint8Array) {
     this.files[path] = contents;
+    return { status: "ok" as const };
+  }
+
+  async writeTree(root: string, entries: Array<{ path: string; contents: Uint8Array }>) {
+    for (const entry of entries) {
+      this.files[joinTreePath(root, entry.path)] = entry.contents;
+    }
     return { status: "ok" as const };
   }
 
@@ -428,6 +439,10 @@ class FakeWorkspaceCommandRunner {
       },
     };
   }
+}
+
+function joinTreePath(root: string, path: string): string {
+  return root === "/" ? `/${path}` : `${root}/${path}`;
 }
 
 function fileResult(value: Uint8Array | undefined, path: string) {

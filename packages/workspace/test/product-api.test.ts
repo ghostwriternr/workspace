@@ -14,6 +14,47 @@ function text(value: Uint8Array): string {
   return textDecoder.decode(value);
 }
 
+async function* asyncEntries(entries: Array<{ path: string; contents: Uint8Array }>) {
+  for (const entry of entries) {
+    yield entry;
+  }
+}
+
+function closeableFailingAsyncEntries() {
+  let closed = false;
+  const source = {
+    async *[Symbol.asyncIterator]() {
+      try {
+        yield { path: "before.txt", contents: bytes("before") };
+        throw new Error("source failed");
+      } finally {
+        closed = true;
+      }
+    },
+    get closed() {
+      return closed;
+    },
+  };
+  return source;
+}
+
+function closeableSyncEntries(entries: Array<{ path: string; contents: Uint8Array }>) {
+  let closed = false;
+  const source = {
+    *[Symbol.iterator]() {
+      try {
+        yield* entries;
+      } finally {
+        closed = true;
+      }
+    },
+    get closed() {
+      return closed;
+    },
+  };
+  return source;
+}
+
 describe("Workspace product API", () => {
   it("works with current files through Result values instead of RPC DTOs", async () => {
     const workspace = Workspace.get(env.WORKSPACES, "product-current-files");
@@ -25,6 +66,299 @@ describe("Workspace product API", () => {
     expect(Result.isError(read)).toBe(false);
     if (Result.isOk(read)) {
       expect(text(read.value)).toBe("hello");
+    }
+  });
+
+  it("writes async file trees into isolated copies before apply", async () => {
+    const workspace = Workspace.get(env.WORKSPACES, "product-write-tree-copy");
+    const copyResult = await workspace.files.copy("import-tree");
+    if (Result.isError(copyResult)) {
+      throw new Error("copy failed");
+    }
+
+    const writeTree = await copyResult.value.files.writeTree("/imports/repo", asyncEntries([
+      { path: "README.md", contents: bytes("# Draft") },
+      { path: "src/index.ts", contents: bytes("export const draft = true;") },
+    ]));
+    const currentBeforeApply = await workspace.files.read("/imports/repo/README.md");
+    const apply = await copyResult.value.apply();
+    const currentAfterApply = await workspace.files.read("/imports/repo/README.md");
+
+    expect(Result.isOk(writeTree)).toBe(true);
+    expect(Result.isError(currentBeforeApply)).toBe(true);
+    if (Result.isError(currentBeforeApply)) {
+      expect(currentBeforeApply.error).toMatchObject({ tag: "PathNotFoundError" });
+    }
+    expect(Result.isOk(apply)).toBe(true);
+    expect(Result.isOk(currentAfterApply)).toBe(true);
+    if (Result.isOk(currentAfterApply)) {
+      expect(text(currentAfterApply.value)).toBe("# Draft");
+    }
+  });
+
+  it("writes file trees into the copy root", async () => {
+    const workspace = Workspace.get(env.WORKSPACES, "product-write-tree-root");
+    const copyResult = await workspace.files.copy("import-root");
+    if (Result.isError(copyResult)) {
+      throw new Error("copy failed");
+    }
+
+    const writeTree = await copyResult.value.files.writeTree("/", [
+      { path: "README.md", contents: bytes("# Root") },
+      { path: "src/index.ts", contents: bytes("export {};") },
+    ]);
+    await copyResult.value.apply();
+    const read = await workspace.files.read("/src/index.ts");
+
+    expect(Result.isOk(writeTree)).toBe(true);
+    expect(Result.isOk(read)).toBe(true);
+    if (Result.isOk(read)) {
+      expect(text(read.value)).toBe("export {};");
+    }
+  });
+
+  it("overwrites existing files when writing file trees into copies", async () => {
+    const workspace = Workspace.get(env.WORKSPACES, "product-write-tree-overwrite");
+
+    await workspace.files.mkdir("/imports");
+    await workspace.files.write("/imports/README.md", bytes("old"));
+    const copyResult = await workspace.files.copy("overwrite-import");
+    if (Result.isError(copyResult)) {
+      throw new Error("copy failed");
+    }
+
+    const writeTree = await copyResult.value.files.writeTree("/imports", [
+      { path: "README.md", contents: bytes("new") },
+    ]);
+    await copyResult.value.apply();
+    const read = await workspace.files.read("/imports/README.md");
+
+    expect(Result.isOk(writeTree)).toBe(true);
+    expect(Result.isOk(read)).toBe(true);
+    if (Result.isOk(read)) {
+      expect(text(read.value)).toBe("new");
+    }
+  });
+
+  it("lets later entries overwrite earlier entries in the same writeTree batch", async () => {
+    const workspace = Workspace.get(env.WORKSPACES, "product-write-tree-duplicate");
+    const copyResult = await workspace.files.copy("duplicate-import");
+    if (Result.isError(copyResult)) {
+      throw new Error("copy failed");
+    }
+
+    const writeTree = await copyResult.value.files.writeTree("/imports/repo", [
+      { path: "README.md", contents: bytes("one") },
+      { path: "README.md", contents: bytes("two") },
+    ]);
+    await copyResult.value.apply();
+    const read = await workspace.files.read("/imports/repo/README.md");
+
+    expect(Result.isOk(writeTree)).toBe(true);
+    expect(Result.isOk(read)).toBe(true);
+    if (Result.isOk(read)) {
+      expect(text(read.value)).toBe("two");
+    }
+  });
+
+  it("does not change current files when copy writeTree has an invalid relative path", async () => {
+    const workspace = Workspace.get(env.WORKSPACES, "product-write-tree-invalid-path");
+    const copyResult = await workspace.files.copy("invalid-import");
+    if (Result.isError(copyResult)) {
+      throw new Error("copy failed");
+    }
+
+    const writeTree = await copyResult.value.files.writeTree("/imports/repo", [
+      { path: "README.md", contents: bytes("# Repo") },
+      { path: "../escape.txt", contents: bytes("no") },
+    ]);
+    const rootStat = await workspace.files.stat("/imports");
+
+    expect(Result.isError(writeTree)).toBe(true);
+    if (Result.isError(writeTree)) {
+      expect(writeTree.error).toMatchObject({ tag: "InvalidPathError", path: "../escape.txt" });
+    }
+    expect(Result.isError(rootStat)).toBe(true);
+    if (Result.isError(rootStat)) {
+      expect(rootStat.error).toMatchObject({ tag: "PathNotFoundError", path: "/imports" });
+    }
+  });
+
+  it("does not change current files when copy writeTree parents cross a file", async () => {
+    const workspace = Workspace.get(env.WORKSPACES, "product-write-tree-type-collision");
+
+    await workspace.files.write("/imports", bytes("not a directory"));
+    const copyResult = await workspace.files.copy("type-collision-import");
+    if (Result.isError(copyResult)) {
+      throw new Error("copy failed");
+    }
+
+    const writeTree = await copyResult.value.files.writeTree("/imports/repo", [
+      { path: "README.md", contents: bytes("# Repo") },
+    ]);
+    const existing = await workspace.files.read("/imports");
+    const nested = await workspace.files.read("/imports/repo/README.md");
+
+    expect(Result.isError(writeTree)).toBe(true);
+    if (Result.isError(writeTree)) {
+      expect(writeTree.error).toMatchObject({ tag: "NotDirectoryError", path: "/imports" });
+    }
+    expect(Result.isOk(existing)).toBe(true);
+    if (Result.isOk(existing)) {
+      expect(text(existing.value)).toBe("not a directory");
+    }
+    expect(Result.isError(nested)).toBe(true);
+    if (Result.isError(nested)) {
+      expect(nested.error).toMatchObject({ tag: "PathNotFoundError", path: "/imports/repo/README.md" });
+    }
+  });
+
+  it("does not change current files when copy writeTree targets an existing directory", async () => {
+    const workspace = Workspace.get(env.WORKSPACES, "product-write-tree-directory-target");
+
+    await workspace.files.mkdir("/imports");
+    await workspace.files.mkdir("/imports/README.md");
+    const copyResult = await workspace.files.copy("directory-target-import");
+    if (Result.isError(copyResult)) {
+      throw new Error("copy failed");
+    }
+
+    const writeTree = await copyResult.value.files.writeTree("/imports", [
+      { path: "README.md", contents: bytes("# Repo") },
+    ]);
+    const read = await workspace.files.read("/imports/README.md");
+
+    expect(Result.isError(writeTree)).toBe(true);
+    if (Result.isError(writeTree)) {
+      expect(writeTree.error).toMatchObject({ tag: "IsDirectoryError", path: "/imports/README.md" });
+    }
+    expect(Result.isError(read)).toBe(true);
+    if (Result.isError(read)) {
+      expect(read.error).toMatchObject({ tag: "IsDirectoryError", path: "/imports/README.md" });
+    }
+  });
+
+  it("lets later chunks overwrite paths written by earlier chunks", async () => {
+    const workspace = Workspace.get(env.WORKSPACES, "product-write-tree-cross-chunk-overwrite");
+    const copyResult = await workspace.files.copy("cross-chunk-overwrite");
+    if (Result.isError(copyResult)) {
+      throw new Error("copy failed");
+    }
+
+    const entries = [
+      { path: "dupe.txt", contents: bytes("first") },
+      ...Array.from({ length: 100 }, (_, index) => ({ path: `filler-${index}.txt`, contents: bytes(String(index)) })),
+      { path: "dupe.txt", contents: bytes("second") },
+    ];
+    const writeTree = await copyResult.value.files.writeTree("/imports", asyncEntries(entries));
+    await copyResult.value.apply();
+    const read = await workspace.files.read("/imports/dupe.txt");
+
+    expect(Result.isOk(writeTree)).toBe(true);
+    expect(Result.isOk(read)).toBe(true);
+    if (Result.isOk(read)) {
+      expect(text(read.value)).toBe("second");
+    }
+  });
+
+  it("returns Result errors and closes the source when a source iterable fails", async () => {
+    const workspace = Workspace.get(env.WORKSPACES, "product-write-tree-source-error");
+    const copyResult = await workspace.files.copy("source-error-import");
+    if (Result.isError(copyResult)) {
+      throw new Error("copy failed");
+    }
+    const source = closeableFailingAsyncEntries();
+
+    const writeTree = await copyResult.value.files.writeTree("/imports", source);
+    const discard = await copyResult.value.discard();
+    const current = await workspace.files.read("/imports/before.txt");
+
+    expect(Result.isError(writeTree)).toBe(true);
+    if (Result.isError(writeTree)) {
+      expect(writeTree.error).toMatchObject({ tag: "WorkspaceTreeSourceError" });
+    }
+    expect(source.closed).toBe(true);
+    expect(Result.isOk(discard)).toBe(true);
+    expect(Result.isError(current)).toBe(true);
+    if (Result.isError(current)) {
+      expect(current.error).toMatchObject({ tag: "PathNotFoundError", path: "/imports/before.txt" });
+    }
+  });
+
+  it("splits writeTree batches by accumulated content size", async () => {
+    const object = new FakeWorkspaceObject();
+    const workspace = Workspace.get({ getByName: () => object }, "unit");
+    const copyResult = await workspace.files.copy("large-import");
+    if (Result.isError(copyResult)) {
+      throw new Error("copy failed");
+    }
+
+    const writeTree = await copyResult.value.files.writeTree("/imports", [
+      { path: "one.bin", contents: new Uint8Array(12 * 1024 * 1024) },
+      { path: "two.bin", contents: new Uint8Array(12 * 1024 * 1024) },
+    ]);
+
+    expect(Result.isOk(writeTree)).toBe(true);
+    expect(object.sessionWriteTreeBatchSizes).toEqual([1, 1]);
+  });
+
+  it("returns Result errors when a single writeTree entry exceeds the batch byte limit", async () => {
+    const object = new FakeWorkspaceObject();
+    const workspace = Workspace.get({ getByName: () => object }, "unit");
+    const copyResult = await workspace.files.copy("oversized-import");
+    if (Result.isError(copyResult)) {
+      throw new Error("copy failed");
+    }
+
+    const writeTree = await copyResult.value.files.writeTree("/imports", [
+      { path: "huge.bin", contents: new Uint8Array(17 * 1024 * 1024) },
+    ]);
+
+    expect(Result.isError(writeTree)).toBe(true);
+    if (Result.isError(writeTree)) {
+      expect(writeTree.error).toMatchObject({
+        tag: "WorkspaceTreeEntryTooLargeError",
+        path: "huge.bin",
+      });
+    }
+    expect(object.sessionWriteTreeBatchSizes).toEqual([]);
+  });
+
+  it("closes sync iterators when writeTree stops after a batch error", async () => {
+    const object = new FailingWriteTreeWorkspaceObject();
+    const workspace = Workspace.get({ getByName: () => object }, "unit");
+    const copyResult = await workspace.files.copy("closing-import");
+    if (Result.isError(copyResult)) {
+      throw new Error("copy failed");
+    }
+    const source = closeableSyncEntries([
+      { path: "one.txt", contents: bytes("one") },
+      { path: "two.txt", contents: bytes("two") },
+    ]);
+
+    const writeTree = await copyResult.value.files.writeTree("/imports", source);
+
+    expect(Result.isError(writeTree)).toBe(true);
+    expect(source.closed).toBe(true);
+  });
+
+  it("detects stale applies after copy writeTree", async () => {
+    const workspace = Workspace.get(env.WORKSPACES, "product-write-tree-stale-apply");
+    const copyResult = await workspace.files.copy("stale-import");
+    if (Result.isError(copyResult)) {
+      throw new Error("copy failed");
+    }
+
+    const writeTree = await copyResult.value.files.writeTree("/imports", [
+      { path: "README.md", contents: bytes("# Repo") },
+    ]);
+    await workspace.files.write("/head-change.txt", bytes("changed"));
+    const apply = await copyResult.value.apply();
+
+    expect(Result.isOk(writeTree)).toBe(true);
+    expect(Result.isError(apply)).toBe(true);
+    if (Result.isError(apply)) {
+      expect(apply.error).toMatchObject({ tag: "SessionConflictError" });
     }
   });
 
@@ -265,6 +599,7 @@ class FakeWorkspaceObject {
   sessionWriteCount = 0;
   sessionReadCount = 0;
   sessionCommitCount = 0;
+  readonly sessionWriteTreeBatchSizes: number[] = [];
   private readonly files = new Map<string, Uint8Array>();
 
   async beginSession() {
@@ -316,6 +651,21 @@ class FakeWorkspaceObject {
     return { status: "ok" as const };
   }
 
+  async sessionWriteTreeBatch(
+    _sessionId: string,
+    root: string,
+    entries: Array<{ path: string; contents: Uint8Array }>,
+  ): Promise<
+    | { status: "ok" }
+    | { status: "error"; error: { tag: "InvalidPathError"; path: string; reason: "empty_segment"; message: string } }
+  > {
+    this.sessionWriteTreeBatchSizes.push(entries.length);
+    for (const entry of entries) {
+      this.files.set(joinTreePath(root, entry.path), entry.contents);
+    }
+    return { status: "ok" as const };
+  }
+
   async sessionReadFile(_sessionId: string, path: string) {
     this.sessionReadCount += 1;
     const value = this.files.get(path);
@@ -354,10 +704,20 @@ class FakeWorkspaceObject {
   }
 }
 
+class FailingWriteTreeWorkspaceObject extends FakeWorkspaceObject {
+  async sessionWriteTreeBatch(_sessionId: string, _root: string, _entries: Array<{ path: string; contents: Uint8Array }>) {
+    return { status: "error" as const, error: { tag: "InvalidPathError" as const, path: "bad", reason: "empty_segment" as const, message: "bad" } };
+  }
+}
+
 class BrokenAttachmentWorkspaceObject extends FakeWorkspaceObject {
   async sessionList(_sessionId: string, path: string) {
     return { status: "error" as const, error: pathNotFound(path) };
   }
+}
+
+function joinTreePath(root: string, path: string): string {
+  return root === "/" ? `/${path}` : `${root}/${path}`;
 }
 
 function pathNotFound(path: string) {

@@ -4,6 +4,7 @@ export type InvalidPathReason =
   | "contains_nul"
   | "empty_segment"
   | "must_be_absolute"
+  | "must_be_relative"
   | "root_not_allowed"
   | "traversal_segment";
 
@@ -135,6 +136,7 @@ export type WorkspaceMkdirError =
   | PathAlreadyExistsError
   | PathNotFoundError;
 export type WorkspaceWriteError = InvalidPathError | IsDirectoryError | NotDirectoryError | PathNotFoundError;
+export type WorkspaceWriteTreeError = InvalidPathError | IsDirectoryError | NotDirectoryError;
 export type WorkspaceReadError = InvalidPathError | IsDirectoryError | PathNotFoundError;
 export type WorkspaceListError = InvalidPathError | NotDirectoryError | PathNotFoundError;
 export type WorkspaceDeleteError = InvalidPathError | DirectoryNotEmptyError | PathNotFoundError;
@@ -142,6 +144,7 @@ export type WorkspaceStatError = InvalidPathError | PathNotFoundError;
 export type WorkspaceSessionInfoError = SessionNotFoundError;
 export type WorkspaceSessionMkdirError = WorkspaceMkdirError | SessionNotFoundError;
 export type WorkspaceSessionWriteError = WorkspaceWriteError | SessionNotFoundError;
+export type WorkspaceSessionWriteTreeError = WorkspaceWriteTreeError | SessionNotFoundError;
 export type WorkspaceSessionReadError = WorkspaceReadError | SessionNotFoundError;
 export type WorkspaceSessionListError = WorkspaceListError | SessionNotFoundError;
 export type WorkspaceSessionDeleteError = WorkspaceDeleteError | SessionNotFoundError;
@@ -317,6 +320,8 @@ function invalidPathMessage(path: string, reason: InvalidPathReason): string {
       return `Workspace path must not contain empty segments: ${path}`;
     case "must_be_absolute":
       return `Workspace path must be absolute: ${path}`;
+    case "must_be_relative":
+      return `Workspace path must be relative: ${path}`;
     case "root_not_allowed":
       return "Workspace path must not be root";
     case "traversal_segment":

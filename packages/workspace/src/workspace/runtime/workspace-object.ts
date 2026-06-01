@@ -1,7 +1,7 @@
 import { Result } from "better-result";
 import { DurableObject } from "cloudflare:workers";
 import { WorkspaceBlobStore } from "../storage/blob-store";
-import type { RevisionNotFoundError, SessionNotFoundError, WorkspaceError } from "../model/errors";
+import type { RevisionNotFoundError, SessionNotFoundError, WorkspaceError, WorkspaceWriteTreeError } from "../model/errors";
 import { bumpHeadVersion } from "../storage/head-state";
 import {
   deleteFromTree,
@@ -32,10 +32,18 @@ import {
   type WorkspaceSessionReadRpcResult,
   type WorkspaceSessionStatRpcResult,
   type WorkspaceSessionWriteRpcResult,
+  type WorkspaceSessionWriteTreeBatchRpcResult,
   type WorkspaceRpcResult,
   type WorkspaceStatRpcResult,
   type WorkspaceWriteRpcResult,
 } from "../model/rpc";
+import {
+  buildWriteTreePlan,
+  validateWriteTreePlan,
+  writeTreePlanToTree,
+  type WorkspaceTreeEntry,
+  type WorkspaceWriteTreePlan,
+} from "../model/write-tree";
 import { initializeWorkspaceSchema } from "../storage/schema";
 import {
   beginWorkspaceSession,
@@ -44,11 +52,16 @@ import {
   requireOpenSession,
 } from "../model/sessions";
 import { headTree, revisionTree, sessionTree } from "../storage/sql-entry-tree";
-import type { MutableTree, ReadableTree } from "../storage/tree";
+import type { BlobRef, MutableTree, ReadableTree } from "../storage/tree";
 
 export interface Env {
   WORKSPACE_BLOBS: R2Bucket;
 }
+
+type PreparedWriteTree = {
+  plan: WorkspaceWriteTreePlan;
+  blobs: BlobRef[];
+};
 
 export class WorkspaceObject extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -159,6 +172,20 @@ export class WorkspaceObject extends DurableObject<Env> {
     return this.withSessionTree(sessionId, (currentTree) => writeBlobRefToTree(currentTree, path, blob));
   }
 
+  async sessionWriteTreeBatch(sessionId: string, root: string, entries: WorkspaceTreeEntry[]): Promise<WorkspaceSessionWriteTreeBatchRpcResult> {
+    const tree = this.openSessionTree(sessionId);
+    if (Result.isError(tree)) {
+      return toRpcError(tree.error);
+    }
+
+    const prepared = await this.prepareWriteTree(tree.value, root, entries);
+    if (Result.isError(prepared)) {
+      return toRpcResult(prepared);
+    }
+
+    return this.withSessionTree(sessionId, (currentTree) => writeTreePlanToTree(currentTree, prepared.value.plan, prepared.value.blobs));
+  }
+
   async sessionReadFile(sessionId: string, path: string): Promise<WorkspaceSessionReadRpcResult> {
     const tree = this.openSessionTree(sessionId);
     if (Result.isError(tree)) {
@@ -190,6 +217,36 @@ export class WorkspaceObject extends DurableObject<Env> {
 
   private snapshotInternal(): WorkspaceSnapshotResult {
     return this.ctx.storage.transactionSync(() => createRevisionFromHead(this.ctx.storage.sql));
+  }
+
+  private async prepareWriteTree(
+    tree: MutableTree,
+    root: string,
+    entries: WorkspaceTreeEntry[],
+  ): Promise<Result<PreparedWriteTree, WorkspaceWriteTreeError>> {
+    const plan = buildWriteTreePlan(root, entries);
+    if (Result.isError(plan)) {
+      return Result.err(plan.error);
+    }
+
+    const validation = validateWriteTreePlan(tree, plan.value);
+    if (Result.isError(validation)) {
+      return Result.err(validation.error);
+    }
+
+    return Result.ok({
+      plan: plan.value,
+      blobs: await this.putTreeBlobs(entries),
+    });
+  }
+
+  private async putTreeBlobs(entries: WorkspaceTreeEntry[]): Promise<BlobRef[]> {
+    const blobs = this.blobs();
+    const result: BlobRef[] = [];
+    for (const entry of entries) {
+      result.push(await blobs.put(entry.contents));
+    }
+    return result;
   }
 
   private readableTree(options: WorkspaceReadOptions): Result<ReadableTree, RevisionNotFoundError> {

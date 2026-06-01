@@ -38,7 +38,7 @@ The product code that talks to GitHub, Hugging Face, S3, or anywhere else is an 
 
 Anyone should be able to write one. The interface Workspace needs to support them is small:
 
-- A way to write file bytes into current files or a file copy.
+- A way to write file bytes into a file copy.
 - A way to record where those bytes came from, if the product cares.
 - A way to read them back.
 
@@ -52,7 +52,7 @@ An adapter is small. The shape it exposes to product code is roughly:
 - **List files in that snapshot.** Yield file records — `{ path, contents, metadata? }` — typically as an async iterable so large sources can stream rather than buffer.
 - **Optionally exclude paths.** Skip `.git/`, `node_modules/`, build caches, secrets, anything the product doesn't want imported.
 
-The adapter then hands its iterable to `workspace.files.writeTree(...)` or `copy.files.writeTree(...)` (see [`product-api.md`](./product-api.md)). It doesn't call `apply` and doesn't hold Workspace identity.
+The product creates a file copy, then hands the adapter's iterable to `copy.files.writeTree(root, entries)` (see [`product-api.md`](./product-api.md)). `root` is the absolute Workspace directory where the source should land; each entry path is relative to that root. If the adapter stream fails, the product discards the copy. If import succeeds, the product decides whether to apply the copy. The adapter itself doesn't call `apply` and doesn't hold Workspace identity.
 
 A trivial GitHub adapter resolves a ref to a commit SHA, walks the tree API, and streams blobs. A trivial S3 or external-R2 adapter does the same against object APIs. Adapters stay small: the cost of supporting a new source is bounded, and the surface a product has to trust stays narrow.
 
@@ -104,7 +104,7 @@ None of that is Workspace core. Workspace exposes the file state; product adapte
 A coding agent, a data-science agent, a publishing pipeline, a generated-app preview — each one will need at least one source adapter, sometimes several. The pattern is consistent:
 
 1. The product resolves a source snapshot (commit SHA, revision id, manifest).
-2. The product imports or references files into a Workspace.
+2. The product imports or references files into a Workspace file copy.
 3. The agent (or user) edits a working copy.
 4. The product exports the result somewhere — back to the source, to a different destination, or nowhere.
 5. The product decides retention.

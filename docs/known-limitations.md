@@ -16,10 +16,6 @@ Every file entry points at a blob in `WORKSPACE_BLOBS`. That bakes in two assump
 
 Files imported from a GitHub commit, an S3 prefix, or any other external source aren't tagged with where they came from. Adapters can't tell which files have changed relative to their source, can't skip re-imports, and can't generate a clean export patch without doing their own bookkeeping. See [`sources.md`](./sources.md) and the metadata categories in [`product-model.md`](./product-model.md) for the shape this should take.
 
-## No bulk import primitive
-
-Source adapters, uploads, and any code that needs to materialise a tree of files into Workspace has to call `write` per file and `mkdir` per directory by hand. The product API should expose `writeTree(...)` on both current files and file copies — see [`product-api.md`](./product-api.md) — but it doesn't yet. Until then, adapters carry the boilerplate.
-
 ## No blob garbage collection
 
 R2 file contents are content-addressed and retained even after files are deleted or overwritten. Keeps metadata and blob writes independent during the prototype.

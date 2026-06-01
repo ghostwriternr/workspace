@@ -197,10 +197,10 @@ Built:
 - Immutable revisions.
 - Product-facing scoped file capabilities (used by the demo's Dynamic Worker).
 - Product-facing filesystem attachments and capture (used by the demo's Sandbox).
+- Streaming bulk tree writes (`writeTree`) on file copies.
 
 Not built yet — see [`known-limitations.md`](./known-limitations.md):
 
-- Bulk import (`writeTree`) on current files and copies.
 - Provenance metadata for files imported from external sources.
 - Generic file metadata (content type, digest).
 - File-copy cleanup / orphan recovery.

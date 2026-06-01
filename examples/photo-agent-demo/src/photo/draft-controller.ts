@@ -2,9 +2,7 @@ import { Result, type Result as BetterResult } from "better-result";
 import {
   Workspace,
   type WorkspaceFileCopy,
-  type WorkspaceFilesApi,
   type WorkspaceNamespace,
-  type WorkspaceFileError,
 } from "@cloudflare/workspace";
 import type { WorkspaceFileCaptureSummary } from "@cloudflare/workspace";
 import type { DemoWorkspaceCommandRunner } from "../workspace/sandbox-workspace-command-runner";
@@ -38,6 +36,14 @@ type WorkspaceStat = {
 type RevisionInfo = {
   revisionId: string;
   createdAt: number;
+};
+
+type WorkspaceOperationError = { tag: string };
+
+type WorkspaceReadableFiles = {
+  read(path: string): Promise<BetterResult<Uint8Array, WorkspaceOperationError>>;
+  list(path: string): Promise<BetterResult<WorkspaceEntry[], WorkspaceOperationError>>;
+  stat(path: string): Promise<BetterResult<WorkspaceStat, WorkspaceOperationError>>;
 };
 
 type ImageState =
@@ -246,12 +252,12 @@ export class PhotoDraftController {
     return this.listWorkspaceRoots(copy.value.files);
   }
 
-  private async listWorkspaceRoots(source: Pick<WorkspaceFilesApi, "list">): Promise<WorkspaceEntry[]> {
+  private async listWorkspaceRoots(source: Pick<WorkspaceReadableFiles, "list">): Promise<WorkspaceEntry[]> {
     const entries = await Promise.all([this.listWorkspaceRoot(source, "/notes"), this.listWorkspaceRoot(source, "/photos")]);
     return entries.flat().sort((left, right) => left.path.localeCompare(right.path));
   }
 
-  private async listWorkspaceRoot(source: Pick<WorkspaceFilesApi, "list">, path: string): Promise<WorkspaceEntry[]> {
+  private async listWorkspaceRoot(source: Pick<WorkspaceReadableFiles, "list">, path: string): Promise<WorkspaceEntry[]> {
     const result = await source.list(path);
     if (Result.isError(result)) {
       if (result.error.tag === "PathNotFoundError") {
@@ -278,7 +284,7 @@ export class PhotoDraftController {
     return useCopy(copy.value, started.draftEditId);
   }
 
-  private async readOriginalState(files: WorkspaceFilesApi): Promise<ImageState> {
+  private async readOriginalState(files: WorkspaceReadableFiles): Promise<ImageState> {
     for (const candidate of ORIGINAL_CANDIDATES) {
       const state = await this.readImageState(files, candidate.path, candidate.contentType);
       if (state.exists) {
@@ -290,7 +296,7 @@ export class PhotoDraftController {
   }
 
   private async readImageState(
-    files: WorkspaceFilesApi,
+    files: WorkspaceReadableFiles,
     path: string,
     contentType?: string,
   ): Promise<ImageState> {
@@ -348,7 +354,7 @@ export class PhotoDraftController {
   }
 }
 
-async function readImageContentType(files: WorkspaceFilesApi, path: string): Promise<string> {
+async function readImageContentType(files: WorkspaceReadableFiles, path: string): Promise<string> {
   const result = await files.read(path);
   if (Result.isError(result)) {
     throw new Error(`read ${path} content type failed with ${result.error.tag}`);
@@ -378,7 +384,7 @@ async function expectOkResult<T, E extends { tag: string }>(pending: Promise<Bet
   return result.value;
 }
 
-function resultToRpc<T>(result: BetterResult<T, WorkspaceFileError>): RpcResult<T> {
+function resultToRpc<T>(result: BetterResult<T, WorkspaceOperationError>): RpcResult<T> {
   if (Result.isError(result)) {
     return { status: "error", error: result.error };
   }
