@@ -9,6 +9,41 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 describe("RepoImportController", () => {
+  it("preserves writeTree errors when cleanup discard fails", async () => {
+    const controller = new RepoImportController({
+      workspaces: {
+        getByName: () => ({
+          beginSession: async () => ({ status: "ok", value: { sessionId: "copy-1", createdAt: 1 } }),
+          sessionWriteTreeBatch: async () => ({ status: "error", error: { tag: "InvalidPathError", path: "../escape" } }),
+          sessionDiscard: async () => ({ status: "error", error: { tag: "SessionNotFoundError" } }),
+        } as never),
+      },
+      resolveSource: async () => Result.ok({
+        snapshot: {
+          type: "github",
+          owner: "cloudflare",
+          repo: "example",
+          ref: "main",
+          commitSha: "abc123",
+        },
+        async *entries() {
+          yield { path: "../escape", contents: encoder.encode("escape") };
+        },
+      }),
+    });
+
+    const result = await controller.importGitHubRepo({
+      workspaceName: "write-tree-failed",
+      owner: "cloudflare",
+      repo: "example",
+    });
+
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isError(result)) {
+      expect(result.error.tag).toBe("InvalidPathError");
+    }
+  });
+
   it("discards the import copy when apply fails", async () => {
     const calls: string[] = [];
     const controller = new RepoImportController({

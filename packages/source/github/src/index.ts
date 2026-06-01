@@ -66,6 +66,8 @@ export async function resolveGitHubSource(options: GitHubSourceOptions): Promise
   });
 }
 
+const BLOB_READ_CONCURRENCY = 8;
+
 async function resolveRef(
   client: GitHubRestSourceClient,
   explicitRef: string | undefined,
@@ -82,13 +84,16 @@ async function* streamEntries(
   files: GitHubTreeFile[],
   maxFileBytes: number,
 ): AsyncIterable<WorkspaceTreeEntry> {
-  for (const file of files) {
-    const entry = await readEntry(client, file, maxFileBytes);
-    if (Result.isError(entry)) {
-      throw entryStreamError(entry.error);
-    }
+  for (let offset = 0; offset < files.length; offset += BLOB_READ_CONCURRENCY) {
+    const chunk = files.slice(offset, offset + BLOB_READ_CONCURRENCY);
+    const entries = await Promise.all(chunk.map((file) => readEntry(client, file, maxFileBytes)));
+    for (const entry of entries) {
+      if (Result.isError(entry)) {
+        throw entryStreamError(entry.error);
+      }
 
-    yield entry.value;
+      yield entry.value;
+    }
   }
 }
 

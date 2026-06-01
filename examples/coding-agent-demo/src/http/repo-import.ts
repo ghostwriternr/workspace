@@ -19,11 +19,15 @@ type RepoImportRuntime = {
   githubToken?: string;
 };
 
+export type RepoImportRequestOptions = {
+  resolveSource?: GitHubSourceResolver;
+  agents?: CodingAgentNamespace;
+};
+
 export async function handleRepoImportRequest(
   request: Request,
   runtime: RepoImportRuntime,
-  resolveSourceOrAgents?: GitHubSourceResolver | CodingAgentNamespace,
-  agents?: CodingAgentNamespace,
+  options: RepoImportRequestOptions = {},
 ): Promise<Response | undefined> {
   const url = new URL(request.url);
   const match = importPathPattern.exec(url.pathname);
@@ -40,11 +44,9 @@ export async function handleRepoImportRequest(
     return json({ status: "error", message: body.error }, { status: 400 });
   }
 
-  const resolveSource = typeof resolveSourceOrAgents === "function" ? resolveSourceOrAgents : undefined;
-  const codingAgents = typeof resolveSourceOrAgents === "function" ? agents : resolveSourceOrAgents;
   const controller = new RepoImportController({
     workspaces: runtime.workspaces,
-    resolveSource,
+    resolveSource: options.resolveSource,
     githubToken: runtime.githubToken,
   });
   const result = await controller.importGitHubRepo({
@@ -58,8 +60,8 @@ export async function handleRepoImportRequest(
     return json({ status: "error", error: result.error }, { status: statusForError(result.error) });
   }
 
-  if (codingAgents) {
-    await codingAgents.getByName(result.value.workspaceName).refreshRepoState(result.value);
+  if (options.agents) {
+    await options.agents.getByName(result.value.workspaceName).refreshRepoState(result.value);
   }
 
   return json({ status: "imported", ...result.value });

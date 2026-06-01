@@ -1,4 +1,5 @@
 import { Result, type Result as BetterResult } from "better-result";
+import type { WorkerEntrypoint } from "cloudflare:workers";
 import type { ScopedWorkspaceFileCapability } from "@cloudflare/workspace";
 
 export type WorkspaceDynamicWorkerResult = unknown;
@@ -8,9 +9,11 @@ export type WorkspaceDynamicWorkerExecutionError = {
   message: string;
 };
 
+export type WorkspaceDynamicWorkerFileCapability = Fetcher<WorkerEntrypoint<unknown, unknown> & ScopedWorkspaceFileCapability>;
+
 export type WorkspaceDynamicWorkerRunOptions = {
   code: string;
-  workspace: ScopedWorkspaceFileCapability;
+  workspace: WorkspaceDynamicWorkerFileCapability;
   compatibilityDate?: string;
   compatibilityFlags?: string[];
 };
@@ -24,7 +27,7 @@ type DynamicWorkerEntrypoint = {
 };
 
 type DynamicWorkerStub = {
-  getEntrypoint(name?: string, options?: { props: { WORKSPACE: ScopedWorkspaceFileCapability } }): unknown;
+  getEntrypoint(name?: string, options?: { props: { WORKSPACE: WorkspaceDynamicWorkerFileCapability } }): unknown;
 };
 
 export type WorkspaceDynamicWorkerLoader = {
@@ -53,7 +56,7 @@ import worker from "worker.js";
 
 export default class extends WorkerEntrypoint {
   async run() {
-    const env = { WORKSPACE: workspaceForUserCode(this.ctx.props.WORKSPACE) };
+    const env = { WORKSPACE: this.ctx.props.WORKSPACE };
     if (typeof worker === "function") {
       return await worker(env);
     }
@@ -64,57 +67,35 @@ export default class extends WorkerEntrypoint {
   }
 }
 
-function workspaceForUserCode(workspace) {
-  return {
-    readFile: async (path) => unwrapWorkspaceResult(await workspace.readFile(path)),
-    writeFile: async (path, contents) => unwrapWorkspaceResult(await workspace.writeFile(path, contents)),
-    list: async (path) => unwrapWorkspaceResult(await workspace.list(path)),
-    stat: async (path) => unwrapWorkspaceResult(await workspace.stat(path)),
-  };
-}
-
-function unwrapWorkspaceResult(result) {
-  if (result.status === "error") {
-    throw new Error(result.error.message || result.error.tag);
-  }
-  return result.value;
-}
 `;
 
 export function createWorkspaceDynamicWorkerRunner(
   loader: WorkspaceDynamicWorkerLoader,
-  options: WorkspaceDynamicWorkerRunnerOptions = {},
+  runnerOptions: WorkspaceDynamicWorkerRunnerOptions = {},
 ): WorkspaceDynamicWorkerRunner {
-  return new DefaultWorkspaceDynamicWorkerRunner(loader, options);
-}
+  return {
+    async run(options) {
+      try {
+        const worker = loader.load({
+          compatibilityDate: options.compatibilityDate ?? runnerOptions.compatibilityDate ?? DEFAULT_COMPATIBILITY_DATE,
+          compatibilityFlags: options.compatibilityFlags ?? runnerOptions.compatibilityFlags ?? DEFAULT_COMPATIBILITY_FLAGS,
+          allowExperimental: true,
+          mainModule: "harness.js",
+          modules: {
+            "harness.js": HARNESS,
+            "worker.js": options.code,
+          },
+          globalOutbound: null,
+        });
 
-class DefaultWorkspaceDynamicWorkerRunner implements WorkspaceDynamicWorkerRunner {
-  constructor(
-    private readonly loader: WorkspaceDynamicWorkerLoader,
-    private readonly options: WorkspaceDynamicWorkerRunnerOptions,
-  ) {}
-
-  async run(options: WorkspaceDynamicWorkerRunOptions): Promise<BetterResult<WorkspaceDynamicWorkerResult, WorkspaceDynamicWorkerExecutionError>> {
-    try {
-      const worker = this.loader.load({
-        compatibilityDate: options.compatibilityDate ?? this.options.compatibilityDate ?? DEFAULT_COMPATIBILITY_DATE,
-        compatibilityFlags: options.compatibilityFlags ?? this.options.compatibilityFlags ?? DEFAULT_COMPATIBILITY_FLAGS,
-        allowExperimental: true,
-        mainModule: "harness.js",
-        modules: {
-          "harness.js": HARNESS,
-          "worker.js": options.code,
-        },
-        globalOutbound: null,
-      });
-
-      const entrypoint = worker.getEntrypoint(undefined, { props: { WORKSPACE: options.workspace } }) as DynamicWorkerEntrypoint;
-      return Result.ok(await entrypoint.run());
-    } catch (error) {
-      return Result.err({
-        tag: "WorkspaceDynamicWorkerExecutionError",
-        message: error instanceof Error ? error.message : "Dynamic Worker execution failed.",
-      });
-    }
-  }
+        const entrypoint = worker.getEntrypoint(undefined, { props: { WORKSPACE: options.workspace } }) as DynamicWorkerEntrypoint;
+        return Result.ok(await entrypoint.run());
+      } catch (error) {
+        return Result.err({
+          tag: "WorkspaceDynamicWorkerExecutionError",
+          message: error instanceof Error ? error.message : "Dynamic Worker execution failed.",
+        });
+      }
+    },
+  };
 }

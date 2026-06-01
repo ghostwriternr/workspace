@@ -28,7 +28,7 @@ function blobPayload(value: string) {
   };
 }
 
-function createFetchStub(routes: Record<string, Response>): FetchFn & { urls: string[]; requests: RequestInit[] } {
+function createFetchStub(routes: Record<string, Response | (() => Promise<Response>)>): FetchFn & { urls: string[]; requests: RequestInit[] } {
   const urls: string[] = [];
   const requests: RequestInit[] = [];
   const fetchStub = async (input: string | URL | Request, init?: RequestInit) => {
@@ -39,7 +39,8 @@ function createFetchStub(routes: Record<string, Response>): FetchFn & { urls: st
     if (!response) {
       return jsonResponse({ message: `unexpected ${url}` }, 599);
     }
-    return response.clone();
+    const resolved = typeof response === "function" ? await response() : response;
+    return resolved.clone();
   };
 
   return Object.assign(fetchStub, { urls, requests });
@@ -53,9 +54,7 @@ async function collect(source: AsyncIterable<{ path: string; contents: Uint8Arra
   return entries;
 }
 
-async function expectEntryError(
-  source: AsyncIterable<{ path: string; contents: Uint8Array }>,
-): Promise<Error> {
+async function expectEntryError(source: AsyncIterable<{ path: string; contents: Uint8Array }>): Promise<Error> {
   try {
     await collect(source);
   } catch (error) {
@@ -232,6 +231,44 @@ describe("GitHub source adapter", () => {
       maxSize: 10,
     });
     expect(fetch.urls).not.toContain("https://api.github.com/repos/acme/demo/git/blobs/blob-large");
+  });
+
+  it("fetches blobs concurrently while preserving tree order", async () => {
+    let firstBlobRequested = false;
+    let resolveFirstBlob: (() => void) | undefined;
+    const firstBlobStarted = new Promise<void>((resolve) => { resolveFirstBlob = resolve; });
+    const fetch = createFetchStub({
+      "https://api.github.com/repos/acme/demo/commits/main": jsonResponse({
+        sha: "5555555555555555555555555555555555555555",
+        commit: { tree: { sha: "tree-5" } },
+      }),
+      "https://api.github.com/repos/acme/demo/git/trees/tree-5?recursive=1": jsonResponse({
+        truncated: false,
+        tree: [
+          { path: "a.txt", type: "blob", sha: "blob-a", size: 1 },
+          { path: "b.txt", type: "blob", sha: "blob-b", size: 1 },
+        ],
+      }),
+      "https://api.github.com/repos/acme/demo/git/blobs/blob-a": async () => {
+        firstBlobRequested = true;
+        await firstBlobStarted;
+        return jsonResponse(blobPayload("a"));
+      },
+      "https://api.github.com/repos/acme/demo/git/blobs/blob-b": async () => {
+        expect(firstBlobRequested).toBe(true);
+        resolveFirstBlob?.();
+        return jsonResponse(blobPayload("b"));
+      },
+    });
+
+    const source = await resolveGitHubSource({ owner: "acme", repo: "demo", ref: "main", fetch });
+
+    expect(Result.isOk(source)).toBe(true);
+    if (Result.isError(source)) return;
+    await expect(collect(source.value.entries())).resolves.toEqual([
+      { path: "a.txt", text: "a" },
+      { path: "b.txt", text: "b" },
+    ]);
   });
 
   it("surfaces blob fetch failures while streaming entries", async () => {

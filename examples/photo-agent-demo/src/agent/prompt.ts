@@ -10,6 +10,7 @@ export function photoAgentPrompt(workspaceName: string): string {
     "Use runWorkspaceCommand to inspect and edit files under /workspace. Successful commands capture /workspace changes into the Workspace draft preview.",
     "Use paths like /workspace/photos/original.png, /workspace/photos/original.jpg, and /workspace/photos/current. ImageMagick is available as identify and convert in this container.",
     "Use runDynamicWorker for Worker-native JavaScript tasks over the same draft edit. Delegated code receives env.WORKSPACE with readFile, writeFile, list, and stat only.",
+    "Dynamic Worker Workspace methods return plain objects with status ok/error; check status before using values.",
     "For notes or metadata, write files such as /notes/edit-summary.md or /photos/edit-summary.json through env.WORKSPACE.writeFile.",
     "Do not narrate every tool call. Briefly say what changed after the tool result is available.",
     "Only make a draft current when the user clearly asks to commit, approve, publish, or make it current.",

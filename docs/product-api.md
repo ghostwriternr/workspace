@@ -66,8 +66,8 @@ We avoid implementation terms (session, RPC result, stub disposal, loopback, pro
 `workspace.files` is the current tree.
 
 ```ts
-await workspace.files.read(path);        // Result<Uint8Array, WorkspaceCurrentFileReadError>
-await workspace.files.write(path, bytes); // Result<void, WorkspaceCurrentFileWriteError>
+await workspace.files.read(path);        // Result<Uint8Array, WorkspaceCurrentFileError>
+await workspace.files.write(path, bytes); // Result<void, WorkspaceCurrentFileError>
 await workspace.files.list(path);
 await workspace.files.stat(path);
 await workspace.files.delete(path);
@@ -111,7 +111,7 @@ const applied = await copy.apply();
 if (Result.isError(applied)) return applied;
 ```
 
-Workspace validates and writes bounded batches into the copy. A batch is all-or-nothing, but the whole source stream is staged in the copy over time. If the source stream fails, discard the copy. Current files are unchanged until `apply()` succeeds.
+Workspace validates and writes bounded batches into the copy. A batch is all-or-nothing, but the whole source stream is staged in the copy over time. Sources yield plain file entries. If reading the source stream fails, `writeTree` returns `WorkspaceTreeSourceError`; discard the copy. Current files are unchanged until `apply()` succeeds.
 
 Absolute entry paths, traversal segments, empty segments, and NUL bytes are rejected. Parent directories are created implicitly. Directories remain explicit underneath: writing `src/index.ts` under `/repo` ensures `/repo` and `/repo/src` exist after the call. Existing files may be overwritten. If a source yields the same path more than once, the later entry wins. Omitted files are left alone; this is materialisation, not sync, diff, or replace.
 

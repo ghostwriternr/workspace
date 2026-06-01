@@ -18,18 +18,20 @@ describe("repo import HTTP", () => {
         headers: { "content-type": "application/json" },
       }),
       { workspaces: env.WORKSPACES },
-      async (options) => Result.ok({
-        snapshot: {
-          type: "github",
-          owner: options.owner,
-          repo: options.repo,
-          ref: options.ref ?? "main",
-          commitSha: "def456",
-        },
-        async *entries() {
-          yield { path: "README.md", contents: encoder.encode("# HTTP import") };
-        },
-      }),
+      {
+        resolveSource: async (options) => Result.ok({
+          snapshot: {
+            type: "github",
+            owner: options.owner,
+            repo: options.repo,
+            ref: options.ref ?? "main",
+            commitSha: "def456",
+          },
+          async *entries() {
+            yield { path: "README.md", contents: encoder.encode("# HTTP import") };
+          },
+        }),
+      },
     );
 
     expect(response).toBeDefined();
@@ -92,7 +94,7 @@ describe("repo import HTTP", () => {
         headers: { "content-type": "application/json" },
       }),
       { workspaces: env.WORKSPACES, githubToken: "github-token" },
-      resolveSource,
+      { resolveSource },
     );
 
     expect(response?.status).toBe(200);
@@ -112,19 +114,21 @@ describe("repo import HTTP", () => {
         headers: { "content-type": "application/json" },
       }),
       { workspaces: env.WORKSPACES },
-      async (options) => Result.ok({
-        snapshot: {
-          type: "github",
-          owner: options.owner,
-          repo: options.repo,
-          ref: "main",
-          commitSha: "abc123",
-        },
-        async *entries() {
-          yield { path: "README.md", contents: encoder.encode("# Synced") };
-        },
-      }),
-      { getByName: () => ({ refreshRepoState }) },
+      {
+        resolveSource: async (options) => Result.ok({
+          snapshot: {
+            type: "github",
+            owner: options.owner,
+            repo: options.repo,
+            ref: "main",
+            commitSha: "abc123",
+          },
+          async *entries() {
+            yield { path: "README.md", contents: encoder.encode("# Synced") };
+          },
+        }),
+        agents: { getByName: () => ({ refreshRepoState }) },
+      },
     );
 
     expect(response?.status).toBe(200);

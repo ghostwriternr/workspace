@@ -54,7 +54,7 @@ An adapter is small. The shape it exposes to product code is roughly:
 
 The product creates a file copy, then hands the adapter's iterable to `copy.files.writeTree(root, entries)` (see [`product-api.md`](./product-api.md)). `root` is the absolute Workspace directory where the source should land; each entry path is relative to that root. If the adapter stream fails, the product discards the copy. If import succeeds, the product decides whether to apply the copy. The adapter itself doesn't call `apply` and doesn't hold Workspace identity.
 
-The first source package, `packages/source/github`, does this for GitHub REST: it resolves a ref to a commit SHA, walks the recursive tree API, and streams blob contents as `WorkspaceTreeEntry`-shaped values. A trivial S3 or external-R2 source package would do the same against object APIs. Source packages stay small: the cost of supporting a new source is bounded, and the surface a product has to trust stays narrow.
+The first source package, `packages/source/github`, does this for GitHub REST: it resolves a ref to a commit SHA, walks the recursive tree API, and streams blob contents as `WorkspaceTreeEntry` values. If the GitHub stream fails while `writeTree` is consuming it, the operation returns `WorkspaceTreeSourceError`. A trivial S3 or external-R2 source package would do the same against object APIs. Source packages stay small: the cost of supporting a new source is bounded, and the surface a product has to trust stays narrow.
 
 ## Provenance, not auto-sync
 

@@ -1,7 +1,6 @@
 import { Result, type Result as BetterResult } from "better-result";
 import {
   Workspace,
-  type ScopedWorkspaceFileCapability,
   type WorkspaceApplyError,
   type WorkspaceCopyError,
   type WorkspaceDiscardError,
@@ -10,6 +9,7 @@ import {
 } from "@cloudflare/workspace";
 import type {
   WorkspaceDynamicWorkerExecutionError,
+  WorkspaceDynamicWorkerFileCapability,
   WorkspaceDynamicWorkerResult,
   WorkspaceDynamicWorkerRunner,
 } from "@cloudflare/workspace-adapter-dynamic-worker";
@@ -18,7 +18,7 @@ export type RepoEditControllerDependencies = {
   workspaceName: string;
   workspaces: WorkspaceNamespace;
   dynamicWorkerRunner: WorkspaceDynamicWorkerRunner;
-  workspaceForEdit(editCopyId: string): ScopedWorkspaceFileCapability;
+  workspaceForEdit(editCopyId: string): WorkspaceDynamicWorkerFileCapability;
   getEditCopyId(): string | undefined;
   setEditCopyId(editCopyId: string | undefined): void;
 };

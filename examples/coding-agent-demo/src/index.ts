@@ -12,18 +12,18 @@ export default {
     const importResponse = await handleRepoImportRequest(
       request,
       { workspaces: env.WORKSPACES, githubToken: optionalGithubToken(env) },
-      env.CodingAgent,
+      { agents: env.CodingAgent },
     );
     if (importResponse) {
       return importResponse;
     }
 
-    const demoResponse = handleDemoRequest(request);
-    if (demoResponse) {
-      return demoResponse;
+    const agentResponse = await routeAgentRequest(request, env);
+    if (agentResponse) {
+      return agentResponse;
     }
 
-    return (await routeAgentRequest(request, env)) ?? new Response("Not found", { status: 404 });
+    return handleDemoRequest(request) ?? new Response("Not found", { status: 404 });
   },
 } satisfies ExportedHandler<Env>;
 

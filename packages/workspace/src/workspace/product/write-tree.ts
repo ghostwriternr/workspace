@@ -1,15 +1,8 @@
 import { Result, type Result as BetterResult } from "better-result";
-import type { WorkspaceSessionWriteTreeBatchRpcResult } from "../model/rpc";
 import type { WorkspaceTreeEntry } from "../model/write-tree";
 
 const WRITE_TREE_BATCH_SIZE = 100;
 const WRITE_TREE_BATCH_MAX_BYTES = 16 * 1024 * 1024;
-
-type RpcErrorOf<T> = T extends { status: "error"; error: infer E } ? E : never;
-
-type RpcResult<T, E> =
-  | { status: "ok"; value?: T }
-  | { status: "error"; error: E };
 
 export type WorkspaceTreeEntries = Iterable<WorkspaceTreeEntry> | AsyncIterable<WorkspaceTreeEntry>;
 
@@ -27,118 +20,63 @@ export type WorkspaceTreeEntryTooLargeError = {
   message: string;
 };
 
-export type WorkspaceFileWriteTreeError =
-  | RpcErrorOf<WorkspaceSessionWriteTreeBatchRpcResult>
-  | WorkspaceTreeEntryTooLargeError
-  | WorkspaceTreeSourceError;
+export type WorkspaceFileWriteTreeError = WorkspaceTreeEntryTooLargeError | WorkspaceTreeSourceError;
 
-export async function writeTreeEntries(
+type WriteTreeEntriesError<E> = E | WorkspaceFileWriteTreeError;
+
+export async function writeTreeEntries<E>(
   entries: WorkspaceTreeEntries,
-  writeBatch: (batch: WorkspaceTreeEntry[]) => Promise<WorkspaceSessionWriteTreeBatchRpcResult>,
-): Promise<BetterResult<void, WorkspaceFileWriteTreeError>> {
-  const iterator = asyncIteratorFor(entries);
+  writeBatch: (batch: WorkspaceTreeEntry[]) => Promise<BetterResult<void, E>>,
+): Promise<BetterResult<void, WriteTreeEntriesError<E>>> {
   let batch: WorkspaceTreeEntry[] = [];
   let batchBytes = 0;
+  let stoppedWith: WriteTreeEntriesError<E> | undefined;
 
-  while (true) {
-    const next = await nextTreeEntry(iterator);
-    if (Result.isError(next)) {
-      await closeIterator(iterator);
-      return Result.err(next.error);
-    }
-    if (next.value.done) {
-      break;
-    }
-
-    const entry = next.value.value;
-    const entrySize = entry.contents.byteLength;
-    if (entrySize > WRITE_TREE_BATCH_MAX_BYTES) {
-      await closeIterator(iterator);
-      return Result.err(workspaceTreeEntryTooLargeError(entry));
-    }
-
-    if (batch.length > 0 && batchBytes + entrySize > WRITE_TREE_BATCH_MAX_BYTES) {
-      const written = await writeTreeBatch(batch, writeBatch);
-      if (Result.isError(written)) {
-        await closeIterator(iterator);
-        return written;
-      }
-      batch = [];
-      batchBytes = 0;
-    }
-
-    batch.push(entry);
-    batchBytes += entrySize;
-    if (batch.length === WRITE_TREE_BATCH_SIZE) {
-      const written = await writeTreeBatch(batch, writeBatch);
-      if (Result.isError(written)) {
-        await closeIterator(iterator);
-        return written;
-      }
-      batch = [];
-      batchBytes = 0;
-    }
-  }
-
-  if (batch.length > 0) {
-    const written = await writeTreeBatch(batch, writeBatch);
-    if (Result.isError(written)) {
-      await closeIterator(iterator);
-    }
-    return written;
-  }
-
-  return Result.ok();
-}
-
-async function writeTreeBatch(
-  batch: WorkspaceTreeEntry[],
-  writeBatch: (batch: WorkspaceTreeEntry[]) => Promise<WorkspaceSessionWriteTreeBatchRpcResult>,
-): Promise<BetterResult<void, WorkspaceFileWriteTreeError>> {
-  return rpcToResult(await writeBatch(batch));
-}
-
-function asyncIteratorFor(entries: WorkspaceTreeEntries): AsyncIterator<WorkspaceTreeEntry> {
-  if (Symbol.asyncIterator in entries) {
-    return entries[Symbol.asyncIterator]();
-  }
-
-  const iterator = entries[Symbol.iterator]();
-  return {
-    async next() {
-      return iterator.next();
-    },
-    async return(value?: unknown) {
-      if (iterator.return) {
-        return iterator.return(value as never);
-      }
-      return { done: true, value: value as WorkspaceTreeEntry };
-    },
-    async throw(error?: unknown) {
-      if (iterator.throw) {
-        return iterator.throw(error);
-      }
-      throw error;
-    },
-  };
-}
-
-async function nextTreeEntry(
-  iterator: AsyncIterator<WorkspaceTreeEntry>,
-): Promise<BetterResult<IteratorResult<WorkspaceTreeEntry>, WorkspaceTreeSourceError>> {
   try {
-    return Result.ok(await iterator.next());
+    for await (const entry of entries) {
+      const entrySize = entry.contents.byteLength;
+      if (entrySize > WRITE_TREE_BATCH_MAX_BYTES) {
+        stoppedWith = workspaceTreeEntryTooLargeError(entry);
+        break;
+      }
+
+      if (batch.length > 0 && batchBytes + entrySize > WRITE_TREE_BATCH_MAX_BYTES) {
+        const written = await writeBatch(batch);
+        if (Result.isError(written)) {
+          stoppedWith = written.error;
+          break;
+        }
+        batch = [];
+        batchBytes = 0;
+      }
+
+      batch.push(entry);
+      batchBytes += entrySize;
+      if (batch.length === WRITE_TREE_BATCH_SIZE) {
+        const written = await writeBatch(batch);
+        if (Result.isError(written)) {
+          stoppedWith = written.error;
+          break;
+        }
+        batch = [];
+        batchBytes = 0;
+      }
+    }
   } catch (error) {
-    return Result.err(workspaceTreeSourceError(error));
+    return Result.err(stoppedWith ?? workspaceTreeSourceError(error));
   }
-}
 
-async function closeIterator(iterator: AsyncIterator<WorkspaceTreeEntry>): Promise<void> {
-  try {
-    await iterator.return?.();
-  } catch {
-    // Preserve the error that caused iteration to stop.
+  if (stoppedWith) {
+    return Result.err(stoppedWith);
   }
+
+  if (batch.length === 0) {
+    return Result.ok();
+  }
+
+  const written = await writeBatch(batch);
+  if (Result.isError(written)) return Result.err(written.error);
+  return Result.ok();
 }
 
 function workspaceTreeEntryTooLargeError(entry: WorkspaceTreeEntry): WorkspaceTreeEntryTooLargeError {
@@ -158,12 +96,4 @@ function workspaceTreeSourceError(error: unknown): WorkspaceTreeSourceError {
     message: `Workspace tree source failed: ${causeMessage}`,
     causeMessage,
   };
-}
-
-function rpcToResult<T, E>(result: RpcResult<T, E>): BetterResult<T, E> {
-  if (result.status === "error") {
-    return Result.err(result.error);
-  }
-
-  return Result.ok(result.value as T);
 }

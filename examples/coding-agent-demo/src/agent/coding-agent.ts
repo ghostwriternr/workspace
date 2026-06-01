@@ -9,16 +9,15 @@ import { RepoStateController } from "../repo/state-controller";
 import { createWorkspaceDynamicWorkerRunner } from "@cloudflare/workspace-adapter-dynamic-worker";
 import type { RepoImportSummary } from "../repo/import-controller";
 import { codingAgentPrompt } from "./prompt";
+import { CODING_TOOL_NAMES } from "./tools";
 
 export type CodingAgentState = {
   lastImport?: RepoImportSummary;
   editCopyId?: string;
 };
 
-const codingToolNames = ["runWorkspaceWorker", "applyEdit", "discardEdit"] as const;
-
 export class CodingAgent extends Think<Env, CodingAgentState> {
-  static readonly actions = ["listRepoState", "refreshRepoState", ...codingToolNames] as const;
+  static readonly actions = ["listRepoState", "refreshRepoState", ...CODING_TOOL_NAMES] as const;
 
   initialState: CodingAgentState = {};
 
@@ -33,7 +32,7 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
   }
 
   beforeTurn() {
-    return { activeTools: [...codingToolNames] };
+    return { activeTools: [...CODING_TOOL_NAMES] };
   }
 
   getTools(): ToolSet {
@@ -42,8 +41,9 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
         description: [
           "Run Worker-native JavaScript against Workspace files through a scoped env.WORKSPACE binding.",
           "Use this single tool for inspection and edits. The binding exposes readFile, writeFile, list, and stat.",
+          "Workspace file methods return plain objects with status ok/error; check status before using values.",
           "The code must default-export an async function that accepts env.",
-          "Example: `export default async function(env) { const bytes = await env.WORKSPACE.readFile('/README.md'); const text = new TextDecoder().decode(bytes); await env.WORKSPACE.writeFile('/README.md', new TextEncoder().encode(text + '\\n\\n## Notes\\nUpdated by the coding agent.\\n')); return { changed: ['/README.md'] }; }`",
+          "Example: `export default async function(env) { const read = await env.WORKSPACE.readFile('/README.md'); if (read.status === 'error') return read; const text = new TextDecoder().decode(read.value); const write = await env.WORKSPACE.writeFile('/README.md', new TextEncoder().encode(text + '\\n\\n## Notes\\nUpdated by the coding agent.\\n')); if (write.status === 'error') return write; return { changed: ['/README.md'] }; }`",
         ].join(" "),
         inputSchema: z.object({
           code: z.string().min(1).describe("ES module code for the Workspace Worker."),

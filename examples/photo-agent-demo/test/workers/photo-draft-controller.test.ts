@@ -101,7 +101,7 @@ describe("PhotoDraftController", () => {
     const controller = new PhotoDraftController(dependencies);
 
     const result = await controller.runDynamicWorker({
-      code: "export default async function(env) { await env.WORKSPACE.writeFile('/notes/edit-summary.md', new TextEncoder().encode('cropped square')); }",
+      code: "export default async function(env) { const write = await env.WORKSPACE.writeFile('/notes/edit-summary.md', new TextEncoder().encode('cropped square')); if (write.status === 'error') return write; }",
     });
 
     expect(result).toEqual({
@@ -112,7 +112,7 @@ describe("PhotoDraftController", () => {
     expect(dependencies.workspace.beginSessionCount).toBe(0);
     expect(dependencies.dynamicWorkerRunner.calls).toEqual([
       {
-        code: "export default async function(env) { await env.WORKSPACE.writeFile('/notes/edit-summary.md', new TextEncoder().encode('cropped square')); }",
+        code: "export default async function(env) { const write = await env.WORKSPACE.writeFile('/notes/edit-summary.md', new TextEncoder().encode('cropped square')); if (write.status === 'error') return write; }",
       },
     ]);
     expect(dependencies.sessionFiles["/photos/current"]).toEqual(currentPng);

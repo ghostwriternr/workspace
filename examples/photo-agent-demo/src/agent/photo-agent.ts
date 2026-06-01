@@ -67,7 +67,8 @@ export class PhotoAgent extends Think<Env, PhotoAgentState> {
           "Run Worker-native JavaScript against the active draft edit through a scoped env.WORKSPACE binding.",
           "Use this for metadata, notes, manifests, and file-oriented JavaScript tasks over Workspace files.",
           "The code must default-export an async function that accepts env. The binding exposes readFile, writeFile, list, and stat only.",
-          "Example: `export default async function(env) { await env.WORKSPACE.writeFile('/notes/edit-summary.md', new TextEncoder().encode('Cropped to a centered square.')); return { wrote: '/notes/edit-summary.md' }; }`",
+          "Workspace file methods return plain objects with status ok/error; check status before using values.",
+          "Example: `export default async function(env) { const write = await env.WORKSPACE.writeFile('/notes/edit-summary.md', new TextEncoder().encode('Cropped to a centered square.')); if (write.status === 'error') return write; return { wrote: '/notes/edit-summary.md' }; }`",
         ].join(" "),
         inputSchema: z.object({
           code: z.string().min(1).describe("ES module code for the Dynamic Worker."),

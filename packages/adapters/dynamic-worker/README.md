@@ -2,14 +2,14 @@
 
 `@cloudflare/workspace-adapter-dynamic-worker` runs delegated Worker code with a scoped Workspace file capability.
 
-It is an execution adapter, not Workspace core. The adapter knows how to load a Dynamic Worker and present `env.WORKSPACE` to delegated code. Product code still decides which Workspace copy to expose, which paths are readable or writable, and whether changes are applied or discarded.
+It is an execution adapter, not Workspace core. The adapter knows how to load a Dynamic Worker and pass `env.WORKSPACE` to delegated code. Product code still decides which Workspace copy to expose, which paths are readable or writable, and whether changes are applied or discarded.
 
 ## What it owns
 
 - Loading caller-provided module code with a Worker Loader binding.
 - Passing a scoped Workspace file capability through `getEntrypoint(..., { props })`.
-- Keeping the RPC boundary serializable: file capability methods return `ScopedWorkspaceRpcResult` DTOs.
-- Exposing ergonomic delegated-code methods that either return values or throw ordinary JavaScript errors.
+- Keeping the delegated Worker isolated from ambient outbound access.
+- Returning delegated execution failures as `Result` values.
 
 ## What it does not own
 
@@ -41,39 +41,51 @@ The adapter defaults delegated workers to:
 
 ## Usage
 
-Product code creates or recovers a Workspace file copy, then exposes a scoped file capability through a loopback `WorkerEntrypoint`.
+Product code creates or recovers a Workspace file copy, exposes a concrete loopback `WorkerEntrypoint` for the scoped file capability, then passes that entrypoint stub to the runner.
 
 ```ts
 import { Result } from "better-result";
+import { WorkerEntrypoint } from "cloudflare:workers";
 import {
   Workspace,
   type ScopedWorkspaceFileCapability,
   type ScopedWorkspaceRpcResult,
 } from "@cloudflare/workspace";
-import {
-  WorkspaceFileCapabilityEntrypoint,
-  createWorkspaceDynamicWorkerRunner,
-} from "@cloudflare/workspace-adapter-dynamic-worker";
+import { createWorkspaceDynamicWorkerRunner } from "@cloudflare/workspace-adapter-dynamic-worker";
 
-type Props = {
-  workspaceName: string;
-  copyId: string;
-};
+export class WorkspaceFiles extends WorkerEntrypoint<Env, { workspaceName: string; copyId: string }> {
+  async readFile(path: string) {
+    const capability = await this.capability();
+    if (capability.status === "error") return capability;
+    return capability.value.readFile(path);
+  }
 
-export class WorkspaceFileCapability extends WorkspaceFileCapabilityEntrypoint<Env, Props> {
-  protected async getWorkspaceFileCapability(): Promise<ScopedWorkspaceRpcResult<ScopedWorkspaceFileCapability>> {
+  async writeFile(path: string, contents: Uint8Array) {
+    const capability = await this.capability();
+    if (capability.status === "error") return capability;
+    return capability.value.writeFile(path, contents);
+  }
+
+  async list(path: string) {
+    const capability = await this.capability();
+    if (capability.status === "error") return capability;
+    return capability.value.list(path);
+  }
+
+  async stat(path: string) {
+    const capability = await this.capability();
+    if (capability.status === "error") return capability;
+    return capability.value.stat(path);
+  }
+
+  private async capability(): Promise<ScopedWorkspaceRpcResult<ScopedWorkspaceFileCapability>> {
     const workspace = Workspace.get(this.env.WORKSPACES, this.ctx.props.workspaceName);
     const copy = await workspace.files.getCopy(this.ctx.props.copyId);
-    if (Result.isError(copy)) {
-      return { status: "error", error: copy.error };
-    }
+    if (Result.isError(copy)) return { status: "error", error: copy.error };
 
     return {
       status: "ok",
-      value: copy.value.files.scoped({
-        read: ["/src/**"],
-        write: ["/src/**", "/notes/**"],
-      }),
+      value: copy.value.files.scoped({ read: ["/src/**"], write: ["/src/**", "/notes/**"] }),
     };
   }
 }
@@ -81,22 +93,22 @@ export class WorkspaceFileCapability extends WorkspaceFileCapabilityEntrypoint<E
 const runner = createWorkspaceDynamicWorkerRunner(env.DYNAMIC_WORKERS);
 const result = await runner.run({
   code,
-  workspace: ctx.exports.WorkspaceFileCapability({
-    props: { workspaceName, copyId },
-  }),
+  workspace: ctx.exports.WorkspaceFiles({ props: { workspaceName, copyId } }),
 });
 ```
 
-Delegated code sees normal file methods:
+Delegated code sees plain-object Workspace file results:
 
 ```ts
 export default async function(env) {
   const readme = await env.WORKSPACE.readFile("/README.md");
-  await env.WORKSPACE.writeFile("/notes/summary.md", readme);
+  if (readme.status === "error") return readme;
+
+  const write = await env.WORKSPACE.writeFile("/notes/summary.md", readme.value);
+  if (write.status === "error") return write;
+
   return { wrote: "/notes/summary.md" };
 }
 ```
-
-If a Workspace operation returns an error DTO, the harness throws an ordinary `Error` inside delegated code. The runner returns delegated execution failures as `Result.err({ tag: "WorkspaceDynamicWorkerExecutionError", message })`.
 
 Delegated code should return structured-clone-safe values. Do not return live RPC stubs from delegated workers.

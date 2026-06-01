@@ -58,6 +58,8 @@ export interface Env {
   WORKSPACE_BLOBS: R2Bucket;
 }
 
+const WRITE_TREE_BLOB_PUT_CONCURRENCY = 16;
+
 type PreparedWriteTree = {
   plan: WorkspaceWriteTreePlan;
   blobs: BlobRef[];
@@ -242,11 +244,12 @@ export class WorkspaceObject extends DurableObject<Env> {
 
   private async putTreeBlobs(entries: WorkspaceTreeEntry[]): Promise<BlobRef[]> {
     const blobs = this.blobs();
-    const result: BlobRef[] = [];
-    for (const entry of entries) {
-      result.push(await blobs.put(entry.contents));
+    const refs: BlobRef[] = [];
+    for (let offset = 0; offset < entries.length; offset += WRITE_TREE_BLOB_PUT_CONCURRENCY) {
+      const chunk = entries.slice(offset, offset + WRITE_TREE_BLOB_PUT_CONCURRENCY);
+      refs.push(...await Promise.all(chunk.map((entry) => blobs.put(entry.contents))));
     }
-    return result;
+    return refs;
   }
 
   private readableTree(options: WorkspaceReadOptions): Result<ReadableTree, RevisionNotFoundError> {

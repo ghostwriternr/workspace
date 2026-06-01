@@ -32,11 +32,11 @@ The current projection materialises files into the Sandbox filesystem and hashes
 
 Long-term: a mount-like implementation that avoids full-tree scans and avoids reading unchanged file contents back into the Worker.
 
-## GitHub source import fetches blobs one by one
+## GitHub source import is REST blob-heavy
 
-The first GitHub source adapter uses GitHub REST tree/blob APIs: resolve a commit, fetch the recursive tree, then fetch each blob as the import stream is consumed. This keeps the adapter small and easy to test, but large repositories will be slow and API-call-heavy.
+The first GitHub source adapter uses GitHub REST tree/blob APIs: resolve a commit, fetch the recursive tree, then fetch blobs in bounded concurrent chunks as the import stream is consumed. This keeps the adapter small and easy to test, but large repositories are still API-call-heavy.
 
-Future options include bounded concurrent blob fetching, tarball import, sparse import, or reference-based hydration once `ContentRef` exists.
+Future options include tarball import, sparse import, or reference-based hydration once `ContentRef` exists.
 
 ## Dynamic Worker module and asset projections aren't built
 

@@ -1,14 +1,14 @@
 import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
-import { createWorkspaceDynamicWorkerRunner } from "../src/runner";
+import { createWorkspaceDynamicWorkerRunner, type WorkspaceDynamicWorkerFileCapability } from "../src/runner";
 
 const workspace = {
-  readFile: async () => ({ status: "error" as const, error: { tag: "PathNotFoundError", message: "missing" } }),
-  writeFile: async () => ({ status: "ok" as const }),
-  list: async () => ({ status: "ok" as const, value: [] }),
-  stat: async () => ({ status: "error" as const, error: { tag: "PathNotFoundError", message: "missing" } }),
-};
+  readFile: async (_path: string) => ({ status: "error" as const, error: { tag: "PathNotFoundError", message: "missing" } }),
+  writeFile: async (_path: string, _contents: Uint8Array) => ({ status: "ok" as const }),
+  list: async (_path: string) => ({ status: "ok" as const, value: [] }),
+  stat: async (_path: string) => ({ status: "error" as const, error: { tag: "PathNotFoundError", message: "missing" } }),
+} as unknown as WorkspaceDynamicWorkerFileCapability;
 
 describe("Workspace Dynamic Worker runner", () => {
   it("loads delegated code with a scoped Workspace binding", async () => {
@@ -21,7 +21,8 @@ describe("Workspace Dynamic Worker runner", () => {
     if (Result.isOk(result)) expect(result.value).toEqual({ ok: true });
     expect(loader.loaded?.globalOutbound).toBeNull();
     expect(loader.loaded?.env).toBeUndefined();
-    expect(loader.loaded?.modules["harness.js"]).toContain("workspaceForUserCode");
+    expect(loader.loaded?.modules["harness.js"]).toContain("WORKSPACE: this.ctx.props.WORKSPACE");
+    expect(loader.loaded?.modules["harness.js"]).not.toContain("unwrapWorkspaceResult");
     expect(loader.entrypointOptions).toEqual({ props: { WORKSPACE: workspace } });
   });
 
@@ -50,14 +51,14 @@ describe("Workspace Dynamic Worker runner", () => {
 
 class FakeWorkerLoader {
   loaded?: { modules: Record<string, string>; env?: Record<string, unknown>; globalOutbound?: null };
-  entrypointOptions?: { props: { WORKSPACE: typeof workspace } };
+  entrypointOptions?: { props: { WORKSPACE: WorkspaceDynamicWorkerFileCapability } };
 
   constructor(private readonly run: () => Promise<unknown>) {}
 
   load(code: { modules: Record<string, string>; env?: Record<string, unknown>; globalOutbound?: null }) {
     this.loaded = code;
     return {
-      getEntrypoint: (_name?: string, options?: { props: { WORKSPACE: typeof workspace } }) => {
+      getEntrypoint: (_name?: string, options?: { props: { WORKSPACE: WorkspaceDynamicWorkerFileCapability } }) => {
         this.entrypointOptions = options;
         return { run: this.run };
       },

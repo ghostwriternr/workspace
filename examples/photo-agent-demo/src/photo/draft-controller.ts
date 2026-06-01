@@ -7,10 +7,10 @@ import {
 import type { WorkspaceFileCaptureSummary } from "@cloudflare/workspace";
 import type { DemoWorkspaceCommandRunner } from "../workspace/sandbox-workspace-command-runner";
 import type {
+  WorkspaceDynamicWorkerFileCapability,
   WorkspaceDynamicWorkerResult,
   WorkspaceDynamicWorkerRunner,
 } from "@cloudflare/workspace-adapter-dynamic-worker";
-import type { ScopedWorkspaceFileCapability } from "@cloudflare/workspace";
 
 const ORIGINAL_CANDIDATES = [
   { path: "/photos/original.png", contentType: "image/png" },
@@ -71,7 +71,7 @@ export type PhotoDraftControllerDependencies = {
   workspaces: WorkspaceNamespace;
   commandRunner: Pick<DemoWorkspaceCommandRunner, "runWorkspaceCommand">;
   dynamicWorkerRunner: WorkspaceDynamicWorkerRunner;
-  workspaceForDraft(draftEditId: string): ScopedWorkspaceFileCapability;
+  workspaceForDraft(draftEditId: string): WorkspaceDynamicWorkerFileCapability;
   getDraftEditId(): string | undefined;
   setDraftEditId(draftEditId: string | undefined): void;
 };

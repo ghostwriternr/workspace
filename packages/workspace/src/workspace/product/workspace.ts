@@ -7,7 +7,7 @@ import {
 } from "./attachment";
 import {
   writeTreeEntries,
-  type WorkspaceFileWriteTreeError,
+  type WorkspaceFileWriteTreeError as WorkspaceFileWriteTreeStreamError,
   type WorkspaceTreeEntries,
   type WorkspaceTreeEntryTooLargeError,
   type WorkspaceTreeSourceError,
@@ -65,25 +65,20 @@ export type WorkspaceCurrentFiles = WorkspaceCurrentFilesApi & {
   getCopy(id: string): Promise<BetterResult<WorkspaceFileCopy, WorkspaceCopyLookupError>>;
 };
 
-export type { WorkspaceFileWriteTreeError, WorkspaceTreeEntries, WorkspaceTreeEntryTooLargeError, WorkspaceTreeSourceError };
+export type { WorkspaceTreeEntries, WorkspaceTreeEntryTooLargeError, WorkspaceTreeSourceError };
+export type WorkspaceFileWriteTreeError = WorkspaceFileWriteTreeStreamError | RpcErrorOf<WorkspaceSessionWriteTreeBatchRpcResult>;
 
-export type WorkspaceCurrentFilesApi = {
-  mkdir(path: string): Promise<BetterResult<void, WorkspaceCurrentFileMkdirError>>;
-  write(path: string, contents: Uint8Array): Promise<BetterResult<void, WorkspaceCurrentFileWriteError>>;
-  read(path: string): Promise<BetterResult<Uint8Array, WorkspaceCurrentFileReadError>>;
-  list(path: string): Promise<BetterResult<WorkspaceEntry[], WorkspaceCurrentFileListError>>;
-  stat(path: string): Promise<BetterResult<WorkspaceStat, WorkspaceCurrentFileStatError>>;
-  delete(path: string): Promise<BetterResult<void, WorkspaceCurrentFileDeleteError>>;
+export type WorkspaceFilesApi<E> = {
+  mkdir(path: string): Promise<BetterResult<void, E>>;
+  write(path: string, contents: Uint8Array): Promise<BetterResult<void, E>>;
+  read(path: string): Promise<BetterResult<Uint8Array, E>>;
+  list(path: string): Promise<BetterResult<WorkspaceEntry[], E>>;
+  stat(path: string): Promise<BetterResult<WorkspaceStat, E>>;
+  delete(path: string): Promise<BetterResult<void, E>>;
 };
 
-export type WorkspaceCopyFilesApi = {
-  mkdir(path: string): Promise<BetterResult<void, WorkspaceCopyFileMkdirError>>;
-  write(path: string, contents: Uint8Array): Promise<BetterResult<void, WorkspaceCopyFileWriteError>>;
-  read(path: string): Promise<BetterResult<Uint8Array, WorkspaceCopyFileReadError>>;
-  list(path: string): Promise<BetterResult<WorkspaceEntry[], WorkspaceCopyFileListError>>;
-  stat(path: string): Promise<BetterResult<WorkspaceStat, WorkspaceCopyFileStatError>>;
-  delete(path: string): Promise<BetterResult<void, WorkspaceCopyFileDeleteError>>;
-};
+export type WorkspaceCurrentFilesApi = WorkspaceFilesApi<WorkspaceCurrentFileError>;
+export type WorkspaceCopyFilesApi = WorkspaceFilesApi<WorkspaceCopyFileError>;
 
 export type WorkspaceFileScope = {
   root?: string;
@@ -99,19 +94,23 @@ export type WorkspaceFileCopyFiles = WorkspaceCopyFilesApi & {
 
 type RpcErrorOf<T> = T extends { status: "error"; error: infer E } ? E : never;
 
-export type WorkspaceCurrentFileMkdirError = RpcErrorOf<WorkspaceMkdirRpcResult>;
-export type WorkspaceCurrentFileWriteError = RpcErrorOf<WorkspaceWriteRpcResult>;
-export type WorkspaceCurrentFileReadError = RpcErrorOf<WorkspaceReadRpcResult>;
-export type WorkspaceCurrentFileListError = RpcErrorOf<WorkspaceListRpcResult>;
-export type WorkspaceCurrentFileStatError = RpcErrorOf<WorkspaceStatRpcResult>;
-export type WorkspaceCurrentFileDeleteError = RpcErrorOf<WorkspaceDeleteRpcResult>;
+export type WorkspaceCurrentFileError = RpcErrorOf<
+  | WorkspaceMkdirRpcResult
+  | WorkspaceWriteRpcResult
+  | WorkspaceReadRpcResult
+  | WorkspaceListRpcResult
+  | WorkspaceStatRpcResult
+  | WorkspaceDeleteRpcResult
+>;
 
-export type WorkspaceCopyFileMkdirError = RpcErrorOf<WorkspaceSessionMkdirRpcResult>;
-export type WorkspaceCopyFileWriteError = RpcErrorOf<WorkspaceSessionWriteRpcResult>;
-export type WorkspaceCopyFileReadError = RpcErrorOf<WorkspaceSessionReadRpcResult>;
-export type WorkspaceCopyFileListError = RpcErrorOf<WorkspaceSessionListRpcResult>;
-export type WorkspaceCopyFileStatError = RpcErrorOf<WorkspaceSessionStatRpcResult>;
-export type WorkspaceCopyFileDeleteError = RpcErrorOf<WorkspaceSessionDeleteRpcResult>;
+export type WorkspaceCopyFileError = RpcErrorOf<
+  | WorkspaceSessionMkdirRpcResult
+  | WorkspaceSessionWriteRpcResult
+  | WorkspaceSessionReadRpcResult
+  | WorkspaceSessionListRpcResult
+  | WorkspaceSessionStatRpcResult
+  | WorkspaceSessionDeleteRpcResult
+>;
 
 export type WorkspaceCopyError = RpcErrorOf<WorkspaceSessionInfoRpcResult>;
 export type WorkspaceCopyLookupError = RpcErrorOf<WorkspaceSessionInfoRpcResult>;
@@ -156,31 +155,31 @@ class WorkspaceCopyFiles implements WorkspaceFileCopyFiles {
     private readonly copyId: string,
   ) {}
 
-  async mkdir(path: string): Promise<BetterResult<void, WorkspaceCopyFileMkdirError>> {
+  async mkdir(path: string): Promise<BetterResult<void, WorkspaceCopyFileError>> {
     return rpcToResult(await this.object.sessionMkdir(this.copyId, path));
   }
 
-  async write(path: string, contents: Uint8Array): Promise<BetterResult<void, WorkspaceCopyFileWriteError>> {
+  async write(path: string, contents: Uint8Array): Promise<BetterResult<void, WorkspaceCopyFileError>> {
     return rpcToResult(await this.object.sessionWriteFile(this.copyId, path, contents));
   }
 
   async writeTree(root: string, entries: WorkspaceTreeEntries): Promise<BetterResult<void, WorkspaceFileWriteTreeError>> {
-    return writeTreeEntries(entries, (batch) => this.object.sessionWriteTreeBatch(this.copyId, root, batch));
+    return writeTreeEntries(entries, async (batch) => rpcToResult(await this.object.sessionWriteTreeBatch(this.copyId, root, batch)));
   }
 
-  async read(path: string): Promise<BetterResult<Uint8Array, WorkspaceCopyFileReadError>> {
+  async read(path: string): Promise<BetterResult<Uint8Array, WorkspaceCopyFileError>> {
     return rpcToResult(await this.object.sessionReadFile(this.copyId, path));
   }
 
-  async list(path: string): Promise<BetterResult<WorkspaceEntry[], WorkspaceCopyFileListError>> {
+  async list(path: string): Promise<BetterResult<WorkspaceEntry[], WorkspaceCopyFileError>> {
     return rpcToResult(await this.object.sessionList(this.copyId, path));
   }
 
-  async stat(path: string): Promise<BetterResult<WorkspaceStat, WorkspaceCopyFileStatError>> {
+  async stat(path: string): Promise<BetterResult<WorkspaceStat, WorkspaceCopyFileError>> {
     return rpcToResult(await this.object.sessionStat(this.copyId, path));
   }
 
-  async delete(path: string): Promise<BetterResult<void, WorkspaceCopyFileDeleteError>> {
+  async delete(path: string): Promise<BetterResult<void, WorkspaceCopyFileError>> {
     return rpcToResult(await this.object.sessionDelete(this.copyId, path));
   }
 
@@ -219,27 +218,27 @@ class WorkspaceFiles implements WorkspaceCurrentFiles {
     return Result.ok(new WorkspaceFileCopy(this.object, info.value.sessionId, info.value.createdAt));
   }
 
-  async mkdir(path: string): Promise<BetterResult<void, WorkspaceCurrentFileMkdirError>> {
+  async mkdir(path: string): Promise<BetterResult<void, WorkspaceCurrentFileError>> {
     return rpcToResult(await this.object.mkdir(path));
   }
 
-  async write(path: string, contents: Uint8Array): Promise<BetterResult<void, WorkspaceCurrentFileWriteError>> {
+  async write(path: string, contents: Uint8Array): Promise<BetterResult<void, WorkspaceCurrentFileError>> {
     return rpcToResult(await this.object.writeFile(path, contents));
   }
 
-  async read(path: string): Promise<BetterResult<Uint8Array, WorkspaceCurrentFileReadError>> {
+  async read(path: string): Promise<BetterResult<Uint8Array, WorkspaceCurrentFileError>> {
     return rpcToResult(await this.object.readFile(path));
   }
 
-  async list(path: string): Promise<BetterResult<WorkspaceEntry[], WorkspaceCurrentFileListError>> {
+  async list(path: string): Promise<BetterResult<WorkspaceEntry[], WorkspaceCurrentFileError>> {
     return rpcToResult(await this.object.list(path));
   }
 
-  async stat(path: string): Promise<BetterResult<WorkspaceStat, WorkspaceCurrentFileStatError>> {
+  async stat(path: string): Promise<BetterResult<WorkspaceStat, WorkspaceCurrentFileError>> {
     return rpcToResult(await this.object.stat(path));
   }
 
-  async delete(path: string): Promise<BetterResult<void, WorkspaceCurrentFileDeleteError>> {
+  async delete(path: string): Promise<BetterResult<void, WorkspaceCurrentFileError>> {
     return rpcToResult(await this.object.delete(path));
   }
 }

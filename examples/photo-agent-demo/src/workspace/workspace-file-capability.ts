@@ -1,14 +1,66 @@
 import { Result } from "better-result";
-import { Workspace, type ScopedWorkspaceFileCapability, type ScopedWorkspaceRpcResult } from "@cloudflare/workspace";
-import { WorkspaceFileCapabilityEntrypoint } from "@cloudflare/workspace-adapter-dynamic-worker";
+import { WorkerEntrypoint } from "cloudflare:workers";
+import {
+  Workspace,
+  type ScopedWorkspaceFileCapability,
+  type ScopedWorkspaceRpcResult,
+  type WorkspaceEntry,
+  type WorkspaceStat,
+} from "@cloudflare/workspace";
 
 type WorkspaceFileCapabilityProps = {
   workspaceName: string;
   draftEditId: string;
 };
 
-export class WorkspaceFileCapability extends WorkspaceFileCapabilityEntrypoint<Env, WorkspaceFileCapabilityProps> {
-  protected async getWorkspaceFileCapability(): Promise<ScopedWorkspaceRpcResult<ScopedWorkspaceFileCapability>> {
+export class WorkspaceFileCapability extends WorkerEntrypoint<Env, WorkspaceFileCapabilityProps> implements ScopedWorkspaceFileCapability {
+  private capability?: ScopedWorkspaceFileCapability;
+  private capabilityPromise?: Promise<ScopedWorkspaceRpcResult<ScopedWorkspaceFileCapability>>;
+
+  async readFile(path: string): Promise<ScopedWorkspaceRpcResult<Uint8Array>> {
+    return this.withCapability((workspace) => workspace.readFile(path));
+  }
+
+  async writeFile(path: string, contents: Uint8Array): Promise<ScopedWorkspaceRpcResult> {
+    return this.withCapability((workspace) => workspace.writeFile(path, contents));
+  }
+
+  async list(path: string): Promise<ScopedWorkspaceRpcResult<WorkspaceEntry[]>> {
+    return this.withCapability((workspace) => workspace.list(path));
+  }
+
+  async stat(path: string): Promise<ScopedWorkspaceRpcResult<WorkspaceStat>> {
+    return this.withCapability((workspace) => workspace.stat(path));
+  }
+
+  private async withCapability<T>(
+    useCapability: (workspace: ScopedWorkspaceFileCapability) => Promise<ScopedWorkspaceRpcResult<T>>,
+  ): Promise<ScopedWorkspaceRpcResult<T>> {
+    const capability = await this.getWorkspaceFileCapability();
+    if (capability.status === "error") {
+      return capability;
+    }
+
+    return useCapability(capability.value);
+  }
+
+  private async getWorkspaceFileCapability(): Promise<ScopedWorkspaceRpcResult<ScopedWorkspaceFileCapability>> {
+    if (this.capability) {
+      return { status: "ok", value: this.capability };
+    }
+
+    this.capabilityPromise ??= this.createWorkspaceFileCapability();
+    const capability = await this.capabilityPromise;
+    if (capability.status === "error") {
+      this.capabilityPromise = undefined;
+      return capability;
+    }
+
+    this.capability = capability.value;
+    return capability;
+  }
+
+  private async createWorkspaceFileCapability(): Promise<ScopedWorkspaceRpcResult<ScopedWorkspaceFileCapability>> {
     const workspace = Workspace.get(this.env.WORKSPACES, this.ctx.props.workspaceName);
     const copy = await workspace.files.getCopy(this.ctx.props.draftEditId);
     if (Result.isError(copy)) {

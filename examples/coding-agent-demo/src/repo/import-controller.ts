@@ -73,10 +73,7 @@ export class RepoImportController {
     const root = request.root ?? "/";
     const writeTree = await copy.value.files.writeTree(root, source.value.entries());
     if (Result.isError(writeTree)) {
-      const discard = await copy.value.discard();
-      if (Result.isError(discard)) {
-        return Result.err(discard.error);
-      }
+      await copy.value.discard();
       return Result.err(writeTree.error);
     }
 

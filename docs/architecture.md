@@ -62,7 +62,7 @@ A single Workspace is one Durable Object plus an R2 bucket.
 - `WorkspaceObject` — the Durable Object entrypoint. It owns head operations (`mkdir`, `writeFile`, `readFile`, `list`, `stat`, `delete`, `snapshot`) and session-id operations for file copies (`sessionReadFile`, `sessionWriteFile`, `sessionList`, `sessionStat`, `sessionDelete`, `sessionCommit`, `sessionDiscard`).
 - `Workspace.get(...)` — the product-facing package layer. It wraps Durable Object RPC DTOs into `better-result` `Result` values and exposes current files plus durable file copies (`workspace.files.copy(...)`, `copy.files`, `copy.apply()`, `copy.discard()`). Product code does not receive or manage session RPC stubs.
 
-The Durable Object surface returns **Result-shaped DTOs over RPC** (`{ status: "ok", value }` / `{ status: "error", error }`). Internally the model uses `better-result` tagged errors — `InvalidPathError`, `PathNotFoundError`, `IsDirectoryError`, `NotDirectoryError`, `DirectoryNotEmptyError`, `PathAlreadyExistsError`, `RevisionNotFoundError`, `SessionNotFoundError`, `SessionConflictError`. Error classes don't survive structured clone, so they don't cross the RPC boundary.
+The Durable Object surface returns **plain Result DTOs over RPC** (`{ status: "ok", value }` / `{ status: "error", error }`). Internally the model uses `better-result` tagged errors — `InvalidPathError`, `PathNotFoundError`, `IsDirectoryError`, `NotDirectoryError`, `DirectoryNotEmptyError`, `PathAlreadyExistsError`, `RevisionNotFoundError`, `SessionNotFoundError`, `SessionConflictError`. Error classes don't survive structured clone, so they don't cross the RPC boundary.
 
 ### Tree abstraction
 
@@ -225,7 +225,7 @@ packages/source/github/
   src/             GitHub REST source adapter yielding WorkspaceTreeEntry values
 
 packages/adapters/dynamic-worker/
-  src/             Worker Loader runner and reusable Workspace capability entrypoint
+  src/             Worker Loader runner for scoped Workspace file capabilities
 ```
 
 See [`AGENTS.md`](../AGENTS.md) for the short map, conventions (`Result`, `better-result`, no `unwrap()`), and commands.
