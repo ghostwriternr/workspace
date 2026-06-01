@@ -1,3 +1,7 @@
 import { defineConfig } from "vitest/config";
 
-export default defineConfig({});
+import { nodeProjectTestConfig } from "../../../vitest.shared";
+
+export default defineConfig({
+  test: nodeProjectTestConfig,
+});

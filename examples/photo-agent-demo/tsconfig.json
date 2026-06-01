@@ -1,17 +1,8 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "es2024",
     "lib": ["es2024", "dom", "dom.iterable", "esnext.disposable"],
     "jsx": "react-jsx",
-    "module": "es2022",
-    "moduleResolution": "Bundler",
-    "resolveJsonModule": true,
-    "noEmit": true,
-    "isolatedModules": true,
-    "allowSyntheticDefaultImports": true,
-    "forceConsistentCasingInFileNames": true,
-    "strict": true,
-    "skipLibCheck": true,
     "types": ["@cloudflare/vitest-pool-workers/types", "vite/client"]
   },
   "include": [
