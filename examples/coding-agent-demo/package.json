@@ -1,0 +1,36 @@
+{
+  "name": "@cloudflare/workspace-coding-agent-demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit && npm run knip",
+    "knip": "knip",
+    "build": "vite build",
+    "deploy": "vite build && wrangler deploy",
+    "dev": "vite dev",
+    "start": "vite dev",
+    "test": "vitest run",
+    "typegen": "wrangler types"
+  },
+  "dependencies": {
+    "@cloudflare/workspace": "file:../../packages/workspace",
+    "@cloudflare/workspace-adapter-github": "file:../../packages/adapters/github",
+    "better-result": "^2.9.2",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.38.0",
+    "@cloudflare/vitest-pool-workers": "^0.16.9",
+    "@types/node": "^25.9.1",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "knip": "^6.14.2",
+    "typescript": "^5.5.2",
+    "vite": "^8.0.14",
+    "vitest": "^4.1.7",
+    "wrangler": "^4.94.0"
+  }
+}

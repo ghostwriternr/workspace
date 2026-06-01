@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["test/**/*.test.ts"],
+  "project": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts"],
+  "ignoreDependencies": [
+    // `cloudflare:workers` is a Workers runtime/vitest-pool virtual module,
+    // not an npm package named `cloudflare`.
+    "cloudflare"
+  ],
+  "rules": {
+    "exports": "error",
+    "types": "error"
+  }
+}
