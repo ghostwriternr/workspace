@@ -34,4 +34,35 @@ describe("RepoStateController", () => {
       ],
     });
   });
+
+  it("lists files from an active edit copy", async () => {
+    const workspaceName = `repo-state-edit-${crypto.randomUUID()}`;
+    const workspace = Workspace.get(env.WORKSPACES, workspaceName);
+    const seed = await workspace.files.copy("seed");
+    if (Result.isError(seed)) throw new Error("seed copy failed");
+
+    await seed.value.files.writeTree("/", [
+      { path: "README.md", contents: encoder.encode("# Repo") },
+    ]);
+    await seed.value.apply();
+
+    const edit = await workspace.files.copy("edit");
+    if (Result.isError(edit)) throw new Error("edit copy failed");
+    await edit.value.files.write("/notes.md", encoder.encode("draft note"));
+
+    const state = await new RepoStateController({
+      workspaces: env.WORKSPACES,
+      workspaceName,
+      editCopyId: edit.value.id,
+    }).listRepoState();
+
+    expect(state).toEqual({
+      workspaceName,
+      editCopyId: edit.value.id,
+      files: [
+        { path: "/README.md", type: "file", size: 6 },
+        { path: "/notes.md", type: "file", size: 10 },
+      ],
+    });
+  });
 });

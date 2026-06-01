@@ -13,20 +13,24 @@ describe("coding agent slice", () => {
 
     expect(index).toContain("routeAgentRequest(request, env)");
     expect(index).toContain("export { CodingAgent }");
+    expect(index).toContain("export { WorkspaceFileCapability }");
     expect(index.indexOf("handleRepoImportRequest(request, env.WORKSPACES, env.CodingAgent)")).toBeLessThan(
       index.indexOf("routeAgentRequest(request, env)"),
     );
     expect(config.assets.run_worker_first).toContain("/agents/*");
+    expect(config.compatibility_flags).toContain("experimental");
+    expect(config.worker_loaders).toEqual([{ binding: "DYNAMIC_WORKERS" }]);
     expect(config.durable_objects.bindings).toContainEqual({ name: "CodingAgent", class_name: "CodingAgent" });
   });
 
-  it("exposes listRepoState as the first CodingAgent action", async () => {
+  it("exposes repo state and Dynamic Worker actions", async () => {
     const agent = await readProjectFile("src/agent/coding-agent.ts");
 
     expect(agent).toContain("class CodingAgent extends Agent<Env, CodingAgentState>");
-    expect(agent).toContain('static readonly actions = ["listRepoState"]');
+    expect(agent).toContain('"listRepoState"');
+    expect(agent).toContain('"runDynamicWorker"');
     expect(agent).toContain("async listRepoState()");
-    expect(agent).not.toContain("runDynamicWorker");
+    expect(agent).toContain("async runDynamicWorker");
     expect(agent).not.toContain("runSandboxCommand");
   });
 });

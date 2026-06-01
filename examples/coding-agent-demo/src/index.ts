@@ -5,6 +5,7 @@ import { handleRepoImportRequest } from "./http/repo-import";
 
 export { WorkspaceObject } from "@cloudflare/workspace";
 export { CodingAgent } from "./agent/coding-agent";
+export { WorkspaceFileCapability } from "./workspace/workspace-file-capability";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
