@@ -13,7 +13,7 @@ Build only what is needed. Don't add inspection methods, convenience helpers, st
 ## Repo map
 
 - `packages/workspace/` — the Workspace package. Keep durable file-state primitives here.
-- `packages/adapters/github/` — GitHub source adapter. Keep GitHub API/import concerns outside Workspace core.
+- `packages/source/github/` — GitHub source adapter. Keep GitHub API/import concerns outside Workspace core.
 - `examples/photo-agent-demo/` — example Worker. Agent/Sandbox/Dynamic Worker concerns live here, not in the package.
 - `examples/coding-agent-demo/` — example Worker for importing public GitHub repos into Workspace before agent edits.
 - `docs/architecture.md` — how things actually work in code.

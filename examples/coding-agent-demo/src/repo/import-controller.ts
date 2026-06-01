@@ -13,7 +13,7 @@ import {
   type GitHubSourceOptions,
   type GitHubSourceResolveError,
   type GitHubSourceSnapshot,
-} from "@cloudflare/workspace-adapter-github";
+} from "@cloudflare/workspace-source-github";
 
 export type RepoImportRequest = {
   workspaceName: string;

@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@cloudflare/workspace": "file:../../packages/workspace",
-    "@cloudflare/workspace-adapter-github": "file:../../packages/adapters/github",
+    "@cloudflare/workspace-source-github": "file:../../packages/source/github",
     "agents": "^0.13.3",
     "better-result": "^2.9.2",
     "react": "^19.2.6",

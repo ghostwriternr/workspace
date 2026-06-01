@@ -46,7 +46,7 @@ export function resolveOptions(options: GitHubSourceOptions): BetterResult<GitHu
     octokit: new Octokit({
       auth: options.token,
       baseUrl: apiBaseUrl.value,
-      userAgent: "cloudflare-workspace-adapter-github",
+      userAgent: "cloudflare-workspace-source-github",
       log: silentOctokitLog,
       request: { fetch },
     }),

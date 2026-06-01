@@ -1,5 +1,5 @@
 {
-  "name": "@cloudflare/workspace-adapter-github",
+  "name": "@cloudflare/workspace-source-github",
   "version": "0.0.0",
   "private": true,
   "type": "module",
