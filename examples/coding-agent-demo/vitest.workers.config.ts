@@ -7,7 +7,7 @@ export default defineProject({
   plugins: [
     cloudflareTest({
       main: "./test/worker.ts",
-      wrangler: { configPath: "./wrangler.jsonc" },
+      wrangler: { configPath: "./wrangler.test.jsonc" },
     }),
   ],
   test: workersProjectTestConfig,

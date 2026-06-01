@@ -23,20 +23,24 @@ describe("coding agent slice", () => {
     expect(config.durable_objects.bindings).toContainEqual({ name: "CodingAgent", class_name: "CodingAgent" });
   });
 
-  it("exposes repo state and Dynamic Worker actions", async () => {
+  it("exposes repo state and Dynamic Worker tools through Think", async () => {
     const agent = await readProjectFile("src/agent/coding-agent.ts");
+    const prompt = await readProjectFile("src/agent/prompt.ts");
+    const config = JSON.parse(await readProjectFile("wrangler.jsonc"));
 
-    expect(agent).toContain("class CodingAgent extends Agent<Env, CodingAgentState>");
+    expect(agent).toContain("class CodingAgent extends Think<Env, CodingAgentState>");
+    expect(agent).toContain("getModel()");
+    expect(agent).toContain("getSystemPrompt()");
+    expect(agent).toContain("getTools(): ToolSet");
     expect(agent).not.toContain("repo?: RepoState");
     expect(agent).toContain('"listRepoState"');
-    expect(agent).toContain('"refreshRepoState"');
     expect(agent).toContain('"runDynamicWorker"');
     expect(agent).toContain('"applyEdit"');
     expect(agent).toContain('"discardEdit"');
-    expect(agent).toContain("async listRepoState()");
-    expect(agent).toContain("async runDynamicWorker");
-    expect(agent).toContain("async applyEdit()");
-    expect(agent).toContain("async discardEdit()");
+    expect(agent).toContain("async refreshRepoState");
     expect(agent).not.toContain("runSandboxCommand");
+    expect(prompt).toContain("Dynamic Worker");
+    expect(prompt).toContain("Only apply edits when the user clearly asks");
+    expect(config.ai).toEqual({ binding: "AI" });
   });
 });

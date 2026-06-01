@@ -11,5 +11,5 @@ export const UI_COPY = {
   applyEditAction: "Apply edit",
   discardEditAction: "Discard edit",
   chatTitle: "Coding agent",
-  chatPlaceholder: "Ask what files are in this repo…",
+  chatPlaceholder: "Ask the agent to inspect or edit this repo…",
 } as const;

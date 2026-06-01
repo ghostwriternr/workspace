@@ -1,5 +1,12 @@
 import { useAgent } from "agents/react";
-import { useEffect, useState, type FormEvent } from "react";
+import {
+  getToolInput,
+  getToolOutput,
+  getToolPartState,
+  useAgentChat,
+} from "@cloudflare/ai-chat/react";
+import { getToolName, isToolUIPart, type UIMessage } from "ai";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { CodingAgentState } from "../agent/coding-agent";
 import type { RepoState } from "../repo/state-controller";
@@ -15,6 +22,7 @@ type RepoStateResult =
 type EditActionResult =
   | { status: "ok"; value: unknown }
   | { status: "error"; error: { tag: string; message?: string } };
+type ToolPart = Parameters<typeof getToolName>[0];
 
 export function App() {
   const [workspaceName, setWorkspaceName] = useState(DEFAULT_WORKSPACE);
@@ -37,7 +45,7 @@ export function App() {
       try {
         await agent.ready;
         if (!cancelled) {
-          setRepo(await loadRepoState(agent, "listRepoState"));
+          setRepo(await loadRepoState(agent));
         }
       } catch (error) {
         if (!cancelled) {
@@ -67,7 +75,7 @@ export function App() {
       if (result.status === "error") {
         throw new Error(result.error.message ?? result.error.tag);
       }
-      setRepo(await loadRepoState(agent, "listRepoState"));
+      setRepo(await loadRepoState(agent));
       setStatus({ tone: "ok", message: done });
     } catch (error) {
       setStatus({ tone: "error", message: error instanceof Error ? error.message : "Could not update edit copy." });
@@ -94,7 +102,7 @@ export function App() {
       return;
     }
 
-    setRepo(await loadRepoState(agent, "listRepoState"));
+    setRepo(await loadRepoState(agent));
     setStatus({ tone: "ok", message: "Repository imported into current Workspace files." });
   }
 
@@ -150,7 +158,7 @@ export function App() {
           onApplyEdit={applyEdit}
           onDiscardEdit={discardEdit}
         />
-        <AgentChat agent={agent} />
+        <AgentChat agent={agent} onRepoState={setRepo} />
       </section>
     </main>
   );
@@ -198,63 +206,64 @@ function RepoFilesPanel({
   );
 }
 
-type ChatMessage = {
-  id: string;
-  role: "user" | "agent";
-  text: string;
-};
-
-function AgentChat({ agent }: { agent: ReturnType<typeof useAgent<CodingAgentState>> }) {
+function AgentChat({
+  agent,
+  onRepoState,
+}: {
+  agent: ReturnType<typeof useAgent<CodingAgentState>>;
+  onRepoState(repo: RepoState): void;
+}) {
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [busy, setBusy] = useState(false);
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const { messages, sendMessage, status, isStreaming, clearHistory } = useAgentChat({ agent });
 
-  async function submit(event: FormEvent) {
+  useEffect(() => {
+    timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (status !== "ready" && status !== "error") return;
+      try {
+        await agent.ready;
+        const repo = await loadRepoState(agent);
+        if (!cancelled) onRepoState(repo);
+      } catch {
+        // The import panel reports initial connection/import errors; chat state refresh is opportunistic.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status, agent.state?.editCopyId]);
+
+  function submit(event: FormEvent) {
     event.preventDefault();
     const text = input.trim();
     if (!text) return;
-
+    sendMessage({ text });
     setInput("");
-    setBusy(true);
-    setMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", text }]);
-    try {
-      const repo = await loadRepoState(agent, "listRepoState");
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "agent",
-          text: repo.files.length === 0
-            ? "No files are imported yet."
-            : `Workspace has ${repo.files.length} entries. The first files are ${repo.files.slice(0, 8).map((file) => file.path).join(", ")}.`,
-        },
-      ]);
-    } catch (error) {
-      setMessages((current) => [...current, {
-        id: crypto.randomUUID(),
-        role: "agent",
-        text: error instanceof Error ? error.message : "Could not read repo state.",
-      }]);
-    } finally {
-      setBusy(false);
-    }
   }
 
   return (
     <article className="panel chat-panel">
-      <div className="panel-heading">
-        <p className="eyebrow">Chat</p>
-        <h2>{UI_COPY.chatTitle}</h2>
+      <div className="chat-header">
+        <div>
+          <p className="eyebrow">Chat / Agent activity timeline</p>
+          <h2>{UI_COPY.chatTitle}</h2>
+        </div>
+        <button className="secondary" type="button" onClick={() => clearHistory()} disabled={isStreaming}>
+          Clear chat
+        </button>
       </div>
-      <div className="messages" aria-live="polite">
+      <div ref={timelineRef} className="messages" aria-live="polite">
         {messages.length === 0 ? (
-          <p className="empty">Ask “what files are in this repo?” after import.</p>
+          <p className="empty">Ask the agent to inspect the repo or make a focused edit.</p>
         ) : (
           messages.map((message) => (
-            <section key={message.id} className={`message ${message.role}`}>
-              <strong>{message.role === "user" ? "You" : "Agent"}</strong>
-              <p>{message.text}</p>
-            </section>
+            <MessageView key={message.id} message={message} streaming={isStreaming && message === messages.at(-1)} />
           ))
         )}
       </div>
@@ -263,12 +272,117 @@ function AgentChat({ agent }: { agent: ReturnType<typeof useAgent<CodingAgentSta
           value={input}
           onChange={(event) => setInput(event.currentTarget.value)}
           placeholder={UI_COPY.chatPlaceholder}
-          disabled={busy}
+          disabled={status !== "ready" && status !== "error"}
         />
-        <button type="submit" disabled={!input.trim() || busy}>Send</button>
+        <button type="submit" disabled={!input.trim() || (status !== "ready" && status !== "error")}>Send</button>
       </form>
     </article>
   );
+}
+
+function MessageView({ message, streaming }: { message: UIMessage; streaming: boolean }) {
+  return (
+    <section className={`message ${message.role}`}>
+      <div className="message-role">{message.role === "user" ? "You" : "Agent"}</div>
+      <div className="parts">
+        {message.parts.map((part, index) => {
+          if (part.type === "text") {
+            return part.text ? <p key={index} className="text-part">{part.text}</p> : null;
+          }
+
+          if (part.type === "reasoning") {
+            return <ReasoningPart key={index} part={part} />;
+          }
+
+          if (isToolUIPart(part)) {
+            return <ToolCard key={part.toolCallId ?? index} part={part} />;
+          }
+
+          return null;
+        })}
+        {streaming && <span className="cursor" aria-label="Agent is responding" />}
+      </div>
+    </section>
+  );
+}
+
+function ReasoningPart({ part }: { part: Extract<UIMessage["parts"][number], { type: "reasoning" }> }) {
+  return (
+    <details className="reasoning" open={(part as { state?: string }).state === "streaming"}>
+      <summary>Thinking</summary>
+      <p>{part.text}</p>
+    </details>
+  );
+}
+
+function ToolCard({ part }: { part: ToolPart }) {
+  const toolName = getToolName(part);
+  const state = getToolPartState(part);
+  const input = getToolInput(part);
+  const output = getToolOutput(part);
+  const error = "errorText" in part ? part.errorText : undefined;
+
+  return (
+    <article className={`tool-card ${state}`}>
+      <div className="tool-row">
+        <span className="tool-dot" />
+        <strong>{toolTitle(toolName)}</strong>
+        <span>{toolStatus(state)}</span>
+      </div>
+      {input != null && (
+        <div className="tool-detail">
+          <span>Tool call</span>
+          <code>{formatToolPayload(toolName, input)}</code>
+        </div>
+      )}
+      {output != null && (
+        <div className="tool-detail result">
+          <span>Tool result</span>
+          <code>{formatValue(output)}</code>
+        </div>
+      )}
+      {error && (
+        <div className="tool-detail error">
+          <span>Tool error</span>
+          <code>{error}</code>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function formatToolPayload(toolName: string, input: unknown) {
+  if (toolName === "runDynamicWorker" && isRecord(input) && typeof input.code === "string") {
+    return input.code;
+  }
+
+  return formatValue(input);
+}
+
+function formatValue(value: unknown) {
+  return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+}
+
+function toolTitle(toolName: string) {
+  return toolName.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function toolStatus(state: ReturnType<typeof getToolPartState>) {
+  switch (state) {
+    case "complete":
+      return "done";
+    case "error":
+      return "error";
+    case "streaming":
+    case "loading":
+      return "running";
+    case "waiting-approval":
+      return "waiting";
+    case "approved":
+      return "approved";
+    case "denied":
+      return "denied";
+  }
 }
 
 function parseRepoInput(value: string): { owner: string; repo: string } | undefined {
@@ -279,13 +393,14 @@ function parseRepoInput(value: string): { owner: string; repo: string } | undefi
   return { owner, repo };
 }
 
-async function loadRepoState(
-  agent: ReturnType<typeof useAgent<CodingAgentState>>,
-  method: "listRepoState",
-): Promise<RepoState> {
-  const result = await agent.call(method) as RepoStateResult;
+async function loadRepoState(agent: ReturnType<typeof useAgent<CodingAgentState>>): Promise<RepoState> {
+  const result = await agent.call("listRepoState") as RepoStateResult;
   if (result.status === "error") {
     throw new Error(result.error.message ?? result.error.tag);
   }
   return result.value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
