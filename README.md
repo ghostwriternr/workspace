@@ -39,7 +39,7 @@ examples/coding-agent-demo/  Worker app: imports public GitHub repos into Worksp
 
 Prototype. The core durable semantics work (head tree, working copies, revisions, scoped file capabilities, filesystem projection). The first product-facing API layer exists for current files, file copies, streaming bulk tree writes into copies, filesystem attachments, capture, scoped file capabilities, apply, and discard. A first GitHub source adapter streams repository files into that import path. See `docs/known-limitations.md` for the full list.
 
-The photo agent example is deployed at <https://workspace-photo-agent-demo.ghostwriternr.workers.dev>. The coding agent example is starting as a thin import loop for public GitHub repositories.
+The photo agent example is deployed at <https://workspace-photo-agent-demo.ghostwriternr.workers.dev>. The coding agent example is starting as a GitHub import loop with basic Workspace-backed repo state.
 
 ## Commands
 

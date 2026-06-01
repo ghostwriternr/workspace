@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["test/**/*.test.ts"],
+  "entry": ["test/**/*.test.ts", "test/worker.ts"],
   "project": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts"],
   "ignoreDependencies": [
     // `cloudflare:workers` is a Workers runtime/vitest-pool virtual module,

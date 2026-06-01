@@ -3,7 +3,7 @@ import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 import { Workspace } from "@cloudflare/workspace";
 
-import { RepoImportController } from "../src/repo/import-controller";
+import { RepoImportController } from "../../src/repo/import-controller";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

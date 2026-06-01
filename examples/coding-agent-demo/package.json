@@ -10,12 +10,13 @@
     "deploy": "vite build && wrangler deploy",
     "dev": "vite dev",
     "start": "vite dev",
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config vitest.workers.config.ts",
     "typegen": "wrangler types"
   },
   "dependencies": {
     "@cloudflare/workspace": "file:../../packages/workspace",
     "@cloudflare/workspace-adapter-github": "file:../../packages/adapters/github",
+    "agents": "^0.13.3",
     "better-result": "^2.9.2",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"

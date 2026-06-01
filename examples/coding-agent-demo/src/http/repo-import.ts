@@ -1,6 +1,6 @@
 import { Result, type Result as BetterResult } from "better-result";
 import type { WorkspaceNamespace } from "@cloudflare/workspace";
-import { RepoImportController, type GitHubSourceResolver } from "../repo/import-controller";
+import { RepoImportController, type GitHubSourceResolver, type RepoImportSummary } from "../repo/import-controller";
 
 const importPathPattern = /^\/api\/workspaces\/([^/]+)\/imports\/github$/;
 
@@ -10,10 +10,15 @@ type GitHubImportBody = {
   ref?: unknown;
 };
 
+type CodingAgentNamespace = {
+  getByName(name: string): { refreshRepoState(lastImport?: RepoImportSummary): Promise<unknown> };
+};
+
 export async function handleRepoImportRequest(
   request: Request,
   workspaces: WorkspaceNamespace,
-  resolveSource?: GitHubSourceResolver,
+  resolveSourceOrAgents?: GitHubSourceResolver | CodingAgentNamespace,
+  agents?: CodingAgentNamespace,
 ): Promise<Response | undefined> {
   const url = new URL(request.url);
   const match = importPathPattern.exec(url.pathname);
@@ -30,6 +35,8 @@ export async function handleRepoImportRequest(
     return json({ status: "error", message: body.error }, { status: 400 });
   }
 
+  const resolveSource = typeof resolveSourceOrAgents === "function" ? resolveSourceOrAgents : undefined;
+  const codingAgents = typeof resolveSourceOrAgents === "function" ? agents : resolveSourceOrAgents;
   const controller = new RepoImportController({ workspaces, resolveSource });
   const result = await controller.importGitHubRepo({
     workspaceName: decodeURIComponent(match[1] ?? ""),
@@ -40,6 +47,10 @@ export async function handleRepoImportRequest(
 
   if (Result.isError(result)) {
     return json({ status: "error", error: result.error }, { status: statusForError(result.error) });
+  }
+
+  if (codingAgents) {
+    await codingAgents.getByName(result.value.workspaceName).refreshRepoState(result.value);
   }
 
   return json({ status: "imported", ...result.value });

@@ -1,9 +1,9 @@
 import { env } from "cloudflare:workers";
 import { Result } from "better-result";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Workspace } from "@cloudflare/workspace";
 
-import { handleRepoImportRequest } from "../src/http/repo-import";
+import { handleRepoImportRequest } from "../../src/http/repo-import";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -69,6 +69,37 @@ describe("repo import HTTP", () => {
       status: "error",
       message: "Request body must be a JSON object.",
     });
+  });
+
+  it("syncs agent repo state after imports", async () => {
+    const refreshRepoState = vi.fn();
+    const response = await handleRepoImportRequest(
+      new Request("http://example.com/api/workspaces/synced/imports/github", {
+        method: "POST",
+        body: JSON.stringify({ owner: "cloudflare", repo: "example" }),
+        headers: { "content-type": "application/json" },
+      }),
+      env.WORKSPACES,
+      async (options) => Result.ok({
+        snapshot: {
+          type: "github",
+          owner: options.owner,
+          repo: options.repo,
+          ref: "main",
+          commitSha: "abc123",
+        },
+        async *entries() {
+          yield { path: "README.md", contents: encoder.encode("# Synced") };
+        },
+      }),
+      { getByName: () => ({ refreshRepoState }) },
+    );
+
+    expect(response?.status).toBe(200);
+    expect(refreshRepoState).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceName: "synced",
+      source: expect.objectContaining({ owner: "cloudflare", repo: "example" }),
+    }));
   });
 
   it("leaves unrelated routes for the next router", async () => {
