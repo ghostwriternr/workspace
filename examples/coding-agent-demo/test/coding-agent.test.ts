@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { buildSystemPrompt } from "../src/agent/prompt";
-import { CODING_TOOLS } from "../src/agent/tools";
+import { CODING_TOOLS, CODING_TOOL_NAMES, codingToolDescription } from "../src/agent/tools";
 
 describe("coding agent", () => {
   it("exposes read, write, edit, and run", () => {
-    expect(CODING_TOOLS.map((t) => t.name)).toEqual(["read", "write", "edit", "run"]);
+    expect(CODING_TOOL_NAMES).toEqual(["read", "write", "edit", "run"]);
+    expect(codingToolDescription("run")).toContain("JavaScript program");
   });
 
   it("assembles system prompt from tool snippets and guidelines", () => {
@@ -32,10 +33,10 @@ describe("coding agent", () => {
     }
   });
 
-  it("teaches staged-copy semantics and user-controlled publication", () => {
+  it("teaches staged changes and user-controlled publication", () => {
     const prompt = buildSystemPrompt("demo", CODING_TOOLS);
 
-    expect(prompt).toContain("staged");
+    expect(prompt).toContain("changes are staged");
     expect(prompt).toContain("user applies");
   });
 

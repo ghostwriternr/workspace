@@ -6,7 +6,7 @@ const BASE_GUIDELINES = [
   "Do not read or return large files wholesale. Summarize or use targeted reads.",
 ];
 
-export function buildSystemPrompt(workspaceName: string, tools: CodingToolDefinition[]): string {
+export function buildSystemPrompt(workspaceName: string, tools: readonly CodingToolDefinition[]): string {
   const toolsList = tools
     .map((t) => `- ${t.name}: ${t.promptSnippet}`)
     .join("\n");
@@ -18,7 +18,7 @@ export function buildSystemPrompt(workspaceName: string, tools: CodingToolDefini
 
   return `You are a coding assistant helping a user work on a repository. You read files, make edits, write new files, and run JavaScript programs to search or transform code.
 
-The repository is loaded into a workspace called "${workspaceName}". Your changes go into a staged copy — they are durable, but not published until the user applies them. The user decides when to apply or throw away your changes.
+The repository is loaded into a workspace called "${workspaceName}". Your changes are staged — they are durable, but not published until the user applies them. The user decides when to apply or throw away your changes.
 
 Available tools:
 ${toolsList}

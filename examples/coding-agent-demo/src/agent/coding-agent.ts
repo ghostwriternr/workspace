@@ -9,16 +9,12 @@ import { RepoEditController } from "../repo/edit-controller";
 import { RepoStateController } from "../repo/state-controller";
 import type { RepoImportSummary } from "../repo/import-controller";
 import { buildSystemPrompt } from "./prompt";
-import { CODING_TOOLS, CODING_TOOL_NAMES } from "./tools";
+import { CODING_TOOLS, CODING_TOOL_NAMES, codingToolDescription } from "./tools";
 
 export type CodingAgentState = {
   lastImport?: RepoImportSummary;
   editCopyId?: string;
 };
-
-function toolDescription(name: string): string {
-  return CODING_TOOLS.find((t) => t.name === name)!.description;
-}
 
 export class CodingAgent extends Think<Env, CodingAgentState> {
   static readonly actions = ["listRepoState", "refreshRepoState", "applyEdit", "discardEdit", ...CODING_TOOL_NAMES] as const;
@@ -43,14 +39,14 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
   getTools(): ToolSet {
     return {
       read: tool({
-        description: toolDescription("read"),
+        description: codingToolDescription("read"),
         inputSchema: z.object({
           path: z.string().min(1).describe("Path to the file or directory to read"),
         }),
         execute: async (input) => this.read(input),
       }),
       write: tool({
-        description: toolDescription("write"),
+        description: codingToolDescription("write"),
         inputSchema: z.object({
           path: z.string().min(1).describe("Path to the file to write"),
           contents: z.string().describe("Content to write to the file"),
@@ -58,7 +54,7 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
         execute: async (input) => this.write(input),
       }),
       edit: tool({
-        description: toolDescription("edit"),
+        description: codingToolDescription("edit"),
         inputSchema: z.object({
           path: z.string().min(1).describe("Path to the file to edit"),
           oldText: z.string().min(1).describe("Exact text to find and replace. Must be unique in the file."),
@@ -67,7 +63,7 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
         execute: async (input) => this.edit(input),
       }),
       run: tool({
-        description: toolDescription("run"),
+        description: codingToolDescription("run"),
         inputSchema: z.object({
           code: z.string().min(1).describe("JavaScript module code. Must default-export an async function that takes env."),
         }),

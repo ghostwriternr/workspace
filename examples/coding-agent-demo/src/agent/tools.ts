@@ -1,11 +1,11 @@
-export type CodingToolDefinition = {
-  name: string;
+export type CodingToolDefinition<Name extends string = string> = {
+  name: Name;
   description: string;
   promptSnippet: string;
-  promptGuidelines: string[];
+  promptGuidelines: readonly string[];
 };
 
-export const CODING_TOOLS: CodingToolDefinition[] = [
+export const CODING_TOOLS = [
   {
     name: "read",
     description:
@@ -45,6 +45,21 @@ export const CODING_TOOLS: CodingToolDefinition[] = [
       "run is not a shell — no subprocesses, no package manager, no native tools. But it runs full JavaScript, so use it freely for anything you can express in code.",
     ],
   },
-];
+] as const satisfies readonly CodingToolDefinition[];
 
-export const CODING_TOOL_NAMES = CODING_TOOLS.map((t) => t.name);
+export type CodingToolName = typeof CODING_TOOLS[number]["name"];
+type CodingTool = Extract<typeof CODING_TOOLS[number], { name: CodingToolName }>;
+
+export const CODING_TOOL_NAMES = CODING_TOOLS.map((tool) => tool.name) as CodingToolName[];
+
+export function codingToolDescription(name: CodingToolName): string {
+  return codingTool(name).description;
+}
+
+function codingTool(name: CodingToolName): CodingTool {
+  const definition = CODING_TOOLS.find((tool) => tool.name === name);
+  if (!definition) {
+    throw new Error(`Unknown coding tool: ${name}`);
+  }
+  return definition;
+}
