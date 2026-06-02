@@ -37,8 +37,8 @@ describe("RepoStateController", () => {
     });
   });
 
-  it("lists files from an active edit copy", async () => {
-    const workspaceName = `repo-state-edit-${crypto.randomUUID()}`;
+  it("lists files from an active working copy", async () => {
+    const workspaceName = `repo-state-working-${crypto.randomUUID()}`;
     const workspace = Workspace.get(env.WORKSPACES, workspaceName);
     const seed = await workspace.files.copy("seed");
     if (Result.isError(seed)) throw new Error("seed copy failed");
@@ -48,21 +48,21 @@ describe("RepoStateController", () => {
     ]);
     await seed.value.apply();
 
-    const edit = await workspace.files.copy("edit");
-    if (Result.isError(edit)) throw new Error("edit copy failed");
-    await edit.value.files.write("/notes.md", encoder.encode("draft note"));
+    const working = await workspace.files.copy("working");
+    if (Result.isError(working)) throw new Error("working copy failed");
+    await working.value.files.write("/notes.md", encoder.encode("draft note"));
 
     const state = await new RepoStateController({
       workspaces: env.WORKSPACES,
       workspaceName,
-      editCopyId: edit.value.id,
+      workingCopyId: working.value.id,
     }).listRepoState();
 
     expect(Result.isOk(state)).toBe(true);
     if (Result.isError(state)) throw new Error("repo state failed");
     expect(state.value).toEqual({
       workspaceName,
-      editCopyId: edit.value.id,
+      workingCopyId: working.value.id,
       files: [
         { path: "/README.md", type: "file" },
         { path: "/notes.md", type: "file" },
@@ -70,11 +70,11 @@ describe("RepoStateController", () => {
     });
   });
 
-  it("returns a value error when an active edit copy is missing", async () => {
+  it("returns a value error when an active working copy is missing", async () => {
     const state = await new RepoStateController({
       workspaces: env.WORKSPACES,
-      workspaceName: `repo-state-missing-edit-${crypto.randomUUID()}`,
-      editCopyId: "missing-copy",
+      workspaceName: `repo-state-missing-working-${crypto.randomUUID()}`,
+      workingCopyId: "missing-copy",
     }).listRepoState();
 
     expect(Result.isError(state)).toBe(true);

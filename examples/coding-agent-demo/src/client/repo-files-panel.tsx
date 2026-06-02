@@ -3,14 +3,14 @@ import { UI_COPY } from "./ui-copy";
 
 export function RepoFilesPanel({
   files,
-  activeEditId,
-  onApplyEdit,
-  onDiscardEdit,
+  activeWorkingCopyId,
+  onApplyWorkingCopy,
+  onDiscardWorkingCopy,
 }: {
   files: RepoState["files"];
-  activeEditId?: string;
-  onApplyEdit(): void;
-  onDiscardEdit(): void;
+  activeWorkingCopyId?: string;
+  onApplyWorkingCopy(): void;
+  onDiscardWorkingCopy(): void;
 }) {
   return (
     <article className="panel files-panel">
@@ -18,12 +18,12 @@ export function RepoFilesPanel({
         <p className="eyebrow">Passive state</p>
         <h2>{UI_COPY.filesTitle}</h2>
       </div>
-      {activeEditId ? (
+      {activeWorkingCopyId ? (
         <div className="edit-actions">
-          <span>{UI_COPY.activeEditLabel}</span>
-          <code>{activeEditId}</code>
-          <button type="button" onClick={onApplyEdit}>{UI_COPY.applyEditAction}</button>
-          <button type="button" className="secondary" onClick={onDiscardEdit}>{UI_COPY.discardEditAction}</button>
+          <span>{UI_COPY.activeWorkingCopyLabel}</span>
+          <code>{activeWorkingCopyId}</code>
+          <button type="button" onClick={onApplyWorkingCopy}>{UI_COPY.applyWorkingCopyAction}</button>
+          <button type="button" className="secondary" onClick={onDiscardWorkingCopy}>{UI_COPY.discardWorkingCopyAction}</button>
         </div>
       ) : null}
       {files.length === 0 ? (

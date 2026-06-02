@@ -5,7 +5,7 @@ import { createWorkersAI } from "workers-ai-provider";
 import { z } from "zod";
 
 import { createWorkspaceDynamicWorkerRunner } from "@cloudflare/workspace-adapter-dynamic-worker";
-import { RepoEditController } from "../repo/edit-controller";
+import { RepoWorkingCopyController } from "../repo/working-copy-controller";
 import { RepoStateController } from "../repo/state-controller";
 import type { RepoImportSummary } from "../repo/import-controller";
 import { buildSystemPrompt } from "./prompt";
@@ -14,11 +14,11 @@ import { CODING_TOOLS, CODING_TOOL_NAMES, codingToolDescription } from "./tools"
 
 export type CodingAgentState = {
   lastImport?: RepoImportSummary;
-  editCopyId?: string;
+  workingCopyId?: string;
 };
 
 export class CodingAgent extends Think<Env, CodingAgentState> {
-  static readonly actions = ["listRepoState", "refreshRepoState", "applyEdit", "discardEdit", ...CODING_TOOL_NAMES] as const;
+  static readonly actions = ["listRepoState", "refreshRepoState", "applyWorkingCopy", "discardWorkingCopy", ...CODING_TOOL_NAMES] as const;
 
   initialState: CodingAgentState = {};
   override workspace = disabledThinkWorkspace;
@@ -44,7 +44,7 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
         inputSchema: z.object({
           path: z.string().min(1).describe("Path to the file or directory to read"),
         }),
-        execute: async (input) => resultToModelToolOutput(await this.editController().read(input)),
+        execute: async (input) => resultToModelToolOutput(await this.workingCopyController().read(input)),
       }),
       write: tool({
         description: codingToolDescription("write"),
@@ -52,7 +52,7 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
           path: z.string().min(1).describe("Path to the file to write"),
           contents: z.string().describe("Content to write to the file"),
         }),
-        execute: async (input) => resultToModelToolOutput(await this.editController().write(input)),
+        execute: async (input) => resultToModelToolOutput(await this.workingCopyController().write(input)),
       }),
       edit: tool({
         description: codingToolDescription("edit"),
@@ -61,14 +61,14 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
           oldText: z.string().min(1).describe("Exact text to find and replace. Must be unique in the file."),
           newText: z.string().describe("Replacement text"),
         }),
-        execute: async (input) => resultToModelToolOutput(await this.editController().edit(input)),
+        execute: async (input) => resultToModelToolOutput(await this.workingCopyController().edit(input)),
       }),
       run: tool({
         description: codingToolDescription("run"),
         inputSchema: z.object({
           code: z.string().min(1).describe("JavaScript module code. Must default-export an async function that takes env."),
         }),
-        execute: async (input) => resultToModelToolOutput(await this.editController().run(input)),
+        execute: async (input) => resultToModelToolOutput(await this.workingCopyController().run(input)),
       }),
     };
   }
@@ -80,32 +80,32 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
 
   @callable()
   async read(input: { path: string }) {
-    return resultToRpc(await this.editController().read(input));
+    return resultToRpc(await this.workingCopyController().read(input));
   }
 
   @callable()
   async write(input: { path: string; contents: string }) {
-    return resultToRpc(await this.editController().write(input));
+    return resultToRpc(await this.workingCopyController().write(input));
   }
 
   @callable()
   async edit(input: { path: string; oldText: string; newText: string }) {
-    return resultToRpc(await this.editController().edit(input));
+    return resultToRpc(await this.workingCopyController().edit(input));
   }
 
   @callable()
   async run(input: { code: string }) {
-    return resultToRpc(await this.editController().run(input));
+    return resultToRpc(await this.workingCopyController().run(input));
   }
 
   @callable()
-  async applyEdit() {
-    return resultToRpc(await this.editController().applyEdit());
+  async applyWorkingCopy() {
+    return resultToRpc(await this.workingCopyController().applyWorkingCopy());
   }
 
   @callable()
-  async discardEdit() {
-    return resultToRpc(await this.editController().discardEdit());
+  async discardWorkingCopy() {
+    return resultToRpc(await this.workingCopyController().discardWorkingCopy());
   }
 
   @callable()
@@ -113,7 +113,7 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
     const repo = await new RepoStateController({
       workspaces: this.env.WORKSPACES,
       workspaceName: this.name,
-      editCopyId: this.state.editCopyId,
+      workingCopyId: this.state.workingCopyId,
     }).listRepoState();
 
     if (lastImport) {
@@ -122,14 +122,14 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
     return resultToRpc(repo);
   }
 
-  private editController(): RepoEditController {
-    return new RepoEditController({
+  private workingCopyController(): RepoWorkingCopyController {
+    return new RepoWorkingCopyController({
       workspaces: this.env.WORKSPACES,
       workspaceName: this.name,
       dynamicWorkerRunner: createWorkspaceDynamicWorkerRunner(this.env.DYNAMIC_WORKERS),
-      workspaceForEdit: (editCopyId) => this.ctx.exports.WorkspaceFileCapability({ props: { workspaceName: this.name, editCopyId } }),
-      getEditCopyId: () => this.state.editCopyId,
-      setEditCopyId: (editCopyId) => this.setState({ ...this.state, editCopyId }),
+      workspaceForWorkingCopy: (workingCopyId) => this.ctx.exports.WorkspaceFileCapability({ props: { workspaceName: this.name, workingCopyId } }),
+      getWorkingCopyId: () => this.state.workingCopyId,
+      setWorkingCopyId: (workingCopyId) => this.setState({ ...this.state, workingCopyId }),
     });
   }
 }

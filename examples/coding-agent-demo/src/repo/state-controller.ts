@@ -14,7 +14,7 @@ type RepoFileState = {
 
 export type RepoState = {
   workspaceName: string;
-  editCopyId?: string;
+  workingCopyId?: string;
   files: RepoFileState[];
 };
 
@@ -23,7 +23,7 @@ export type RepoStateError = WorkspaceOperationError;
 export type RepoStateControllerDependencies = {
   workspaces: WorkspaceNamespace;
   workspaceName: string;
-  editCopyId?: string;
+  workingCopyId?: string;
 };
 
 export class RepoStateController {
@@ -43,17 +43,17 @@ export class RepoStateController {
 
     return Result.ok({
       workspaceName: this.dependencies.workspaceName,
-      editCopyId: this.dependencies.editCopyId,
+      workingCopyId: this.dependencies.workingCopyId,
       files: files.value,
     });
   }
 
   private async filesToList(workspace: Workspace): Promise<BetterResult<RepoReadableFiles, RepoStateError>> {
-    if (!this.dependencies.editCopyId) {
+    if (!this.dependencies.workingCopyId) {
       return Result.ok(workspace.files);
     }
 
-    const copy = await workspace.files.getCopy(this.dependencies.editCopyId);
+    const copy = await workspace.files.getCopy(this.dependencies.workingCopyId);
     if (Result.isError(copy)) {
       return Result.err(copy.error);
     }

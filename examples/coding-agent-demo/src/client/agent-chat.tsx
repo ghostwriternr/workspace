@@ -47,7 +47,7 @@ export function AgentChat({
     return () => {
       cancelled = true;
     };
-  }, [status, agent.state?.editCopyId]);
+  }, [status, agent.state?.workingCopyId]);
 
   function submit(event: FormEvent) {
     event.preventDefault();

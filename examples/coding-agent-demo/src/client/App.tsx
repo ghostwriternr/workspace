@@ -12,7 +12,7 @@ import "./styles.css";
 const DEFAULT_WORKSPACE = "coding-demo";
 
 type ImportStatus = { tone: "idle" | "ok" | "error"; message: string };
-type EditActionResult =
+type WorkingCopyActionResult =
   | { status: "ok"; value: unknown }
   | { status: "error"; error: { tag: string; message?: string } };
 
@@ -29,7 +29,7 @@ export function App() {
   });
   const lastImport = agent.state?.lastImport;
   const lastImportKey = lastImport?.revisionId;
-  const activeEditId = repo?.editCopyId ?? agent.state?.editCopyId;
+  const activeWorkingCopyId = repo?.workingCopyId ?? agent.state?.workingCopyId;
 
   useEffect(() => {
     let cancelled = false;
@@ -49,28 +49,28 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [workspaceName, lastImportKey, agent.state?.editCopyId]);
+  }, [workspaceName, lastImportKey, agent.state?.workingCopyId]);
 
-  async function applyEdit() {
-    await runEditAction("applyEdit", "Applying edit to current Workspace files…", "Edit applied to current Workspace files.");
+  async function applyWorkingCopy() {
+    await runWorkingCopyAction("applyWorkingCopy", "Applying working copy to current Workspace files…", "Working copy applied to current Workspace files.");
   }
 
-  async function discardEdit() {
-    await runEditAction("discardEdit", "Discarding edit copy…", "Edit copy discarded.");
+  async function discardWorkingCopy() {
+    await runWorkingCopyAction("discardWorkingCopy", "Discarding working copy…", "Working copy discarded.");
   }
 
-  async function runEditAction(method: "applyEdit" | "discardEdit", pending: string, done: string) {
+  async function runWorkingCopyAction(method: "applyWorkingCopy" | "discardWorkingCopy", pending: string, done: string) {
     setStatus({ tone: "idle", message: pending });
     try {
       await agent.ready;
-      const result = await agent.call(method) as EditActionResult;
+      const result = await agent.call(method) as WorkingCopyActionResult;
       if (result.status === "error") {
         throw new Error(result.error.message ?? result.error.tag);
       }
       setRepo(await loadRepoState(agent));
       setStatus({ tone: "ok", message: done });
     } catch (error) {
-      setStatus({ tone: "error", message: error instanceof Error ? error.message : "Could not update edit copy." });
+      setStatus({ tone: "error", message: error instanceof Error ? error.message : "Could not update working copy." });
     }
   }
 
@@ -146,9 +146,9 @@ export function App() {
       <section className="workspace-grid">
         <RepoFilesPanel
           files={repo?.files ?? []}
-          activeEditId={activeEditId}
-          onApplyEdit={applyEdit}
-          onDiscardEdit={discardEdit}
+          activeWorkingCopyId={activeWorkingCopyId}
+          onApplyWorkingCopy={applyWorkingCopy}
+          onDiscardWorkingCopy={discardWorkingCopy}
         />
         <AgentChat agent={agent} onRepoState={setRepo} />
       </section>

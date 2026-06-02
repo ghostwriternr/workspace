@@ -6,15 +6,15 @@ import { Workspace } from "@cloudflare/workspace";
 const readmeBytes = new TextEncoder().encode("# Repo");
 
 describe("WorkspaceFileCapability", () => {
-  it("adapts an edit copy into a scoped WorkerEntrypoint binding", async () => {
+  it("adapts a working copy into a scoped WorkerEntrypoint binding", async () => {
     const workspaceName = `workspace-file-capability-${crypto.randomUUID()}`;
     const workspace = Workspace.get(env.WORKSPACES, workspaceName);
-    const copy = await workspace.files.copy("edit");
+    const copy = await workspace.files.copy("working");
     if (Result.isError(copy)) throw new Error("copy failed");
     await copy.value.files.write("/README.md", readmeBytes);
 
     const capability = exports.WorkspaceFileCapability({
-      props: { workspaceName, editCopyId: copy.value.id },
+      props: { workspaceName, workingCopyId: copy.value.id },
     });
 
     await expect(capability.readFile("README.md")).resolves.toEqual({ status: "ok", value: readmeBytes });

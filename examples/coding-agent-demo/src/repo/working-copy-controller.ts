@@ -20,13 +20,13 @@ import type {
 } from "@cloudflare/workspace-adapter-dynamic-worker";
 import { normalizeAgentPath } from "../agent/path";
 
-export type RepoEditControllerDependencies = {
+export type RepoWorkingCopyControllerDependencies = {
   workspaceName: string;
   workspaces: WorkspaceNamespace;
   dynamicWorkerRunner: WorkspaceDynamicWorkerRunner;
-  workspaceForEdit(editCopyId: string): WorkspaceDynamicWorkerFileCapability;
-  getEditCopyId(): string | undefined;
-  setEditCopyId(editCopyId: string | undefined): void;
+  workspaceForWorkingCopy(workingCopyId: string): WorkspaceDynamicWorkerFileCapability;
+  getWorkingCopyId(): string | undefined;
+  setWorkingCopyId(workingCopyId: string | undefined): void;
 };
 
 type RepoReadableFiles = {
@@ -55,16 +55,16 @@ export type RepoRunResult = {
   result: WorkspaceDynamicWorkerResult;
 };
 
-export type RepoApplyEditResult = {
-  status: "edit-applied";
-  editCopyId: string;
+export type RepoApplyWorkingCopyResult = {
+  status: "working-copy-applied";
+  workingCopyId: string;
   revisionId: string;
   createdAt: number;
 };
 
-export type RepoDiscardEditResult = {
-  status: "edit-discarded";
-  editCopyId: string;
+export type RepoDiscardWorkingCopyResult = {
+  status: "working-copy-discarded";
+  workingCopyId: string;
 };
 
 type TextNotFoundError = {
@@ -80,8 +80,8 @@ type AmbiguousTextEditError = {
   matches: number;
 };
 
-export type NoActiveRepoEditError = {
-  tag: "NoActiveRepoEditError";
+export type NoActiveWorkingCopyError = {
+  tag: "NoActiveWorkingCopyError";
   message: string;
 };
 
@@ -89,14 +89,14 @@ export type RepoReadError = WorkspaceCurrentFileError | WorkspaceCopyError | Wor
 export type RepoWriteError = WorkspaceCopyError | WorkspaceFileWriteTreeError;
 export type RepoExactEditError = TextNotFoundError | AmbiguousTextEditError | WorkspaceCopyError | WorkspaceCopyFileError | WorkspaceFileWriteTreeError;
 export type RepoRunError = WorkspaceCopyError | WorkspaceDynamicWorkerExecutionError;
-export type RepoApplyEditError = NoActiveRepoEditError | WorkspaceCopyError | WorkspaceApplyError;
-export type RepoDiscardEditError = NoActiveRepoEditError | WorkspaceCopyError | WorkspaceDiscardError;
+export type RepoApplyWorkingCopyError = NoActiveWorkingCopyError | WorkspaceCopyError | WorkspaceApplyError;
+export type RepoDiscardWorkingCopyError = NoActiveWorkingCopyError | WorkspaceCopyError | WorkspaceDiscardError;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-export class RepoEditController {
-  constructor(private readonly dependencies: RepoEditControllerDependencies) {}
+export class RepoWorkingCopyController {
+  constructor(private readonly dependencies: RepoWorkingCopyControllerDependencies) {}
 
   async read({ path }: { path: string }): Promise<BetterResult<RepoReadResult, RepoReadError>> {
     const normalizedPath = normalizeAgentPath(path);
@@ -127,7 +127,7 @@ export class RepoEditController {
 
   async write({ path, contents }: { path: string; contents: string }): Promise<BetterResult<RepoWriteResult, RepoWriteError>> {
     const normalizedPath = normalizeAgentPath(path);
-    const copy = await this.editCopy();
+    const copy = await this.workingCopy();
     if (Result.isError(copy)) {
       return Result.err(copy.error);
     }
@@ -144,7 +144,7 @@ export class RepoEditController {
 
   async edit({ path, oldText, newText }: { path: string; oldText: string; newText: string }): Promise<BetterResult<RepoExactEditResult, RepoExactEditError>> {
     const normalizedPath = normalizeAgentPath(path);
-    const copy = await this.editCopy();
+    const copy = await this.workingCopy();
     if (Result.isError(copy)) {
       return Result.err(copy.error);
     }
@@ -183,14 +183,14 @@ export class RepoEditController {
   }
 
   async run({ code }: { code: string }): Promise<BetterResult<RepoRunResult, RepoRunError>> {
-    const copy = await this.editCopy();
+    const copy = await this.workingCopy();
     if (Result.isError(copy)) {
       return Result.err(copy.error);
     }
 
     const result = await this.dependencies.dynamicWorkerRunner.run({
       code,
-      workspace: this.dependencies.workspaceForEdit(copy.value.id),
+      workspace: this.dependencies.workspaceForWorkingCopy(copy.value.id),
     });
     if (Result.isError(result)) {
       return Result.err(result.error);
@@ -202,8 +202,8 @@ export class RepoEditController {
     });
   }
 
-  async applyEdit(): Promise<BetterResult<RepoApplyEditResult, RepoApplyEditError>> {
-    const copy = await this.activeEditCopy("apply");
+  async applyWorkingCopy(): Promise<BetterResult<RepoApplyWorkingCopyResult, RepoApplyWorkingCopyError>> {
+    const copy = await this.activeWorkingCopy("apply");
     if (Result.isError(copy)) {
       return Result.err(copy.error);
     }
@@ -213,17 +213,17 @@ export class RepoEditController {
       return Result.err(applied.error);
     }
 
-    this.dependencies.setEditCopyId(undefined);
+    this.dependencies.setWorkingCopyId(undefined);
     return Result.ok({
-      status: "edit-applied",
-      editCopyId: copy.value.id,
+      status: "working-copy-applied",
+      workingCopyId: copy.value.id,
       revisionId: applied.value.revisionId,
       createdAt: applied.value.createdAt,
     });
   }
 
-  async discardEdit(): Promise<BetterResult<RepoDiscardEditResult, RepoDiscardEditError>> {
-    const copy = await this.activeEditCopy("discard");
+  async discardWorkingCopy(): Promise<BetterResult<RepoDiscardWorkingCopyResult, RepoDiscardWorkingCopyError>> {
+    const copy = await this.activeWorkingCopy("discard");
     if (Result.isError(copy)) {
       return Result.err(copy.error);
     }
@@ -233,60 +233,60 @@ export class RepoEditController {
       return Result.err(discarded.error);
     }
 
-    this.dependencies.setEditCopyId(undefined);
+    this.dependencies.setWorkingCopyId(undefined);
     return Result.ok({
-      status: "edit-discarded",
-      editCopyId: copy.value.id,
+      status: "working-copy-discarded",
+      workingCopyId: copy.value.id,
     });
   }
 
   private async filesForRead(): Promise<BetterResult<RepoReadableFiles, WorkspaceCopyError>> {
     const workspace = Workspace.get(this.dependencies.workspaces, this.dependencies.workspaceName);
-    const editCopyId = this.dependencies.getEditCopyId();
-    if (!editCopyId) {
+    const workingCopyId = this.dependencies.getWorkingCopyId();
+    if (!workingCopyId) {
       return Result.ok(workspace.files);
     }
 
-    const copy = await workspace.files.getCopy(editCopyId);
+    const copy = await workspace.files.getCopy(workingCopyId);
     if (Result.isError(copy)) {
-      this.dependencies.setEditCopyId(undefined);
+      this.dependencies.setWorkingCopyId(undefined);
       return Result.err(copy.error);
     }
     return Result.ok(copy.value.files);
   }
 
-  private async editCopy(): Promise<BetterResult<WorkspaceFileCopy, WorkspaceCopyError>> {
+  private async workingCopy(): Promise<BetterResult<WorkspaceFileCopy, WorkspaceCopyError>> {
     const workspace = Workspace.get(this.dependencies.workspaces, this.dependencies.workspaceName);
-    const existing = this.dependencies.getEditCopyId();
+    const existing = this.dependencies.getWorkingCopyId();
     if (existing) {
       const copy = await workspace.files.getCopy(existing);
       if (!Result.isError(copy)) {
         return Result.ok(copy.value);
       }
-      this.dependencies.setEditCopyId(undefined);
+      this.dependencies.setWorkingCopyId(undefined);
     }
 
-    const copy = await workspace.files.copy("coding-edit");
+    const copy = await workspace.files.copy("coding-working-copy");
     if (Result.isError(copy)) {
       return Result.err(copy.error);
     }
-    this.dependencies.setEditCopyId(copy.value.id);
+    this.dependencies.setWorkingCopyId(copy.value.id);
     return Result.ok(copy.value);
   }
 
-  private async activeEditCopy(action: "apply" | "discard"): Promise<BetterResult<WorkspaceFileCopy, NoActiveRepoEditError | WorkspaceCopyError>> {
-    const editCopyId = this.dependencies.getEditCopyId();
-    if (!editCopyId) {
+  private async activeWorkingCopy(action: "apply" | "discard"): Promise<BetterResult<WorkspaceFileCopy, NoActiveWorkingCopyError | WorkspaceCopyError>> {
+    const workingCopyId = this.dependencies.getWorkingCopyId();
+    if (!workingCopyId) {
       return Result.err({
-        tag: "NoActiveRepoEditError",
-        message: `There is no active repo edit to ${action}.`,
+        tag: "NoActiveWorkingCopyError",
+        message: `There is no active working copy to ${action}.`,
       });
     }
 
     const workspace = Workspace.get(this.dependencies.workspaces, this.dependencies.workspaceName);
-    const copy = await workspace.files.getCopy(editCopyId);
+    const copy = await workspace.files.getCopy(workingCopyId);
     if (Result.isError(copy)) {
-      this.dependencies.setEditCopyId(undefined);
+      this.dependencies.setWorkingCopyId(undefined);
       return Result.err(copy.error);
     }
 

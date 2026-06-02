@@ -28,16 +28,17 @@ describe("coding agent", () => {
   it("does not leak implementation details into the prompt", () => {
     const prompt = buildSystemPrompt("demo", CODING_TOOLS);
 
-    for (const term of ["Think", "session", "copy ID", "RPC", "R2", "SQLite", "Durable Object", "runWorkspaceWorker", "applyEdit", "discardEdit"]) {
+    for (const term of ["Think", "session", "copy ID", "RPC", "R2", "SQLite", "Durable Object", "runWorkspaceWorker", "applyWorkingCopy", "discardWorkingCopy"]) {
       expect(prompt).not.toContain(term);
     }
   });
 
-  it("teaches staged changes and user-controlled publication", () => {
+  it("teaches working copy semantics and user-controlled publication", () => {
     const prompt = buildSystemPrompt("demo", CODING_TOOLS);
 
-    expect(prompt).toContain("changes are staged");
+    expect(prompt).toContain("working copy");
     expect(prompt).toContain("user applies");
+    expect(prompt).not.toContain("changes are staged");
   });
 
   it("teaches run as powerful JS, not a lesser bash", () => {
