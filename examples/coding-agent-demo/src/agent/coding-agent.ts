@@ -9,7 +9,7 @@ import { RepoEditController } from "../repo/edit-controller";
 import { RepoStateController } from "../repo/state-controller";
 import type { RepoImportSummary } from "../repo/import-controller";
 import { codingAgentPrompt } from "./prompt";
-import { CODING_TOOL_NAMES } from "./tools";
+import { CODING_TOOL_DESCRIPTIONS, CODING_TOOL_NAMES } from "./tools";
 
 export type CodingAgentState = {
   lastImport?: RepoImportSummary;
@@ -39,34 +39,34 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
   getTools(): ToolSet {
     return {
       read: tool({
-        description: "Read a text file or list a directory from the current repo state or active edit copy.",
-        inputSchema: z.object({ path: z.string().min(1) }),
+        description: CODING_TOOL_DESCRIPTIONS.read,
+        inputSchema: z.object({
+          path: z.string().min(1).describe("Path to the file or directory to read"),
+        }),
         execute: async (input) => this.read(input),
       }),
       write: tool({
-        description: "Write a text file in the active edit copy, creating parent directories as needed.",
+        description: CODING_TOOL_DESCRIPTIONS.write,
         inputSchema: z.object({
-          path: z.string().min(1),
-          contents: z.string(),
+          path: z.string().min(1).describe("Path to the file to write"),
+          contents: z.string().describe("Content to write to the file"),
         }),
         execute: async (input) => this.write(input),
       }),
       edit: tool({
-        description: "Replace one exact text occurrence in a file in the active edit copy. Fails when the match is missing or ambiguous.",
+        description: CODING_TOOL_DESCRIPTIONS.edit,
         inputSchema: z.object({
-          path: z.string().min(1),
-          oldText: z.string().min(1),
-          newText: z.string(),
+          path: z.string().min(1).describe("Path to the file to edit"),
+          oldText: z.string().min(1).describe("Exact text to find and replace. Must be unique in the file."),
+          newText: z.string().describe("Replacement text"),
         }),
         execute: async (input) => this.edit(input),
       }),
       run: tool({
-        description: [
-          "Run Worker-native JavaScript against the active edit copy through env.WORKSPACE.",
-          "Use this for repo inspection or edits that are easier to express in code.",
-          "The module must default-export an async function that accepts env.",
-        ].join(" "),
-        inputSchema: z.object({ code: z.string().min(1) }),
+        description: CODING_TOOL_DESCRIPTIONS.run,
+        inputSchema: z.object({
+          code: z.string().min(1).describe("JavaScript module code. Must default-export an async function that takes env."),
+        }),
         execute: async (input) => this.run(input),
       }),
     };

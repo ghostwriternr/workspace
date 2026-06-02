@@ -1,26 +1,34 @@
 import { describe, expect, it } from "vitest";
 
 import { codingAgentPrompt } from "../src/agent/prompt";
-import { CODING_TOOL_NAMES } from "../src/agent/tools";
+import { CODING_TOOL_DESCRIPTIONS, CODING_TOOL_NAMES } from "../src/agent/tools";
 
 describe("coding agent", () => {
-  it("exposes a small Pi-like Workspace toolbelt", () => {
+  it("exposes read, write, edit, and run", () => {
     expect(CODING_TOOL_NAMES).toEqual(["read", "write", "edit", "run"]);
   });
 
-  it("describes Workspace files as durable state and Dynamic Workers as execution", () => {
-    const prompt = codingAgentPrompt("demo-workspace");
+  it("does not leak implementation details into the prompt", () => {
+    const prompt = codingAgentPrompt("demo");
 
-    expect(prompt).toContain("demo-workspace");
-    expect(prompt).toContain("Use read, write, edit, and run");
-    expect(prompt).toContain("env.WORKSPACE binding exposes readFile, writeFile, list, and stat");
-    expect(prompt).toContain("methods also return { status: 'ok', value } or { status: 'error', error } objects");
-    expect(prompt).toContain("Leave changes in the active edit copy for the user to apply or discard");
-    expect(prompt).not.toContain("Use listRepoState");
-    expect(prompt).not.toContain("applyEdit");
-    expect(prompt).not.toContain("discardEdit");
-    expect(prompt).not.toContain("runWorkspaceWorker");
-    expect(prompt).not.toContain("runDynamicWorker");
-    expect(prompt).not.toContain("runSandboxCommand");
+    for (const term of ["Think", "session", "copy ID", "RPC", "R2", "SQLite", "Durable Object", "runWorkspaceWorker", "applyEdit", "discardEdit"]) {
+      expect(prompt).not.toContain(term);
+    }
+  });
+
+  it("teaches staged-copy semantics and user-controlled publication", () => {
+    const prompt = codingAgentPrompt("demo");
+
+    expect(prompt).toContain("staged");
+    expect(prompt).toContain("user applies");
+  });
+
+  it("teaches run as powerful JS, not a lesser bash", () => {
+    const prompt = codingAgentPrompt("demo");
+
+    expect(prompt).toContain("JavaScript");
+    expect(prompt).toContain("env.WORKSPACE");
+    // honest about limits
+    expect(prompt).toContain("not a shell");
   });
 });
