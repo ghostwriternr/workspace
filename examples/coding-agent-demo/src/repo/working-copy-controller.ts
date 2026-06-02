@@ -36,7 +36,15 @@ type RepoReadableFiles = {
 };
 
 export type RepoReadResult =
-  | { status: "file-read"; path: string; contents: string }
+  | {
+      status: "file-read";
+      path: string;
+      contents: string;
+      startLine: number;
+      endLine: number;
+      totalLines: number;
+      truncated: boolean;
+    }
   | { status: "directory-listed"; path: string; entries: WorkspaceEntry[] };
 
 export type RepoWriteResult = {
@@ -85,7 +93,15 @@ export type NoActiveWorkingCopyError = {
   message: string;
 };
 
-export type RepoReadError = WorkspaceCurrentFileError | WorkspaceCopyError | WorkspaceCopyFileError;
+type ReadOffsetOutOfRangeError = {
+  tag: "ReadOffsetOutOfRangeError";
+  message: string;
+  path: string;
+  offset: number;
+  totalLines: number;
+};
+
+export type RepoReadError = ReadOffsetOutOfRangeError | WorkspaceCurrentFileError | WorkspaceCopyError | WorkspaceCopyFileError;
 export type RepoWriteError = WorkspaceCopyError | WorkspaceFileWriteTreeError;
 export type RepoExactEditError = TextNotFoundError | AmbiguousTextEditError | WorkspaceCopyError | WorkspaceCopyFileError | WorkspaceFileWriteTreeError;
 export type RepoRunError = WorkspaceCopyError | WorkspaceDynamicWorkerExecutionError;
@@ -94,11 +110,13 @@ export type RepoDiscardWorkingCopyError = NoActiveWorkingCopyError | WorkspaceCo
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const DEFAULT_READ_MAX_LINES = 2000;
+const DEFAULT_READ_MAX_BYTES = 50 * 1024;
 
 export class RepoWorkingCopyController {
   constructor(private readonly dependencies: RepoWorkingCopyControllerDependencies) {}
 
-  async read({ path }: { path: string }): Promise<BetterResult<RepoReadResult, RepoReadError>> {
+  async read({ path, offset, limit }: { path: string; offset?: number; limit?: number }): Promise<BetterResult<RepoReadResult, RepoReadError>> {
     const normalizedPath = normalizeAgentPath(path);
     const files = await this.filesForRead();
     if (Result.isError(files)) {
@@ -122,7 +140,7 @@ export class RepoWorkingCopyController {
     if (Result.isError(contents)) {
       return Result.err(contents.error);
     }
-    return Result.ok({ status: "file-read", path: normalizedPath, contents: decoder.decode(contents.value) });
+    return formatReadResult(normalizedPath, decoder.decode(contents.value), { offset, limit });
   }
 
   async write({ path, contents }: { path: string; contents: string }): Promise<BetterResult<RepoWriteResult, RepoWriteError>> {
@@ -292,6 +310,122 @@ export class RepoWorkingCopyController {
 
     return Result.ok(copy.value);
   }
+}
+
+function formatReadResult(
+  path: string,
+  text: string,
+  options: { offset?: number; limit?: number },
+): BetterResult<RepoReadResult, ReadOffsetOutOfRangeError> {
+  const lines = text.split("\n");
+  const totalLines = lines.length;
+  const startLine = options.offset ?? 1;
+  const startIndex = Math.max(0, startLine - 1);
+  if (startIndex >= totalLines) {
+    return Result.err({
+      tag: "ReadOffsetOutOfRangeError",
+      message: `Offset ${startLine} is beyond end of ${path} (${formatLineCount(totalLines)} total).`,
+      path,
+      offset: startLine,
+      totalLines,
+    });
+  }
+
+  const requestedEndIndex = options.limit === undefined
+    ? totalLines
+    : Math.min(totalLines, startIndex + options.limit);
+  const maxLines = Math.min(options.limit ?? DEFAULT_READ_MAX_LINES, DEFAULT_READ_MAX_LINES);
+  const selected = selectReadableLines(lines, startIndex, requestedEndIndex, maxLines);
+  const endLine = selected.outputLines === 0 ? startLine - 1 : startLine + selected.outputLines - 1;
+  const note = readContinuationNote({
+    endLine,
+    limitedBy: selected.limitedBy,
+    startLine,
+    totalLines,
+  });
+  const contents = note
+    ? selected.contents.length > 0 ? `${selected.contents}\n\n${note}` : note
+    : selected.contents;
+
+  return Result.ok({
+    status: "file-read",
+    path,
+    contents,
+    startLine,
+    endLine,
+    totalLines,
+    truncated: note !== undefined,
+  });
+}
+
+type SelectedLines = {
+  contents: string;
+  outputLines: number;
+  limitedBy?: "lines" | "bytes" | "user";
+};
+
+function selectReadableLines(
+  lines: string[],
+  startIndex: number,
+  requestedEndIndex: number,
+  maxLines: number,
+): SelectedLines {
+  const output: string[] = [];
+  let limitedBy: SelectedLines["limitedBy"];
+
+  for (let index = startIndex; index < requestedEndIndex && output.length < maxLines; index += 1) {
+    const next = [...output, lines[index] ?? ""];
+    const bytes = encoder.encode(next.join("\n")).byteLength;
+    if (bytes > DEFAULT_READ_MAX_BYTES) {
+      limitedBy = "bytes";
+      break;
+    }
+    output.push(lines[index] ?? "");
+  }
+
+  const consumedAllRequested = startIndex + output.length >= requestedEndIndex;
+  if (!limitedBy && !consumedAllRequested) {
+    limitedBy = "lines";
+  }
+  if (!limitedBy && requestedEndIndex < lines.length) {
+    limitedBy = "user";
+  }
+
+  return { contents: output.join("\n"), outputLines: output.length, limitedBy };
+}
+
+type ContinuationNoteOptions = {
+  startLine: number;
+  endLine: number;
+  totalLines: number;
+  limitedBy?: "lines" | "bytes" | "user";
+};
+
+function readContinuationNote(options: ContinuationNoteOptions): string | undefined {
+  if (!options.limitedBy) return undefined;
+
+  const nextOffset = options.endLine + 1;
+  if (options.limitedBy === "user") {
+    const remaining = options.totalLines - options.endLine;
+    return `[${remaining} more lines in file. Use offset=${nextOffset} to continue.]`;
+  }
+
+  if (options.limitedBy === "bytes") {
+    if (options.endLine < options.startLine) {
+      return `[Line ${options.startLine} exceeds the ${formatSize(DEFAULT_READ_MAX_BYTES)} read limit.]`;
+    }
+    return `[Showing lines ${options.startLine}-${options.endLine} of ${options.totalLines} (${formatSize(DEFAULT_READ_MAX_BYTES)} limit). Use offset=${nextOffset} to continue.]`;
+  }
+
+  return `[Showing lines ${options.startLine}-${options.endLine} of ${options.totalLines}. Use offset=${nextOffset} to continue.]`;
+}
+
+function formatLineCount(lines: number): string {
+  return `${lines} ${lines === 1 ? "line" : "lines"}`;
+}
+
+function formatSize(bytes: number): string {
+  return bytes < 1024 ? `${bytes}B` : `${Math.round(bytes / 1024)}KB`;
 }
 
 function relativeTreePath(path: string): string {

@@ -43,6 +43,8 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
         description: codingToolDescription("read"),
         inputSchema: z.object({
           path: z.string().min(1).describe("Path to the file or directory to read"),
+          offset: z.number().int().positive().optional().describe("Line number to start reading from, 1-indexed"),
+          limit: z.number().int().positive().optional().describe("Maximum number of lines to read"),
         }),
         execute: async (input) => resultToModelToolOutput(await this.workingCopyController().read(input)),
       }),
@@ -79,7 +81,7 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
   }
 
   @callable()
-  async read(input: { path: string }) {
+  async read(input: { path: string; offset?: number; limit?: number }) {
     return resultToRpc(await this.workingCopyController().read(input));
   }
 

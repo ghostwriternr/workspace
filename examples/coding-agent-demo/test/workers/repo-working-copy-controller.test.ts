@@ -16,6 +16,10 @@ describe("RepoWorkingCopyController", () => {
       status: "file-read",
       path: "/README.md",
       contents: "# Repo",
+      startLine: 1,
+      endLine: 1,
+      totalLines: 1,
+      truncated: false,
     });
     expect(await expectOk(controller.read({ path: "/" }))).toMatchObject({
       status: "directory-listed",
@@ -23,6 +27,83 @@ describe("RepoWorkingCopyController", () => {
       entries: [{ path: "/README.md", type: "file" }],
     });
     expect(getWorkingCopyId()).toBeUndefined();
+  });
+
+  it("truncates large reads and supports offset and limit", async () => {
+    const { controller, workspace } = await setupWorkingCopyController();
+    const large = unwrap(await workspace.files.copy("large"));
+    await large.files.writeTree("/", [
+      { path: "large.md", contents: encoder.encode(numberedLines(2001)) },
+    ]);
+    await large.apply();
+
+    const first = await expectOk(controller.read({ path: "large.md" }));
+    expect(first).toMatchObject({
+      status: "file-read",
+      path: "/large.md",
+      startLine: 1,
+      endLine: 2000,
+      totalLines: 2001,
+      truncated: true,
+    });
+    if (first.status !== "file-read") throw new Error("expected file read");
+    expect(first.contents).toContain("line 1\nline 2");
+    expect(first.contents).toContain("[Showing lines 1-2000 of 2001. Use offset=2001 to continue.]");
+
+    expect(await expectOk(controller.read({ path: "large.md", offset: 2001, limit: 1 }))).toEqual({
+      status: "file-read",
+      path: "/large.md",
+      contents: "line 2001",
+      startLine: 2001,
+      endLine: 2001,
+      totalLines: 2001,
+      truncated: false,
+    });
+
+    expect(await expectOk(controller.read({ path: "large.md", offset: 2, limit: 2 }))).toEqual({
+      status: "file-read",
+      path: "/large.md",
+      contents: "line 2\nline 3\n\n[1998 more lines in file. Use offset=4 to continue.]",
+      startLine: 2,
+      endLine: 3,
+      totalLines: 2001,
+      truncated: true,
+    });
+  });
+
+  it("caps read output by bytes without splitting lines", async () => {
+    const { controller, workspace } = await setupWorkingCopyController();
+    const large = unwrap(await workspace.files.copy("large-bytes"));
+    const lines = Array.from({ length: 200 }, () => "x".repeat(512)).join("\n");
+    await large.files.writeTree("/", [
+      { path: "wide.md", contents: encoder.encode(lines) },
+    ]);
+    await large.apply();
+
+    const result = await expectOk(controller.read({ path: "wide.md" }));
+
+    expect(result).toMatchObject({
+      status: "file-read",
+      path: "/wide.md",
+      startLine: 1,
+      endLine: 99,
+      totalLines: 200,
+      truncated: true,
+    });
+    if (result.status !== "file-read") throw new Error("expected file read");
+    expect(result.contents).toContain("[Showing lines 1-99 of 200 (50KB limit). Use offset=100 to continue.]");
+  });
+
+  it("returns a value error when read offset is beyond the file", async () => {
+    const { controller } = await setupWorkingCopyController();
+
+    expect(await expectError(controller.read({ path: "README.md", offset: 2 }))).toEqual({
+      tag: "ReadOffsetOutOfRangeError",
+      message: "Offset 2 is beyond end of /README.md (1 line total).",
+      path: "/README.md",
+      offset: 2,
+      totalLines: 1,
+    });
   });
 
   it("writes and edits files in an active working copy", async () => {
@@ -155,6 +236,10 @@ async function setupWorkingCopyController() {
     runner,
     getWorkingCopyId: () => workingCopyId,
   };
+}
+
+function numberedLines(count: number): string {
+  return Array.from({ length: count }, (_, index) => `line ${index + 1}`).join("\n");
 }
 
 function unwrap<T, E>(result: BetterResult<T, E>): T {

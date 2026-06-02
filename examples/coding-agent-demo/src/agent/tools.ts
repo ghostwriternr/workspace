@@ -9,10 +9,11 @@ export const CODING_TOOLS = [
   {
     name: "read",
     description:
-      "Read the contents of a file, or list a directory. Returns text content for files, entry names for directories.",
+      "Read the contents of a file, or list a directory. File reads are truncated at 2000 lines or 50KB by default. Use offset and limit to continue through large files.",
     promptSnippet: "Read file contents or list a directory",
     promptGuidelines: [
       "Use read to look at files. Use it for targeted inspection, not to dump entire directories.",
+      "File reads are truncated at 2000 lines or 50KB. Use offset and limit when you need more of a large file.",
     ],
   },
   {
