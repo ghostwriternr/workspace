@@ -17,14 +17,18 @@ describe("WorkspaceFileCapability", () => {
       props: { workspaceName, editCopyId: copy.value.id },
     });
 
-    await expect(capability.readFile("/README.md")).resolves.toEqual({ status: "ok", value: readmeBytes });
-    await expect(capability.stat("/README.md")).resolves.toMatchObject({
+    await expect(capability.readFile("README.md")).resolves.toEqual({ status: "ok", value: readmeBytes });
+    await expect(capability.stat("./README.md")).resolves.toMatchObject({
       status: "ok",
       value: {
         path: "/README.md",
         type: "file",
         size: readmeBytes.byteLength,
       },
+    });
+    await expect(capability.readFile("../README.md")).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "ScopedWorkspacePathError" },
     });
     await expect(capability.readFile("/missing.md")).resolves.toMatchObject({
       status: "error",

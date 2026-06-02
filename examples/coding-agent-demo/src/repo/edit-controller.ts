@@ -18,6 +18,7 @@ import type {
   WorkspaceDynamicWorkerResult,
   WorkspaceDynamicWorkerRunner,
 } from "@cloudflare/workspace-adapter-dynamic-worker";
+import { normalizeAgentPath } from "../agent/path";
 
 export type RepoEditControllerDependencies = {
   workspaceName: string;
@@ -40,20 +41,17 @@ export type RepoReadResult =
 
 export type RepoWriteResult = {
   status: "file-written";
-  editCopyId: string;
   path: string;
 };
 
 export type RepoExactEditResult = {
   status: "file-edited";
-  editCopyId: string;
   path: string;
   replacements: 1;
 };
 
 export type RepoRunResult = {
   status: "run-completed";
-  editCopyId: string;
   result: WorkspaceDynamicWorkerResult;
 };
 
@@ -101,54 +99,57 @@ export class RepoEditController {
   constructor(private readonly dependencies: RepoEditControllerDependencies) {}
 
   async read({ path }: { path: string }): Promise<BetterResult<RepoReadResult, RepoReadError>> {
+    const normalizedPath = normalizeAgentPath(path);
     const files = await this.filesForRead();
     if (Result.isError(files)) {
       return Result.err(files.error);
     }
 
-    const stat = await files.value.stat(path);
+    const stat = await files.value.stat(normalizedPath);
     if (Result.isError(stat)) {
       return Result.err(stat.error);
     }
 
     if (stat.value.type === "directory") {
-      const entries = await files.value.list(path);
+      const entries = await files.value.list(normalizedPath);
       if (Result.isError(entries)) {
         return Result.err(entries.error);
       }
-      return Result.ok({ status: "directory-listed", path, entries: entries.value });
+      return Result.ok({ status: "directory-listed", path: normalizedPath, entries: entries.value });
     }
 
-    const contents = await files.value.read(path);
+    const contents = await files.value.read(normalizedPath);
     if (Result.isError(contents)) {
       return Result.err(contents.error);
     }
-    return Result.ok({ status: "file-read", path, contents: decoder.decode(contents.value) });
+    return Result.ok({ status: "file-read", path: normalizedPath, contents: decoder.decode(contents.value) });
   }
 
   async write({ path, contents }: { path: string; contents: string }): Promise<BetterResult<RepoWriteResult, RepoWriteError>> {
+    const normalizedPath = normalizeAgentPath(path);
     const copy = await this.editCopy();
     if (Result.isError(copy)) {
       return Result.err(copy.error);
     }
 
     const written = await copy.value.files.writeTree("/", [
-      { path: relativeTreePath(path), contents: encoder.encode(contents) },
+      { path: relativeTreePath(normalizedPath), contents: encoder.encode(contents) },
     ]);
     if (Result.isError(written)) {
       return Result.err(written.error);
     }
 
-    return Result.ok({ status: "file-written", editCopyId: copy.value.id, path });
+    return Result.ok({ status: "file-written", path: normalizedPath });
   }
 
   async edit({ path, oldText, newText }: { path: string; oldText: string; newText: string }): Promise<BetterResult<RepoExactEditResult, RepoExactEditError>> {
+    const normalizedPath = normalizeAgentPath(path);
     const copy = await this.editCopy();
     if (Result.isError(copy)) {
       return Result.err(copy.error);
     }
 
-    const current = await copy.value.files.read(path);
+    const current = await copy.value.files.read(normalizedPath);
     if (Result.isError(current)) {
       return Result.err(current.error);
     }
@@ -158,27 +159,27 @@ export class RepoEditController {
     if (matches === 0) {
       return Result.err({
         tag: "TextNotFoundError",
-        message: `Text not found in ${path}.`,
-        path,
+        message: `Text not found in ${normalizedPath}.`,
+        path: normalizedPath,
       });
     }
     if (matches > 1) {
       return Result.err({
         tag: "AmbiguousTextEditError",
-        message: `Text appears ${matches} times in ${path}.`,
-        path,
+        message: `Text appears ${matches} times in ${normalizedPath}.`,
+        path: normalizedPath,
         matches,
       });
     }
 
     const written = await copy.value.files.writeTree("/", [
-      { path: relativeTreePath(path), contents: encoder.encode(text.split(oldText).join(newText)) },
+      { path: relativeTreePath(normalizedPath), contents: encoder.encode(text.split(oldText).join(newText)) },
     ]);
     if (Result.isError(written)) {
       return Result.err(written.error);
     }
 
-    return Result.ok({ status: "file-edited", editCopyId: copy.value.id, path, replacements: 1 });
+    return Result.ok({ status: "file-edited", path: normalizedPath, replacements: 1 });
   }
 
   async run({ code }: { code: string }): Promise<BetterResult<RepoRunResult, RepoRunError>> {
@@ -197,7 +198,6 @@ export class RepoEditController {
 
     return Result.ok({
       status: "run-completed",
-      editCopyId: copy.value.id,
       result: result.value,
     });
   }

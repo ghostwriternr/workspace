@@ -38,6 +38,12 @@ The first GitHub source adapter uses GitHub REST tree/blob APIs: resolve a commi
 
 Future options include tarball import, sparse import, or reference-based hydration once `ContentRef` exists.
 
+## GitHub symlinks are imported as files
+
+GitHub tree entries can represent symlinks, but the current source adapter streams them as ordinary files whose contents are the symlink target path. Workspace does not preserve symlink mode, expose a symlink entry type, or resolve symlinks during import.
+
+Future options include preserving source metadata, resolving symlinks in the GitHub adapter, or adding an explicit Workspace symlink entry type if real callers need it.
+
 ## Dynamic Worker module and asset projections aren't built
 
 The prototype validates scoped Dynamic Worker file capabilities over a draft. It does not yet load Dynamic Worker modules or static assets from Workspace trees.

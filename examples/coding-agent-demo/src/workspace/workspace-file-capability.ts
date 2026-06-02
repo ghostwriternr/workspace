@@ -7,6 +7,7 @@ import {
   type WorkspaceEntry,
   type WorkspaceStat,
 } from "@cloudflare/workspace";
+import { normalizeAgentPath } from "../agent/path";
 
 type WorkspaceFileCapabilityProps = {
   workspaceName: string;
@@ -18,19 +19,19 @@ export class WorkspaceFileCapability extends WorkerEntrypoint<Env, WorkspaceFile
   private capabilityPromise?: Promise<ScopedWorkspaceRpcResult<ScopedWorkspaceFileCapability>>;
 
   async readFile(path: string): Promise<ScopedWorkspaceRpcResult<Uint8Array>> {
-    return this.withCapability((workspace) => workspace.readFile(path));
+    return this.withCapability((workspace) => workspace.readFile(normalizeAgentPath(path)));
   }
 
   async writeFile(path: string, contents: Uint8Array): Promise<ScopedWorkspaceRpcResult> {
-    return this.withCapability((workspace) => workspace.writeFile(path, contents));
+    return this.withCapability((workspace) => workspace.writeFile(normalizeAgentPath(path), contents));
   }
 
   async list(path: string): Promise<ScopedWorkspaceRpcResult<WorkspaceEntry[]>> {
-    return this.withCapability((workspace) => workspace.list(path));
+    return this.withCapability((workspace) => workspace.list(normalizeAgentPath(path)));
   }
 
   async stat(path: string): Promise<ScopedWorkspaceRpcResult<WorkspaceStat>> {
-    return this.withCapability((workspace) => workspace.stat(path));
+    return this.withCapability((workspace) => workspace.stat(normalizeAgentPath(path)));
   }
 
   private async withCapability<T>(

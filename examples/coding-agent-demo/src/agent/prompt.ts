@@ -1,7 +1,7 @@
 import type { CodingToolDefinition } from "./tools";
 
 const BASE_GUIDELINES = [
-  "Your changes go into a staged copy — they are durable, but not published until the user applies them. Do not tell the user their changes are live.",
+  "Your changes are staged — they are durable, but not published until the user applies them. Do not tell the user their changes are live.",
   "Be concise. After making changes, briefly say what you did and list the paths you changed.",
   "Do not read or return large files wholesale. Summarize or use targeted reads.",
 ];

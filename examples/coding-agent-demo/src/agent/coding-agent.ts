@@ -9,6 +9,7 @@ import { RepoEditController } from "../repo/edit-controller";
 import { RepoStateController } from "../repo/state-controller";
 import type { RepoImportSummary } from "../repo/import-controller";
 import { buildSystemPrompt } from "./prompt";
+import { resultToModelToolOutput } from "./tool-result";
 import { CODING_TOOLS, CODING_TOOL_NAMES, codingToolDescription } from "./tools";
 
 export type CodingAgentState = {
@@ -43,7 +44,7 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
         inputSchema: z.object({
           path: z.string().min(1).describe("Path to the file or directory to read"),
         }),
-        execute: async (input) => this.read(input),
+        execute: async (input) => resultToModelToolOutput(await this.editController().read(input)),
       }),
       write: tool({
         description: codingToolDescription("write"),
@@ -51,7 +52,7 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
           path: z.string().min(1).describe("Path to the file to write"),
           contents: z.string().describe("Content to write to the file"),
         }),
-        execute: async (input) => this.write(input),
+        execute: async (input) => resultToModelToolOutput(await this.editController().write(input)),
       }),
       edit: tool({
         description: codingToolDescription("edit"),
@@ -60,14 +61,14 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
           oldText: z.string().min(1).describe("Exact text to find and replace. Must be unique in the file."),
           newText: z.string().describe("Replacement text"),
         }),
-        execute: async (input) => this.edit(input),
+        execute: async (input) => resultToModelToolOutput(await this.editController().edit(input)),
       }),
       run: tool({
         description: codingToolDescription("run"),
         inputSchema: z.object({
           code: z.string().min(1).describe("JavaScript module code. Must default-export an async function that takes env."),
         }),
-        execute: async (input) => this.run(input),
+        execute: async (input) => resultToModelToolOutput(await this.editController().run(input)),
       }),
     };
   }

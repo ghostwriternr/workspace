@@ -12,7 +12,7 @@ describe("RepoEditController", () => {
   it("reads current files and directories without opening an edit copy", async () => {
     const { controller, getEditCopyId } = await setupEditController();
 
-    expect(await expectOk(controller.read({ path: "/README.md" }))).toEqual({
+    expect(await expectOk(controller.read({ path: "README.md" }))).toEqual({
       status: "file-read",
       path: "/README.md",
       contents: "# Repo",
@@ -28,11 +28,11 @@ describe("RepoEditController", () => {
   it("writes and edits files in an active edit copy", async () => {
     const { controller, workspace, getEditCopyId } = await setupEditController();
 
-    expect(await expectOk(controller.write({ path: "/notes/todo.md", contents: "hello world" }))).toMatchObject({
+    expect(await expectOk(controller.write({ path: "notes/todo.md", contents: "hello world" }))).toEqual({
       status: "file-written",
       path: "/notes/todo.md",
     });
-    expect(await expectOk(controller.edit({ path: "/notes/todo.md", oldText: "world", newText: "Workspace" }))).toMatchObject({
+    expect(await expectOk(controller.edit({ path: "./notes/todo.md", oldText: "world", newText: "Workspace" }))).toEqual({
       status: "file-edited",
       path: "/notes/todo.md",
       replacements: 1,
@@ -76,9 +76,9 @@ describe("RepoEditController", () => {
 
     expect(await expectOk(controller.run({ code: "export default async function(env) {}" }))).toEqual({
       status: "run-completed",
-      editCopyId: getEditCopyId(),
       result: { wrote: "/notes/edit.md" },
     });
+    expect(getEditCopyId()).toEqual(expect.any(String));
 
     const current = await workspace.files.read("/notes/edit.md");
     const copy = unwrap(await workspace.files.getCopy(getEditCopyId()!));
