@@ -66,7 +66,7 @@ A Workspace contains a tree of Workspace-owned files and directories. Each entry
 - **Generic file metadata** — content type, content digest, small string metadata.
 - **Provenance metadata** — adapter id, source ref, source version, source path — for files imported from an external source. See [`sources.md`](./sources.md).
 
-Directories are explicit. `mkdir` creates one; `writeFile` requires the parent to exist; `delete` removes empty directories only. The cost is a little extra explicit work; the benefit is that capture, projections, and any tree comparison products want to build above Workspace are well-defined.
+Directories are explicit. `mkdir` creates one; `writeFile` requires the parent to exist; `delete` removes empty directories only. The cost is a little extra explicit work; the benefit is that reconcile, projections, and any tree comparison products want to build above Workspace are well-defined.
 
 ### Working copies (file copies)
 
@@ -131,25 +131,26 @@ Bounded by root prefix, read globs, write globs, optional delete, no apply autho
 
 ### Filesystem
 
-Sandboxes and containers see a working copy, or a mounted view containing a working copy, as a local directory. The product attaches it, runs commands, captures useful Workspace-owned changes, and decides on apply or export:
+Sandboxes and containers see a working copy, or a mounted view containing a working copy, as a local directory. The product attaches it, runs commands, reconciles Workspace-owned mounted paths back into the working copy, and decides on apply or export:
 
 ```ts
 const copyResult = await workspace.files.copy("photo-edit");
 if (Result.isError(copyResult)) return copyResult;
 const copy = copyResult.value;
 
-const attachmentResult = await copy.files.attach(sandbox, "/workspace");
-if (Result.isError(attachmentResult)) return attachmentResult;
-const attachment = attachmentResult.value;
+const mountResult = await copy.files.attach(sandbox, "/workspace");
+if (Result.isError(mountResult)) return mountResult;
+const mount = mountResult.value;
 
-const result = await sandbox.exec("convert /workspace/photos/original.jpg ... /workspace/photos/current", {
-  cwd: attachment.path,
-});
+const result = await sandbox.exec(
+  "convert /workspace/photos/original.jpg ... /workspace/photos/current",
+  {
+    cwd: mount.path,
+  },
+);
 
-if (result.success) {
-  const capture = await attachment.capture();
-  if (Result.isError(capture)) return capture;
-}
+const reconcile = await mount.reconcile();
+if (Result.isError(reconcile)) return reconcile;
 
 const apply = await copy.apply();
 if (Result.isError(apply)) return apply;
@@ -165,7 +166,10 @@ A Workspace tree or revision can provide module sources and asset bindings to a 
 const worker = env.LOADER.load({
   mainModule: "src/index.js",
   modules: await modulesFromWorkspace(copy, "/src"),
-  env: { WORKSPACE: scopedBinding, ASSETS: createWorkspaceAssetsBinding({ tree: revision, root: "/dist" }) },
+  env: {
+    WORKSPACE: scopedBinding,
+    ASSETS: createWorkspaceAssetsBinding({ tree: revision, root: "/dist" }),
+  },
 });
 ```
 
@@ -196,7 +200,7 @@ Built:
 - Optimistic conflict detection on apply.
 - Immutable revisions.
 - Product-facing scoped file capabilities (used by the demo's Dynamic Worker).
-- Product-facing filesystem attachments and capture (used by the demo's Sandbox).
+- Product-facing filesystem mounts and reconciliation (used by the demo's Sandbox).
 - Streaming bulk tree writes (`writeTree`) on file copies.
 
 Not built yet — see [`known-limitations.md`](./known-limitations.md):

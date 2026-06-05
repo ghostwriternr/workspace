@@ -32,7 +32,7 @@ describe("PhotoDraftController", () => {
     expect(state.files.map((file) => file.path)).toEqual(["/notes/edit-summary.md", "/photos/original.png"]);
   });
 
-  it("runs commands with the draft mounted at /workspace and captures changes into the draft", async () => {
+  it("runs commands with the draft mounted at /workspace and reconciles changes into the draft", async () => {
     const dependencies = createDependencies({
       head: { "/photos/original.png": originalPng },
       commandOutput: draftPng,
@@ -50,7 +50,7 @@ describe("PhotoDraftController", () => {
       stdout: "ok",
       stderr: "",
       exitCode: 0,
-      capture: {
+      reconcile: {
         created: [],
         modified: ["/photos/current"],
         deleted: [],
@@ -432,7 +432,7 @@ class FakeWorkspaceCommandRunner {
       exitCode: 0,
       stdout: "ok",
       stderr: "",
-      capture: {
+      reconcile: {
         created: [],
         modified: ["/photos/current"],
         deleted: [],

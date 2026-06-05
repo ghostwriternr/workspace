@@ -53,7 +53,7 @@ Workspace doesn't run commands, own the container, or decide how to edit an imag
 
 The demo uses two of Workspace's projections over one draft:
 
-- The **filesystem projection** for Sandbox commands: tools operate on `/workspace`, and successful changes become part of the draft after capture.
+- The **filesystem projection** for Sandbox commands: tools operate on `/workspace`, and mounted Workspace changes become part of the draft after reconcile.
 - The **scoped file capability projection** for Dynamic Worker code: delegated JS sees `readFile` / `writeFile` / `list` / `stat` only, never Workspace identity or publish authority.
 
 The remaining Workspace gaps relevant to this demo are the production mount and the Dynamic Worker module/asset projections — see [`known-limitations.md`](./known-limitations.md).

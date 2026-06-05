@@ -38,7 +38,7 @@ export type WorkspaceMountHost = {
   listFiles(path: string): Promise<HostMountEntry[]>;
 };
 
-export type WorkspaceMountFlushSummary = {
+export type WorkspaceMountReconcileSummary = {
   created: string[];
   modified: string[];
   deleted: string[];
@@ -87,11 +87,11 @@ class MountPathEscapeError extends TaggedError("MountPathEscapeError")<{
 
 export type WorkspaceMountError = MountOperationError | UnsupportedMountEntryError | MountPathEscapeError;
 export type WorkspaceMountAttachResult = Result<WorkspaceMount, WorkspaceMountError>;
-export type WorkspaceMountFlushResult = Result<WorkspaceMountFlushSummary, WorkspaceMountError>;
+export type WorkspaceMountReconcileResult = Result<WorkspaceMountReconcileSummary, WorkspaceMountError>;
 
 export type WorkspaceMount = {
   root: string;
-  flush(): Promise<WorkspaceMountFlushResult>;
+  reconcile(): Promise<WorkspaceMountReconcileResult>;
 };
 
 export async function attachWorkspaceMount(options: {
@@ -117,7 +117,7 @@ export async function attachWorkspaceMount(options: {
 
   return Result.ok({
     root,
-    flush: () => flushMount({ files: options.files, host: options.host, root, baseline }),
+    reconcile: () => reconcileMount({ files: options.files, host: options.host, root, baseline }),
   });
 }
 
@@ -159,12 +159,12 @@ async function materializeDirectory(options: {
   return Result.ok();
 }
 
-async function flushMount(options: {
+async function reconcileMount(options: {
   files: WorkspaceMountFiles;
   host: WorkspaceMountHost;
   root: string;
   baseline: Map<string, MountedEntry>;
-}): Promise<WorkspaceMountFlushResult> {
+}): Promise<WorkspaceMountReconcileResult> {
   const hostEntries = await options.host.listFiles(options.root);
   const snapshot = new Map<string, MountedEntry>();
 

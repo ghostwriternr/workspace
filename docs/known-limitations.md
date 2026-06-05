@@ -30,7 +30,7 @@ If metadata points at a blob that isn't in R2, `readFile()` returns `PathNotFoun
 
 ## Filesystem projection scans host files
 
-The current projection materialises files into the Sandbox filesystem and hashes host files during capture to detect changes. Proves `/workspace` semantics for the demo; it's not the production mount.
+The current projection materialises files into the Sandbox filesystem and hashes host files during reconcile to detect changes. Proves `/workspace` semantics for the demo; it's not the production mount.
 
 Long-term: a mount-like implementation that avoids full-tree scans and avoids reading unchanged file contents back into the Worker.
 

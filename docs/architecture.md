@@ -34,12 +34,12 @@ The current product API lives in [`product-api.md`](./product-api.md). The broad
 
 Different runtimes need different shapes of access to Workspace-owned state. The current implementation exposes these projections over current files and file copies:
 
-| Projection | Consumer | Shape | Authority |
-|---|---|---|---|
-| Control | Trusted Worker / DO | `Workspace.get(...)`, current files, file copies, `apply()` | Full: file copies, apply, discard, revisions |
-| Scoped file | Dynamic Worker, plugin, generated code | `env.WORKSPACE.{readFile,writeFile,list,stat}` | Read/write within allowed paths; no apply, no identity |
-| Filesystem | Sandbox / container | Files at `/workspace`; explicit capture | Native file IO inside the runtime; apply stays with parent |
-| Module / asset (planned) | Dynamic Worker via Worker Loader | Modules and asset bindings from a Workspace tree | Read-only over the chosen tree or revision |
+| Projection               | Consumer                               | Shape                                                       | Authority                                                  |
+| ------------------------ | -------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------- |
+| Control                  | Trusted Worker / DO                    | `Workspace.get(...)`, current files, file copies, `apply()` | Full: file copies, apply, discard, revisions               |
+| Scoped file              | Dynamic Worker, plugin, generated code | `env.WORKSPACE.{readFile,writeFile,list,stat}`              | Read/write within allowed paths; no apply, no identity     |
+| Filesystem               | Sandbox / container                    | Files at `/workspace`; explicit reconcile                   | Native file IO inside the runtime; apply stays with parent |
+| Module / asset (planned) | Dynamic Worker via Worker Loader       | Modules and asset bindings from a Workspace tree            | Read-only over the chosen tree or revision                 |
 
 The first three are built for Workspace-owned file copies. Module/asset projections are documented in [`known-limitations.md`](./known-limitations.md). The broader mounted-view model, where projections can compose Workspace-owned overlays with source and runtime-local authorities, is described in [`runtime-projections.md`](./runtime-projections.md).
 
@@ -77,7 +77,7 @@ Directories are **explicit** durable entries.
 - `delete` removes files and empty directories only.
 - No implicit parent creation. No auto-pruning.
 
-This trades convenience for clarity. It keeps the capture path, projections, and any comparison products want to build above Workspace well-defined.
+This trades convenience for clarity. It keeps the reconcile path, projections, and any comparison products want to build above Workspace well-defined.
 
 ## Storage shape, and where it's heading
 
@@ -150,9 +150,9 @@ It does **not** expose `apply`, `discard`, `beginSession`, `getByName`, revision
 
 `packages/workspace/src/workspace/projections/working-copy-mount.ts`
 
-`copy.files.attach(...)` materialises a file copy into a host filesystem — today, into a Sandbox container under `/workspace`. On `attachment.capture()`, it reads back changes and writes them into the copy as metadata + blob refs. The lower-level implementation is `attachWorkspaceMount(...)`.
+`copy.files.attach(...)` materialises a file copy into a host filesystem — today, into a Sandbox container under `/workspace`. On `mount.reconcile()`, it reads back changes and writes them into the copy as metadata + blob refs. The lower-level implementation is `attachWorkspaceMount(...)`.
 
-The current implementation scans and hashes. A future implementation can be a real mount. The semantic boundary stays the same: the runtime sees a normal filesystem; the file copy sees the changes after capture.
+The current implementation scans and hashes. A future implementation can be a real mount. The semantic boundary stays the same: the runtime sees a normal filesystem; the file copy sees the changes after reconcile.
 
 ## How the demo wires it together
 

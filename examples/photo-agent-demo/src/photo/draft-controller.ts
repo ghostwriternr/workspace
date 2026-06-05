@@ -4,7 +4,7 @@ import {
   type WorkspaceFileCopy,
   type WorkspaceNamespace,
 } from "@cloudflare/workspace";
-import type { WorkspaceFileCaptureSummary } from "@cloudflare/workspace";
+import type { WorkspaceFileReconcileSummary } from "@cloudflare/workspace";
 import type { DemoWorkspaceCommandRunner } from "../workspace/sandbox-workspace-command-runner";
 import type {
   WorkspaceDynamicWorkerFileCapability,
@@ -129,7 +129,7 @@ export class PhotoDraftController {
     stdout: string;
     stderr: string;
     exitCode: number;
-    capture: WorkspaceFileCaptureSummary;
+    reconcile: WorkspaceFileReconcileSummary;
   }> {
     return this.withDraftCopy(async (copy, draftEditId) => {
       const result = await this.dependencies.commandRunner.runWorkspaceCommand({
@@ -146,7 +146,7 @@ export class PhotoDraftController {
         stdout: result.stdout,
         stderr: result.stderr,
         exitCode: result.exitCode,
-        capture: result.capture,
+        reconcile: result.reconcile,
       };
     });
   }

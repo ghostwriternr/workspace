@@ -1,10 +1,10 @@
 import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
-import type { WorkspaceFileAttachmentHost } from "@cloudflare/workspace";
+import type { WorkspaceFileMountHost } from "@cloudflare/workspace";
 import { SandboxWorkspaceCommandRunner } from "../src/workspace/sandbox-workspace-command-runner";
 
-const captureSummary = {
+const reconcileSummary = {
   created: [],
   modified: ["/photos/current"],
   deleted: [],
@@ -12,7 +12,7 @@ const captureSummary = {
 };
 
 describe("SandboxWorkspaceCommandRunner", () => {
-  it("attaches a Workspace file copy, runs the command, and captures changes", async () => {
+  it("attaches a Workspace file copy, runs the command, and reconciles changes", async () => {
     const files = new FakeAttachableFiles();
     const sandbox = new FakeSandbox();
     const runner = new SandboxWorkspaceCommandRunner(sandbox);
@@ -30,10 +30,10 @@ describe("SandboxWorkspaceCommandRunner", () => {
       exitCode: 0,
       stdout: "ok",
       stderr: "",
-      capture: captureSummary,
+      reconcile: reconcileSummary,
     });
     expect(files.attachCalls).toMatchObject([{ path: "/workspace" }]);
-    expect(files.captureCount).toBe(1);
+    expect(files.reconcileCount).toBe(1);
     expect(sandbox.commands).toEqual([
       {
         command: "rm -rf '/workspace' && mkdir -p '/workspace'",
@@ -46,24 +46,30 @@ describe("SandboxWorkspaceCommandRunner", () => {
     ]);
   });
 
-  it("does not capture partial filesystem changes when the command fails", async () => {
+  it("reconciles filesystem changes even when the command fails", async () => {
     const files = new FakeAttachableFiles();
     const sandbox = new FakeSandbox({ execResult: { success: false, exitCode: 1, stdout: "", stderr: "bad image" } });
     const runner = new SandboxWorkspaceCommandRunner(sandbox);
 
-    await expect(
-      runner.runWorkspaceCommand({
-        files,
-        root: "/workspace",
-        command: "convert /workspace/photos/current /workspace/photos/current",
-        draftEditId: "draft-1",
-      }),
-    ).rejects.toThrow("Sandbox command failed: bad image");
+    const result = await runner.runWorkspaceCommand({
+      files,
+      root: "/workspace",
+      command: "convert /workspace/photos/current /workspace/photos/current",
+      draftEditId: "draft-1",
+    });
 
-    expect(files.captureCount).toBe(0);
+    expect(result).toMatchObject({
+      command: "convert /workspace/photos/current /workspace/photos/current",
+      root: "/workspace",
+      exitCode: 1,
+      stdout: "",
+      stderr: "bad image",
+      reconcile: reconcileSummary,
+    });
+    expect(files.reconcileCount).toBe(1);
   });
 
-  it("reports attachment errors before running the command", async () => {
+  it("reports mount errors before running the command", async () => {
     const files = new FakeAttachableFiles({ attachError: "mount failed" });
     const sandbox = new FakeSandbox();
     const runner = new SandboxWorkspaceCommandRunner(sandbox);
@@ -82,12 +88,12 @@ describe("SandboxWorkspaceCommandRunner", () => {
 });
 
 class FakeAttachableFiles {
-  readonly attachCalls: Array<{ host: WorkspaceFileAttachmentHost; path: string }> = [];
-  captureCount = 0;
+  readonly attachCalls: Array<{ host: WorkspaceFileMountHost; path: string }> = [];
+  reconcileCount = 0;
 
   constructor(private readonly options: { attachError?: string } = {}) {}
 
-  async attach(host: WorkspaceFileAttachmentHost, path: string) {
+  async attach(host: WorkspaceFileMountHost, path: string) {
     if (this.options.attachError) {
       return Result.err({ message: this.options.attachError } as never);
     }
@@ -96,9 +102,9 @@ class FakeAttachableFiles {
     await host.resetDirectory?.(path);
     return Result.ok({
       path,
-      capture: async () => {
-        this.captureCount += 1;
-        return Result.ok(captureSummary);
+      reconcile: async () => {
+        this.reconcileCount += 1;
+        return Result.ok(reconcileSummary);
       },
     });
   }

@@ -1,7 +1,7 @@
 import { Result } from "better-result";
 import type {
-  WorkspaceFileAttachmentHost,
-  WorkspaceFileCaptureSummary,
+  WorkspaceFileMountHost,
+  WorkspaceFileReconcileSummary,
   WorkspaceFileCopyFiles,
 } from "@cloudflare/workspace";
 
@@ -11,7 +11,7 @@ export type WorkspaceCommandResult = {
   exitCode: number;
   stdout: string;
   stderr: string;
-  capture: WorkspaceFileCaptureSummary;
+  reconcile: WorkspaceFileReconcileSummary;
 };
 
 export interface DemoWorkspaceCommandRunner {
@@ -47,8 +47,8 @@ type SandboxClient = {
   listFiles(path: string, options?: { recursive?: boolean; includeHidden?: boolean }): Promise<SandboxListFilesResult>;
 };
 
-// Sandbox owns execution. Workspace only supplies durable files and receives captured
-// filesystem changes after successful execution.
+// Sandbox owns execution. Workspace supplies durable files and reconciles
+// filesystem changes back into the draft after each command.
 type SandboxClientFactory = (draftEditId: string) => SandboxClient;
 
 export class SandboxWorkspaceCommandRunner implements DemoWorkspaceCommandRunner {
@@ -61,34 +61,30 @@ export class SandboxWorkspaceCommandRunner implements DemoWorkspaceCommandRunner
     draftEditId: string;
   }): Promise<WorkspaceCommandResult> {
     const sandbox = typeof this.sandbox === "function" ? this.sandbox(options.draftEditId) : this.sandbox;
-    const attachment = await options.files.attach(sandboxAttachmentHost(sandbox), options.root);
-    if (Result.isError(attachment)) {
-      throw new Error(attachment.error.message);
+    const mount = await options.files.attach(sandboxMountHost(sandbox), options.root);
+    if (Result.isError(mount)) {
+      throw new Error(mount.error.message);
     }
 
-    const result = await sandbox.exec(options.command, { cwd: attachment.value.path });
-    if (!result.success) {
-      const detail = result.stderr.trim() || result.stdout.trim() || `exit ${result.exitCode}`;
-      throw new Error(`Sandbox command failed: ${detail}`);
-    }
+    const result = await sandbox.exec(options.command, { cwd: mount.value.path });
 
-    const capture = await attachment.value.capture();
-    if (Result.isError(capture)) {
-      throw new Error(capture.error.message);
+    const reconcile = await mount.value.reconcile();
+    if (Result.isError(reconcile)) {
+      throw new Error(reconcile.error.message);
     }
 
     return {
       command: options.command,
-      root: attachment.value.path,
+      root: mount.value.path,
       exitCode: result.exitCode,
       stdout: result.stdout,
       stderr: result.stderr,
-      capture: capture.value,
+      reconcile: reconcile.value,
     };
   }
 }
 
-function sandboxAttachmentHost(sandbox: SandboxClient): WorkspaceFileAttachmentHost {
+function sandboxMountHost(sandbox: SandboxClient): WorkspaceFileMountHost {
   return {
     resetDirectory: async (path) => {
       await sandbox.exec(`rm -rf ${shellQuote(path)} && mkdir -p ${shellQuote(path)}`);

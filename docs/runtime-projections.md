@@ -8,7 +8,7 @@ AI agents are not the only audience for Workspace, but they are the workload tha
 
 ## Current implementation status
 
-The current prototype has durable current files, durable working copies, `apply()` / `discard()`, scoped file capabilities for Dynamic Workers, and a simple filesystem attachment API (`copy.files.attach(...)` / `attachment.capture()`). Today that attachment implementation materializes one Workspace file copy into a host directory and captures regular files back by scanning and hashing.
+The current prototype has durable current files, durable working copies, `apply()` / `discard()`, scoped file capabilities for Dynamic Workers, and a simple filesystem mount API (`copy.files.attach(...)` / `mount.reconcile()`). Today that mount implementation materializes one Workspace file copy into a host directory and reconciles regular files back by scanning and hashing.
 
 The current prototype also uses eager source import: source adapters stream bytes into Workspace-owned R2 blobs through `copy.files.writeTree(...)`.
 
@@ -35,7 +35,7 @@ run command
 sync /workspace back into Workspace
 ```
 
-That model fails quickly, especially for agents. A human can sometimes inspect the runtime and infer what happened. An agent usually sees only tool inputs and outputs. If a tool says a command ran but hides whether files were captured, which paths were runtime-local, or whether the working copy is now stale, the agent cannot reason accurately about the next step.
+That model fails quickly, especially for agents. A human can sometimes inspect the runtime and infer what happened. An agent usually sees only tool inputs and outputs. If a tool says a command ran but hides whether files were reconciled, which paths were runtime-local, or whether the working copy is now stale, the agent cannot reason accurately about the next step.
 
 `node_modules` may need to exist under `/workspace` for tools to work, but it should not become durable Workspace state. A generated source file should probably be kept. A build cache should probably stay runtime-local. A source file from GitHub may be read from a stable source snapshot rather than imported into Workspace-owned storage. A long-running Sandbox has local state that can become stale if a Dynamic Worker edits the same working copy.
 
@@ -60,7 +60,7 @@ The boundary is:
 - Source adapters resolve external systems into stable snapshots or file streams that products can mount, import, or export.
 - Products decide user intent, source selection, execution sequence, and whether to apply, discard, or export durable work.
 
-Workspace should not own command execution, Sandbox lifecycle, Worker Loader mechanics, package manager behavior, Git remotes, source lifecycles, or agent orchestration. But Workspace and its adapter ecosystem should make file boundaries explicit enough that product authors do not reinvent hydration, materialization, capture, cache preservation, and authority shaping for every app or every agent toolbelt.
+Workspace should not own command execution, Sandbox lifecycle, Worker Loader mechanics, package manager behavior, Git remotes, source lifecycles, or agent orchestration. But Workspace and its adapter ecosystem should make file boundaries explicit enough that product authors do not reinvent hydration, materialization, reconciliation, cache preservation, and authority shaping for every app or every agent toolbelt.
 
 ## One lifecycle, all concepts
 
@@ -80,7 +80,7 @@ One realistic coding-agent flow exercises the full model:
 7. Sandbox projection refreshes source/overlay files and preserves node_modules.
 8. Command writes source changes, cache files, and build output.
 9. Reconciliation classifies those writes by mounted authority.
-10. Capture writes accepted source changes into the Workspace working copy.
+10. Reconciliation writes Workspace-owned runtime changes into the Workspace working copy.
 11. Product either exports the overlay to GitHub, applies imported Workspace-owned files, or discards the working copy.
 ```
 
@@ -92,7 +92,7 @@ This single lifecycle explains why the concepts are distinct:
 - A product artifact authority owns build output.
 - A mounted view gives the agent one project namespace.
 - Runtime projections expose that namespace in runtime-native ways.
-- Capture is not publication.
+- Reconciliation is not publication.
 - Apply is not export.
 - Tool outputs must report which boundary was crossed.
 
@@ -127,8 +127,7 @@ These describe movement across authority and runtime boundaries:
 - hydration;
 - materialization;
 - refresh;
-- reconciliation;
-- capture.
+- reconciliation.
 
 ### Technical machinery
 
@@ -142,7 +141,7 @@ These are likely necessary internally, but they should not dominate the user or 
 
 Some terms exist today because of the current implementation. They should not be mistaken for the whole long-term model:
 
-- attachment;
+- `attach`, the current API method that creates a filesystem mount;
 - session;
 - commit, where older internals mean `apply`.
 
@@ -195,7 +194,7 @@ Agents, humans, Dynamic Workers, Sandboxes, or other tools can write to a workin
 This distinction is central:
 
 ```text
-captured into working copy  !=  published as current files
+reconciled into working copy  !=  published as current files
 ```
 
 For source-backed project views, a working copy can also serve as a writable overlay on top of a stable source snapshot authority. The working copy still owns durable writes and tombstones. The source snapshot still owns unchanged base files.
@@ -301,7 +300,7 @@ Examples:
 - Future module projection: Workspace or source-backed files passed to Worker Loader as modules.
 - Future asset projection: a mounted view or Workspace tree exposed as an asset binding.
 
-A projection is runtime-shaped. The same working copy can be projected as a scoped RPC capability to a Dynamic Worker and as files under `/workspace` to a Sandbox. Agent tools should expose the projection's natural shape without leaking irrelevant mechanics: a Dynamic Worker tool can talk about `env.WORKSPACE`, while a Sandbox shell tool can talk about `/workspace`, capture, and runtime-local paths.
+A projection is runtime-shaped. The same working copy can be projected as a scoped RPC capability to a Dynamic Worker and as files under `/workspace` to a Sandbox. Agent tools should expose the projection's natural shape without leaking irrelevant mechanics: a Dynamic Worker tool can talk about `env.WORKSPACE`, while a Sandbox shell tool can talk about `/workspace`, reconcile, and runtime-local paths.
 
 ### Runtime adapter
 
@@ -312,7 +311,7 @@ Examples:
 - a Dynamic Worker adapter passes a scoped Workspace file capability into Worker Loader;
 - a Sandbox adapter materializes a mounted view into a container filesystem and reconciles changes back.
 
-Runtime adapters are first-class package surfaces. They are not sample glue. They solve runtime-specific file boundary problems while preserving Workspace's runtime-independent semantics. They are also where model-facing execution tools can get sane defaults without making every product author teach the agent about RPC, host filesystems, or capture internals.
+Runtime adapters are first-class package surfaces. They are not sample glue. They solve runtime-specific file boundary problems while preserving Workspace's runtime-independent semantics. They are also where model-facing execution tools can get sane defaults without making every product author teach the agent about RPC, host filesystems, or reconcile internals.
 
 ### Source adapter
 
@@ -367,7 +366,7 @@ Apply and export are distinct:
 
 - `apply` changes Workspace current files;
 - export may open a GitHub pull request, push to Artifacts, upload to S3, or do nothing;
-- capture is neither apply nor export.
+- reconcile is neither apply nor export.
 
 This separation is critical for agents: they can experiment, stage durable results, and report them without implying that the live project or external source changed.
 
@@ -385,8 +384,8 @@ A mounted view needs explicit composition rules or "mount" remains only a metaph
 6. **Directory operations compose mount boundaries.** `stat("/node_modules")` routes to the `/node_modules` child mount. `list("/")` should include child mount names such as `node_modules` even if the parent authority does not contain that directory. Overlay directory listings merge visible overlay entries with non-tombstoned base entries.
 7. **No matching mount is an error inside the view.** A view should not silently route unknown view paths to Workspace or scratch.
 8. **Refresh respects ownership.** Refreshing a Sandbox projection updates Workspace-backed and source-backed paths while preserving runtime-local child mounts.
-9. **Capture respects ownership.** Capturing a Sandbox projection writes changes from Workspace-owned writable mounts back to Workspace, ignores runtime-local mounts, and rejects or reports unsupported entries according to the projection contract.
-10. **Tool output should reflect routing.** Agent-facing tools should report whether writes were captured into a working copy, remained runtime-local, were ignored, or failed because the view had no writable authority for that path.
+9. **Reconciliation respects ownership.** Capturing a Sandbox projection writes changes from Workspace-owned writable mounts back to Workspace, ignores runtime-local mounts, and rejects or reports unsupported entries according to the projection contract.
+10. **Tool output should reflect routing.** Agent-facing tools should report whether writes were reconciled into a working copy, remained runtime-local, were ignored, or failed because the view had no writable authority for that path.
 
 Example:
 
@@ -405,7 +404,7 @@ Then:
 
 Deleting `/workspace/node_modules` does not delete a Workspace `/node_modules` entry because the runtime-local child mount owns that subtree. If a product wants a real Workspace-owned `/node_modules`, it should not mount runtime-local state at that path.
 
-A Sandbox projection has a host boundary as well as a view boundary. If the view is projected at host path `/workspace`, files written to container path `/tmp` are outside the projected view. They remain Sandbox-owned runtime state and are ignored by Workspace refresh/capture unless product code explicitly copies them into a mounted path.
+A Sandbox projection has a host boundary as well as a view boundary. If the view is projected at host path `/workspace`, files written to container path `/tmp` are outside the projected view. They remain Sandbox-owned runtime state and are ignored by Workspace refresh/reconcile unless product code explicitly copies them into a mounted path.
 
 ### Mounted-view contract
 
@@ -417,7 +416,7 @@ Every runtime can expose files differently, but any projection of a mounted view
 4. **Ownership determines durability.** A write to a Workspace-owned mount can become durable Workspace state. A write to runtime-local state does not.
 5. **Projection never implies publication.** No projection can make Workspace current files change without trusted `apply`. No projection can mutate an external source without an explicit product export.
 6. **Adapters may materialize, cache, hydrate, or lazily access files, but must preserve authority semantics.** Mechanics can vary; ownership cannot.
-7. **Boundary crossings must be reportable.** If runtime state becomes durable, durable state becomes current, source state is imported, or a projection refuses capture, the caller needs structured truth.
+7. **Boundary crossings must be reportable.** If runtime state becomes durable, durable state becomes current, source state is imported, or a projection refuses reconcile, the caller needs structured truth.
 8. **Runtime-local state is a real authority.** It is not an ignored Workspace subtree.
 9. **Source snapshots are stable authorities.** Mutable source refs must resolve before they enter a mounted view.
 10. **Staleness must be explicit when it can affect correctness.** Materialized projections should refresh, reject, or report stale state rather than silently operating on an old view.
@@ -452,7 +451,7 @@ The model has these invariants:
 4. **Execution authority stays scoped.** A heavier runtime does not imply more Workspace authority. Delegated code and commands can propose file-state changes, but they should not receive apply/discard authority by default.
 5. **Parallel runtimes coordinate through working copies.** One coherent task may share a working copy across runtimes. Independent experiments, competing approaches, or subagents should usually use separate working copies.
 6. **Materialized runtimes must refresh or report staleness.** If one projection changes a working copy, another materialized projection must not silently operate on old files when correctness depends on freshness.
-7. **Results accumulate in the working copy, not current files.** Runtime outputs become durable only when written or captured into the working copy. They become current only when trusted code applies the copy.
+7. **Results accumulate in the working copy, not current files.** Runtime outputs become durable only when written or reconciled into the working copy. They become current only when trusted code applies the copy.
 8. **Runtime-local state does not define project truth.** A warm Sandbox may preserve caches or temporary files, but the durable working copy remains the shared writable layer.
 9. **Tool outputs should guide future runtime choice.** If a Dynamic Worker cannot perform a task because package-manager or native command execution is required, the agent can escalate to Sandbox. If a Sandbox command shows the next step is a pure text transform, the agent can return to lighter tools.
 
@@ -509,7 +508,7 @@ create projection
   -> materialize or refresh
   -> execute
   -> reconcile
-  -> capture accepted changes
+  -> reconcile accepted changes
   -> reuse, refresh again, or destroy
 ```
 
@@ -537,19 +536,19 @@ Execution is runtime-owned. A shell command, language interpreter, package manag
 
 During execution, the materialized view can diverge from its backing authorities. That is expected. Local filesystem compatibility is the reason the projection exists.
 
-Command failure is not projection failure. `npm test` exiting `1` is useful command output. A failure to materialize, refresh, reconcile, or capture is a projection/platform failure.
+Command failure is not projection failure. `npm test` exiting `1` is useful command output. A failure to materialize, refresh, or reconcile is a projection/platform failure.
 
-### Reconcile and capture
+### Reconciliation
 
-After execution, reconciliation classifies runtime state by mounted authority. Workspace-owned writable paths may be captured into the working copy. Runtime-local paths remain runtime-local. Source-backed read-only paths are not mutated; changes to those view paths are captured as Workspace overlay writes if allowed. Paths outside the projected host boundary remain runtime-owned. Unsupported or oversized files may reject capture before any durable mutation happens.
+After execution, reconciliation classifies runtime state by mounted authority. Workspace-owned writable paths may be reconciled into the working copy. Runtime-local paths remain runtime-local. Source-backed read-only paths are not mutated; changes to those view paths are reconciled as Workspace overlay writes if allowed. Paths outside the projected host boundary remain runtime-owned. Unsupported or oversized files may reject reconcile before any durable mutation happens.
 
-Capture is explicit and bounded. Runtime changes do not become durable merely because a command exits.
+Reconcile is explicit and bounded. Runtime changes do not become durable merely because a command exits.
 
 ### Reuse or destroy
 
 A projection can be reused while its backing working copy remains valid. Reuse is valuable because runtime-local state such as `node_modules`, `.venv`, or build caches can survive across commands without becoming Workspace state.
 
-Projection lifetime is not working-copy lifetime. Destroying a Sandbox can lose runtime-local state, but it does not discard captured Workspace files. Discarding a working copy invalidates projections that depend on it. Applying a working copy may close or invalidate projections depending on product lifecycle, but apply still happens through trusted Workspace control, not through the runtime.
+Projection lifetime is not working-copy lifetime. Destroying a Sandbox can lose runtime-local state, but it does not discard reconciled Workspace files. Discarding a working copy invalidates projections that depend on it. Applying a working copy may close or invalidate projections depending on product lifecycle, but apply still happens through trusted Workspace control, not through the runtime.
 
 Runtime-local state is scoped to the projection and the proposed future it supports. A warm dependency cache belongs to that working copy's execution context, not to the global project.
 
@@ -557,7 +556,7 @@ Runtime-local state is scoped to the projection and the proposed future it suppo
 
 If an agent edits a file through one tool and then runs a Sandbox command, the command should see the edit. If a Sandbox command preserves dependencies and the agent later edits source through a Dynamic Worker, the next Sandbox command should refresh source while preserving dependency cache.
 
-The adapter owns that freshness/capture lifecycle. The agent should see truthful results, not manage materialization details.
+The adapter owns that freshness/reconcile lifecycle. The agent should see truthful results, not manage materialization details.
 
 ## Lifecycle verbs
 
@@ -601,19 +600,19 @@ Reconciliation compares runtime-side state with backing authorities and decides 
 
 For a Sandbox projection, reconciliation may scan a filesystem tree, classify files by mount owner, detect created/modified/deleted files, ignore runtime-local mounts, and reject unsupported entries.
 
-Reconciliation may produce a plan before it mutates anything. A plan can identify files to create, modify, delete, ignore, or reject. That makes all-or-nothing capture possible: if scanning discovers a stale baseline, unsupported entry, or oversized file, the projection can fail before writing half the changes into Workspace.
+Reconciliation may produce a plan before it mutates anything. A plan can identify files to create, modify, delete, ignore, or reject. That makes all-or-nothing reconcile possible: if scanning discovers a stale baseline, unsupported entry, or oversized file, the projection can fail before writing half the changes into Workspace.
 
-This planning step also gives agent tools a truthful summary. The agent can tell the user which files were captured, which were ignored as runtime-local, and which blocked capture.
+This planning step also gives agent tools a truthful summary. The agent can tell the user which files were reconciled, which were ignored as runtime-local, and which blocked reconcile.
 
-### Capture
+### Reconcile
 
-Capture applies an accepted reconciliation plan to a durable writable authority, usually a Workspace working copy.
+Reconcile applies an accepted reconciliation plan to a durable writable authority, usually a Workspace working copy.
 
-Capture does not publish. It only makes runtime results durable inside the working copy.
+Reconcile does not publish. It only makes runtime results durable inside the working copy.
 
 ```text
 Sandbox /workspace/src/index.ts changed
-  -> reconcile and capture
+  -> reconcile
   -> Workspace working copy /src/index.ts changed
   -> apply or export later if trusted product code chooses
 ```
@@ -622,24 +621,24 @@ Sandbox /workspace/src/index.ts changed
 
 A consistency contract describes when a projection is fresh, when it can diverge, and how it becomes consistent again.
 
-| Access shape | Freshness model | Write path | Reconciliation point |
-|---|---|---|---|
-| Dynamic Worker scoped capability | Each operation calls the authority | Directly into the working copy | Per operation |
-| Sandbox filesystem projection | Local materialized view can diverge during execution | Runtime filesystem first | Refresh/capture boundaries |
-| Source snapshot | Stable once resolved | Usually read-only | Import, overlay, or product source refresh |
-| Runtime-local cache | Runtime-owned | Runtime filesystem | No Workspace freshness guarantee |
+| Access shape                     | Freshness model                                      | Write path                     | Reconciliation point                       |
+| -------------------------------- | ---------------------------------------------------- | ------------------------------ | ------------------------------------------ |
+| Dynamic Worker scoped capability | Each operation calls the authority                   | Directly into the working copy | Per operation                              |
+| Sandbox filesystem projection    | Local materialized view can diverge during execution | Runtime filesystem first       | Refresh/reconcile boundaries               |
+| Source snapshot                  | Stable once resolved                                 | Usually read-only              | Import, overlay, or product source refresh |
+| Runtime-local cache              | Runtime-owned                                        | Runtime filesystem             | No Workspace freshness guarantee           |
 
 This language matters because Workspace is used in distributed systems. A product cannot have local filesystem performance, arbitrary long-running execution, immediate global consistency, and conflict-free writes for free. Projection boundaries make the tradeoffs explicit.
 
-It also matters for agent reliability. If a Sandbox view may be stale until refresh, or if a failed command did not capture files, the tool contract must say so. Otherwise the agent will reason from a false filesystem model.
+It also matters for agent reliability. If a Sandbox view may be stale until refresh, or if a command did not reconcile files, the tool contract must say so. Otherwise the agent will reason from a false filesystem model.
 
 Workspace projections have distributed-systems tradeoffs even though Workspace is not a distributed POSIX filesystem.
 
 ### Generation and projection tokens
 
-A generation is a monotonic version for an authority's file state. A working copy generation could increment on writes, deletes, and captures. A source snapshot generation is its resolved immutable version. A runtime-local authority may have only runtime-owned versioning.
+A generation is a monotonic version for an authority's file state. A working copy generation could increment on writes, deletes, and reconciles. A source snapshot generation is its resolved immutable version. A runtime-local authority may have only runtime-owned versioning.
 
-A projection token or lease is one possible implementation mechanism for coordination. For example, a Sandbox projection may know it materialized working copy generation 42. If the working copy reaches generation 43 before capture, the projection may need to refresh or reject capture.
+A projection token or lease is one possible implementation mechanism for coordination. For example, a Sandbox projection may know it materialized working copy generation 42. If the working copy reaches generation 43 before reconcile, the projection may need to refresh or reject reconcile.
 
 Generation is likely to become important as projections become long-lived. Lease/token mechanics should remain implementation details until a public API needs them.
 
@@ -651,7 +650,7 @@ Useful boundary types include:
 
 - **File operation:** read, write, list, stat, delete through a file authority.
 - **Execution step:** Dynamic Worker code, Sandbox shell command, interpreter run.
-- **Projection step:** attach, materialize, refresh, reconcile, capture.
+- **Projection step:** attach, materialize, refresh, reconcile.
 - **Publication step:** apply or discard.
 - **Source step:** resolve, mount, import, hydrate, or export external file state.
 
@@ -665,7 +664,7 @@ Semantic boundaries include:
 - durable working-copy state becoming current files;
 - a working-copy overlay being exported to an external source;
 - a materialized runtime view refreshing from an authority;
-- a projection becoming stale or refusing capture;
+- a projection becoming stale or refusing reconcile;
 - an authority rejecting a read or write;
 - execution failing versus the platform/projection failing;
 - files being ignored, rejected, or summarized because they are too large or unsupported.
@@ -678,7 +677,7 @@ That does not mean every operation returns a giant audit log. Direct file operat
 
 The practical split is:
 
-- Workspace and adapters enforce and report file-state truth: authority, access, runtime-local versus durable state, capture, publication, staleness, and failures.
+- Workspace and adapters enforce and report file-state truth: authority, access, runtime-local versus durable state, reconcile, publication, staleness, and failures.
 - Platforms decide intent: source choice, runtime choice, working-copy lifecycle, artifacts, approvals, retention, and whether to apply or export.
 - Agents decide action: inspect, edit, run code, run shell commands, diagnose failures, and summarize without overclaiming publication.
 
@@ -728,8 +727,8 @@ A Sandbox adapter should handle:
 - running commands with the right working directory;
 - distinguishing command failure from projection failure;
 - reconciling runtime filesystem changes;
-- capturing accepted changes into Workspace-backed writable authorities;
-- exposing useful command and capture summaries that an agent can repeat without overclaiming publication.
+- reconciling Workspace-owned changes into Workspace-backed writable authorities;
+- exposing useful command and reconciliation summaries that an agent can repeat without overclaiming publication.
 
 A Sandbox adapter can be opinionated about Sandbox mechanics without putting Sandbox concepts into Workspace core.
 
@@ -754,7 +753,7 @@ Workspace and its core package should own:
 - publication semantics for Workspace-owned state;
 - source-independent tree write primitives;
 - minimal runtime-independent file authority interfaces;
-- shared capture/reconciliation vocabulary;
+- shared reconciliation vocabulary;
 - safety invariants that apply to Workspace-owned file state regardless of runtime.
 
 Workspace should not own:
@@ -793,7 +792,7 @@ A proposed term or API belongs in this model only if it answers a distinct quest
 - Materialization: how do files become locally usable in a runtime?
 - Refresh: how does local runtime state catch up to the authority?
 - Reconciliation: how are local runtime changes classified and planned?
-- Capture: when do runtime changes become durable in a writable authority?
+- Reconcile: when do runtime changes become durable in a writable authority?
 - Apply: when does durable unpublished Workspace state become current?
 - Export: when does Workspace-owned state leave Workspace for an external system?
 - Consistency contract: when can this view be stale, and how is that handled?
@@ -809,7 +808,7 @@ These questions should be resolved by future design and implementation work, not
 - How should runtime-local mounts be represented so common project behavior is easy without relying on fragile global ignore lists?
 - How should source snapshot authorities compose with Workspace-owned overlays in product APIs?
 - What generation mechanism is needed for long-lived Sandbox projections?
-- How should capture failures remain atomic when scanning discovers large files, unsupported entries, or stale baselines?
+- How should reconciliation failures remain atomic when scanning discovers large files, unsupported entries, or stale baselines?
 - How should artifacts be represented when outputs are valuable but should not become current Workspace files?
 - Which parts of this vocabulary should be public user-facing language, and which should remain implementation/design language?
 
@@ -817,4 +816,4 @@ These questions should be resolved by future design and implementation work, not
 
 Workspace is the durable product-owned file authority root. Runtime adapters expose Workspace-backed, source-backed, runtime-local, and artifact authorities as mount-like views native to each execution environment. Execution can produce files, but only the mounted authority for a path decides whether those files become durable Workspace state. Trusted product code decides whether durable Workspace-owned state becomes current or exported.
 
-This model should be clear enough for platform code and for AI agents operating through tools. If the system cannot explain where a file came from, who owns it, whether it was captured, and whether it was applied or exported, then the abstraction is not finished.
+This model should be clear enough for platform code and for AI agents operating through tools. If the system cannot explain where a file came from, who owns it, whether it was reconciled, and whether it was applied or exported, then the abstraction is not finished.

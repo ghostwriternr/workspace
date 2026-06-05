@@ -10,7 +10,7 @@ For the conceptual model, see [`product-model.md`](./product-model.md). For the 
 - Workspace-owned file contents and generic file metadata.
 - Working-copy semantics (file copies).
 - Scoped file capabilities for delegated code.
-- Runtime-independent filesystem attachment semantics.
+- Runtime-independent filesystem mount and reconciliation semantics.
 - Module and asset projections from Workspace trees (planned).
 - Explicit apply and discard of working-copy changes.
 - Immutable revisions as recovery points.

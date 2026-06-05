@@ -24,12 +24,12 @@ export {
 export { type WorkspaceEntry, type WorkspaceStat } from "./workspace/model/rpc";
 export { type WorkspaceTreeEntry } from "./workspace/model/write-tree";
 export {
-  type WorkspaceFileAttachment,
-  type WorkspaceFileAttachmentError,
-  type WorkspaceFileAttachmentHost,
-  type WorkspaceFileAttachmentHostEntry,
-  type WorkspaceFileCaptureSummary,
-} from "./workspace/product/attachment";
+  type WorkspaceFileMount,
+  type WorkspaceFileMountError,
+  type WorkspaceFileMountHost,
+  type WorkspaceFileMountHostEntry,
+  type WorkspaceFileReconcileSummary,
+} from "./workspace/product/mount";
 export { WorkspaceObject } from "./workspace/runtime/workspace-object";
 export {
   type ScopedWorkspaceAccessErrorDto,

@@ -1,10 +1,10 @@
 import { Result, type Result as BetterResult } from "better-result";
 import {
   attachWorkspaceFiles,
-  type WorkspaceFileAttachment,
-  type WorkspaceFileAttachmentError,
-  type WorkspaceFileAttachmentHost,
-} from "./attachment";
+  type WorkspaceFileMount,
+  type WorkspaceFileMountError,
+  type WorkspaceFileMountHost,
+} from "./mount";
 import {
   writeTreeEntries,
   type WorkspaceFileWriteTreeError as WorkspaceFileWriteTreeStreamError,
@@ -88,7 +88,7 @@ export type WorkspaceFileScope = {
 
 export type WorkspaceFileCopyFiles = WorkspaceCopyFilesApi & {
   writeTree(root: string, entries: WorkspaceTreeEntries): Promise<BetterResult<void, WorkspaceFileWriteTreeError>>;
-  attach(host: WorkspaceFileAttachmentHost, path: string): Promise<BetterResult<WorkspaceFileAttachment, WorkspaceFileAttachmentError>>;
+  attach(host: WorkspaceFileMountHost, path: string): Promise<BetterResult<WorkspaceFileMount, WorkspaceFileMountError>>;
   scoped(options: WorkspaceFileScope): ScopedWorkspaceFileCapability;
 };
 
@@ -183,7 +183,7 @@ class WorkspaceCopyFiles implements WorkspaceFileCopyFiles {
     return rpcToResult(await this.object.sessionDelete(this.copyId, path));
   }
 
-  async attach(host: WorkspaceFileAttachmentHost, path: string): Promise<BetterResult<WorkspaceFileAttachment, WorkspaceFileAttachmentError>> {
+  async attach(host: WorkspaceFileMountHost, path: string): Promise<BetterResult<WorkspaceFileMount, WorkspaceFileMountError>> {
     return attachWorkspaceFiles(this, host, path);
   }
 

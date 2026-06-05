@@ -93,7 +93,7 @@ class FakeWorkingCopy {
   async attach(_host: unknown, path: string) {
     return Result.ok({
       path,
-      capture: async () => {
+      reconcile: async () => {
         this.entries["/photos/current"] = { type: "file", contents: editedBytes };
         return Result.ok({ created: [], modified: ["/photos/current"], deleted: [], unchanged: 1 });
       },

@@ -43,7 +43,7 @@ describe("Workspace working-copy mount", () => {
     host.files["/workspace/stale.txt"] = new Uint8Array([99]);
 
     const mount = await attachOk({ files, host, root: "/workspace" });
-    const result = await mount.flush();
+    const result = await mount.reconcile();
 
     if (Result.isError(result)) {
       throw result.error;
@@ -53,7 +53,7 @@ describe("Workspace working-copy mount", () => {
     expect(result.value.created).toEqual([]);
   });
 
-  it("flushes created, modified, and deleted host files into the working copy", async () => {
+  it("reconciles created, modified, and deleted host files into the working copy", async () => {
     const files = new FakeWorkingCopy({
       "/": { type: "directory" },
       "/photos": { type: "directory" },
@@ -67,7 +67,7 @@ describe("Workspace working-copy mount", () => {
     host.files["/workspace/photos/current"] = editedBytes;
     host.files["/workspace/photos/contact-sheet.png"] = new Uint8Array([10, 11, 12]);
 
-    const result = await mount.flush();
+    const result = await mount.reconcile();
 
     if (Result.isError(result)) {
       throw result.error;
@@ -84,7 +84,7 @@ describe("Workspace working-copy mount", () => {
     });
   });
 
-  it("creates explicit directories before flushing nested files", async () => {
+  it("creates explicit directories before reconciling nested files", async () => {
     const files = new FakeWorkingCopy({
       "/": { type: "directory" },
       "/photos": { type: "directory" },
@@ -96,7 +96,7 @@ describe("Workspace working-copy mount", () => {
     host.directories.push("/workspace/photos/exports");
     host.files["/workspace/photos/exports/square.png"] = editedBytes;
 
-    const result = await mount.flush();
+    const result = await mount.reconcile();
 
     if (Result.isError(result)) {
       throw result.error;
@@ -118,7 +118,7 @@ describe("Workspace working-copy mount", () => {
     host.directories.push("/workspace/photos/current");
     host.files["/workspace/photos/current/edited.png"] = editedBytes;
 
-    const result = await mount.flush();
+    const result = await mount.reconcile();
 
     if (Result.isError(result)) {
       throw result.error;
@@ -144,7 +144,7 @@ describe("Workspace working-copy mount", () => {
 
     host.files["/photos/current"] = editedBytes;
 
-    const result = await mount.flush();
+    const result = await mount.reconcile();
 
     if (Result.isError(result)) {
       throw result.error;
@@ -179,7 +179,7 @@ describe("Workspace working-copy mount", () => {
 
     host.otherEntries.push({ path: "/workspace/photos/link", type: "symlink" });
 
-    const result = await mount.flush();
+    const result = await mount.reconcile();
 
     if (!Result.isError(result)) {
       throw new Error("expected unsupported entry error");

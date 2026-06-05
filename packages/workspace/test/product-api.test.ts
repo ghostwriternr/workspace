@@ -437,9 +437,9 @@ describe("Workspace product API", () => {
     }
   });
 
-  it("attaches a file copy to a filesystem host and captures changed files", async () => {
-    const workspace = Workspace.get(env.WORKSPACES, "product-copy-attach-capture");
-    const host = new FakeAttachmentHost();
+  it("attaches a file copy to a filesystem host and reconciles changed files", async () => {
+    const workspace = Workspace.get(env.WORKSPACES, "product-copy-attach-reconcile");
+    const host = new FakeMountHost();
 
     await workspace.files.mkdir("/photos");
     await workspace.files.write("/photos/original.txt", bytes("original"));
@@ -448,22 +448,22 @@ describe("Workspace product API", () => {
       throw new Error("copy failed");
     }
 
-    const attachment = await copyResult.value.files.attach(host, "/workspace");
-    expect(Result.isOk(attachment)).toBe(true);
-    if (Result.isError(attachment)) {
+    const mount = await copyResult.value.files.attach(host, "/workspace");
+    expect(Result.isOk(mount)).toBe(true);
+    if (Result.isError(mount)) {
       throw new Error("attach failed");
     }
 
     host.files["/workspace/photos/current.txt"] = bytes("edited");
 
-    const capture = await attachment.value.capture();
+    const reconcile = await mount.value.reconcile();
     const apply = await copyResult.value.apply();
     const current = await workspace.files.read("/photos/current.txt");
 
-    expect(attachment.value.path).toBe("/workspace");
-    expect(Result.isOk(capture)).toBe(true);
-    if (Result.isOk(capture)) {
-      expect(capture.value.created).toContain("/photos/current.txt");
+    expect(mount.value.path).toBe("/workspace");
+    expect(Result.isOk(reconcile)).toBe(true);
+    if (Result.isOk(reconcile)) {
+      expect(reconcile.value.created).toContain("/photos/current.txt");
     }
     expect(Result.isOk(apply)).toBe(true);
     expect(Result.isOk(current)).toBe(true);
@@ -472,19 +472,19 @@ describe("Workspace product API", () => {
     }
   });
 
-  it("returns Result errors for attachment materialization failures", async () => {
-    const object = new BrokenAttachmentWorkspaceObject();
+  it("returns Result errors for mount materialization failures", async () => {
+    const object = new BrokenMountWorkspaceObject();
     const workspace = Workspace.get({ getByName: () => object }, "unit");
     const copyResult = await workspace.files.copy("unit-copy");
     if (Result.isError(copyResult)) {
       throw new Error("copy failed");
     }
 
-    const attachment = await copyResult.value.files.attach(new FakeAttachmentHost(), "/workspace");
+    const mount = await copyResult.value.files.attach(new FakeMountHost(), "/workspace");
 
-    expect(Result.isError(attachment)).toBe(true);
-    if (Result.isError(attachment)) {
-      expect(attachment.error).toMatchObject({
+    expect(Result.isError(mount)).toBe(true);
+    if (Result.isError(mount)) {
+      expect(mount.error).toMatchObject({
         operation: "list /",
         errorTag: "PathNotFoundError",
       });
@@ -549,7 +549,7 @@ describe("Workspace product API", () => {
   });
 });
 
-class FakeAttachmentHost {
+class FakeMountHost {
   readonly directories = new Set<string>();
   readonly files: Record<string, Uint8Array> = {};
 
@@ -571,7 +571,7 @@ class FakeAttachmentHost {
 
   async readFile(path: string) {
     const content = this.files[path];
-    if (!content) throw new Error(`missing fake attachment file: ${path}`);
+    if (!content) throw new Error(`missing fake mount file: ${path}`);
     return content;
   }
 
@@ -710,7 +710,7 @@ class FailingWriteTreeWorkspaceObject extends FakeWorkspaceObject {
   }
 }
 
-class BrokenAttachmentWorkspaceObject extends FakeWorkspaceObject {
+class BrokenMountWorkspaceObject extends FakeWorkspaceObject {
   async sessionList(_sessionId: string, path: string) {
     return { status: "error" as const, error: pathNotFound(path) };
   }

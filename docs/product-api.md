@@ -1,6 +1,6 @@
 # Product API
 
-This doc describes the user-facing API we want product code (and agent tools) to see for today's Workspace-owned file trees. The current-files, file-copy, attachment/capture, and scoped file layers exist today. See [`architecture.md`](./architecture.md) for how the lower layers work, and `examples/photo-agent-demo` for the proving ground.
+This doc describes the user-facing API we want product code (and agent tools) to see for today's Workspace-owned file trees. The current-files, file-copy, filesystem mount/reconciliation, and scoped file layers exist today. See [`architecture.md`](./architecture.md) for how the lower layers work, and `examples/photo-agent-demo` for the proving ground.
 
 For the conceptual model behind these names, see [`product-model.md`](./product-model.md). For the broader mounted-view direction — source snapshots, runtime-local mounts, overlays, and runtime adapters — see [`runtime-projections.md`](./runtime-projections.md).
 
@@ -12,7 +12,7 @@ A product or agent author should be able to read Workspace code and follow it wi
 current files
   → file copy
   → attach to a runtime
-  → capture changes
+  → reconcile changes
   → apply or discard
 ```
 
@@ -26,21 +26,19 @@ const copyResult = await workspace.files.copy("crop-square");
 if (Result.isError(copyResult)) return copyResult;
 const copy = copyResult.value;
 
-const attachmentResult = await copy.files.attach(sandbox, "/workspace");
-if (Result.isError(attachmentResult)) return attachmentResult;
-const attachment = attachmentResult.value;
+const mountResult = await copy.files.attach(sandbox, "/workspace");
+if (Result.isError(mountResult)) return mountResult;
+const mount = mountResult.value;
 
 const result = await sandbox.exec(
   "convert photos/original.jpg -gravity center -crop 1024x1024+0+0 +repage photos/current",
-  { cwd: attachment.path },
+  { cwd: mount.path },
 );
 
-if (result.success) {
-  const capture = await attachment.capture();
-  if (Result.isError(capture)) return capture;
-}
+const reconcile = await mount.reconcile();
+if (Result.isError(reconcile)) return reconcile;
 
-const apply = await copy.apply();        // or: await copy.discard();
+const apply = await copy.apply(); // or: await copy.discard();
 if (Result.isError(apply)) return apply;
 ```
 
@@ -48,16 +46,16 @@ The intent is intentionally boring. Product code says what it wants; the lower l
 
 ## Vocabulary
 
-| Term | Meaning |
-|---|---|
-| Workspace | The durable file-state resource. |
-| Current files | The Workspace's live, durable file tree. |
-| File copy | An isolated, durable, mutable copy of current files. |
-| Attachment | A way for a runtime to access a file copy. |
-| Capture | Bring file changes from an attachment back into the file copy. |
-| Apply | Make a file copy become the current files. |
-| Discard | Throw away a file copy without changing current files. |
-| Scoped files | Limited file access granted to delegated code. |
+| Term          | Meaning                                                   |
+| ------------- | --------------------------------------------------------- |
+| Workspace     | The durable file-state resource.                          |
+| Current files | The Workspace's live, durable file tree.                  |
+| File copy     | An isolated, durable, mutable copy of current files.      |
+| Mount         | A way for a runtime to access a file copy.                |
+| Reconcile     | Bring Workspace-owned mounted file changes back into the file copy. |
+| Apply         | Make a file copy become the current files.                |
+| Discard       | Throw away a file copy without changing current files.    |
+| Scoped files  | Limited file access granted to delegated code.            |
 
 We avoid implementation terms (session, RPC result, stub disposal, loopback, projection, mount host) at the surface. They can exist underneath.
 
@@ -66,7 +64,7 @@ We avoid implementation terms (session, RPC result, stub disposal, loopback, pro
 `workspace.files` is the current tree.
 
 ```ts
-await workspace.files.read(path);        // Result<Uint8Array, WorkspaceCurrentFileError>
+await workspace.files.read(path); // Result<Uint8Array, WorkspaceCurrentFileError>
 await workspace.files.write(path, bytes); // Result<void, WorkspaceCurrentFileError>
 await workspace.files.list(path);
 await workspace.files.stat(path);
@@ -119,27 +117,27 @@ Batches are bounded by entry count and accumulated content bytes before they cro
 
 Bulk import is the natural integration point for source adapters — see [`sources.md`](./sources.md).
 
-## Attachments and capture
+## Filesystem mounts and reconciliation
 
-Attachments are the current stepping stone for making file copies usable from a runtime. For Sandboxes and containers, that means files appear under a local path like `/workspace`.
+Mounts are the current stepping stone for making file copies usable from a runtime. For Sandboxes and containers, that means files appear under a local path like `/workspace`.
 
 ```ts
-const attachmentResult = await copy.files.attach(sandbox, "/workspace");
-if (Result.isError(attachmentResult)) return attachmentResult;
+const mountResult = await copy.files.attach(sandbox, "/workspace");
+if (Result.isError(mountResult)) return mountResult;
 
-const attachment = attachmentResult.value;
-await sandbox.exec("npm test", { cwd: attachment.path });
-const capture = await attachment.capture();
-if (Result.isError(capture)) return capture;
+const mount = mountResult.value;
+await sandbox.exec("npm test", { cwd: mount.path });
+const reconcile = await mount.reconcile();
+if (Result.isError(reconcile)) return reconcile;
 ```
 
-`capture()` is the attachment's responsibility, not the copy's. It records execution-local file changes back into the file copy.
+`reconcile()` is the mount's responsibility, not the copy's. It records execution-local file changes back into the file copy.
 
-This distinction exists because not every runtime is a live mount. Today's Sandbox integration materialises files into the container and reads changes back on capture. A future native mount might make capture automatic or unnecessary — but the product-level model stays the same: execution changes become file-copy state before they become current Workspace state.
+This distinction exists because not every runtime is a live mount. Today's Sandbox integration materialises files into the container and reads changes back on reconcile. A future native mount might make reconcile automatic or unnecessary — but the product-level model stays the same: execution changes become file-copy state before they become current Workspace state.
 
-This attachment API is narrower than the mounted-view model in [`runtime-projections.md`](./runtime-projections.md). It does not yet express source bases, runtime-local child mounts, overlays, refresh, or generation checks.
+This mount API is narrower than the mounted-view model in [`runtime-projections.md`](./runtime-projections.md). It does not yet express source bases, runtime-local child mounts, overlays, refresh, or generation checks.
 
-Capture is not publication. Captured files are still isolated in the copy.
+Reconcile is not publication. Reconciled files are still isolated in the copy.
 
 ## Apply and discard
 
@@ -159,14 +157,14 @@ const discarded = await copy.discard();
 if (Result.isError(discarded)) return discarded;
 ```
 
-Two different questions, two different verbs:
+Two different boundaries, two different verbs:
 
 ```
-capture: do we want to keep this execution result in the copy?
-apply:   do we want this copy to become current?
+reconcile: runtime projection changes become durable in the copy
+apply:     this copy becomes current Workspace files
 ```
 
-Capture can be cheap and frequent. Apply should reflect product or user intent.
+Reconcile is runtime-adapter plumbing. Apply should reflect product or user intent.
 
 ## Scoped files for delegated code
 
@@ -204,15 +202,13 @@ const copyResult = await workspace.files.copy("edit");
 if (Result.isError(copyResult)) return copyResult;
 
 const copy = copyResult.value;
-const attachmentResult = await copy.files.attach(sandbox, "/workspace");
-if (Result.isError(attachmentResult)) return attachmentResult;
+const mountResult = await copy.files.attach(sandbox, "/workspace");
+if (Result.isError(mountResult)) return mountResult;
 
-const attachment = attachmentResult.value;
-const result = await sandbox.exec(command, { cwd: attachment.path });
-if (result.success) {
-  const capture = await attachment.capture();
-  if (Result.isError(capture)) return capture;
-}
+const mount = mountResult.value;
+const result = await sandbox.exec(command, { cwd: mount.path });
+const reconcile = await mount.reconcile();
+if (Result.isError(reconcile)) return reconcile;
 
 const applied = await copy.apply();
 if (Result.isError(applied)) return applied;
@@ -224,7 +220,7 @@ Agents get tool-shaped versions of the same model:
 open file copy
 attach copy to sandbox
 run sandbox command
-capture sandbox changes
+reconcile sandbox changes
 inspect copy files
 apply copy
 discard copy
@@ -233,7 +229,7 @@ discard copy
 Tool descriptions should stay concrete:
 
 ```
-Capture files changed under /workspace in the Sandbox into the active file copy.
+Reconcile files changed under /workspace in the Sandbox into the active file copy.
 This keeps the result for preview or further edits, but does not change current Workspace files.
 ```
 
@@ -258,12 +254,12 @@ These details belong in lower layers. They shouldn't be the first thing a produc
 - Workspace does not run commands.
 - Workspace does not own Sandbox, container, or Dynamic Worker lifecycle.
 - A runtime does not decide when a copy becomes current.
-- Capture does not imply apply.
+- Reconcile does not imply apply.
 - Apply should be explicit and product-visible.
 - Products choose their own user-facing language. A photo app may say "draft"; a code product may say "preview". Workspace stays generic underneath.
 
 ## Current gap
 
-The prototype now exposes current files, durable file copies, filesystem attachments, capture, scoped file capabilities, `apply()`, and `discard()` through this product-facing layer.
+The prototype now exposes current files, durable file copies, filesystem mounts, reconciliation, scoped file capabilities, `apply()`, and `discard()` through this product-facing layer.
 
 Future implementation should be judged by whether code like `examples/photo-agent-demo` can express runtime delegation in these terms without exposing raw Workspace machinery.
