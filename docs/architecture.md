@@ -13,7 +13,7 @@ Every product on Cloudflare that does interesting work with files ends up reinve
 
 Workspace gives those products one shared primitive: a durable file tree with isolated working copies, an explicit publish boundary, and projections shaped to fit each runtime that needs to read or write the files.
 
-## The model in five lines
+## The current Workspace-owned model in five lines
 
 ```
 current files         durable head of a Workspace
@@ -28,11 +28,11 @@ Two rules carry most of the weight:
 1. A file copy is **durable but not published**. It survives across requests, agent turns, and process failures. Only `apply()` makes it current.
 2. Workspace **never publishes implicitly**. Not when a Sandbox exits, not when a Dynamic Worker returns, not because a command succeeded. The parent decides.
 
-Full vocabulary and target API live in [`product-api.md`](./product-api.md).
+The current product API lives in [`product-api.md`](./product-api.md). The broader mounted-view vocabulary lives in [`runtime-projections.md`](./runtime-projections.md).
 
-## Projections
+## Current Workspace-owned projections
 
-Different runtimes need different shapes of access to the same durable state. Workspace defines the state once and exposes four projections:
+Different runtimes need different shapes of access to Workspace-owned state. The current implementation exposes these projections over current files and file copies:
 
 | Projection | Consumer | Shape | Authority |
 |---|---|---|---|
@@ -41,7 +41,7 @@ Different runtimes need different shapes of access to the same durable state. Wo
 | Filesystem | Sandbox / container | Files at `/workspace`; explicit capture | Native file IO inside the runtime; apply stays with parent |
 | Module / asset (planned) | Dynamic Worker via Worker Loader | Modules and asset bindings from a Workspace tree | Read-only over the chosen tree or revision |
 
-The first three are built. Module/asset projections are documented in [`known-limitations.md`](./known-limitations.md).
+The first three are built for Workspace-owned file copies. Module/asset projections are documented in [`known-limitations.md`](./known-limitations.md). The broader mounted-view model, where projections can compose Workspace-owned overlays with source and runtime-local authorities, is described in [`runtime-projections.md`](./runtime-projections.md).
 
 ## How a Workspace is built
 
@@ -94,22 +94,23 @@ The two real correctness rules:
 
 As long as those hold, multiple writers don't corrupt the tree — they conflict at the SQLite level via head version, and either succeed or fail cleanly.
 
-### Content references are the seam we want
+### Workspace-owned content storage
 
-The prototype treats "file content" and "R2 blob" as the same thing. That's fine for now, but it bakes in an assumption that won't hold for every workload:
+The prototype treats "file content" and "R2 blob" as the same thing. That's fine for now, but it bakes in an assumption that won't hold for every Workspace-owned workload:
 
-- A coding agent materialising thousands of small source files into a Sandbox via per-file R2 reads is not where R2 shines.
-- A model-weights file the size of a small disk shouldn't be copied into R2 just because some product wants to attach it to a Workspace.
-- A file imported by reference from a GitHub commit doesn't have R2 bytes at all until something asks for them.
+- Small, hot files may be better stored in Durable Object storage than in R2.
+- Large generated artifacts may belong in a product artifact authority rather than current Workspace files.
+- A coding agent may work against a large source snapshot without importing every unchanged source byte into Workspace.
 
-The long-term shape is a **content reference** on each entry, with a few variants:
+The long-term shape is an internal **Workspace content storage reference** on each Workspace-owned entry, with variants such as:
 
 - Workspace-owned blob in R2 (today's only case).
-- Workspace-owned blob in DO storage, for small/hot files where R2 round-trips hurt.
-- External source reference, hydrated on demand through an adapter (see [`sources.md`](./sources.md)).
-- Cached external reference, where Workspace has a local copy keyed by source version.
+- Workspace-owned bytes in DO storage, for small/hot files where R2 round-trips hurt.
+- Workspace-owned cache blob, when a product deliberately imports or caches bytes under Workspace lifecycle.
 
-We haven't built this yet, but it's worth keeping the door open: code that reads `entry.blobKey` directly is going to be in the way. Code that goes through a `ContentRef`-shaped boundary is not.
+External source bytes should remain owned by source authorities, not by Workspace entries that point back to GitHub, S3, or Hugging Face. A source-backed project view can compose a stable source snapshot with a Workspace-owned writable overlay; importing internalizes selected bytes into Workspace-owned storage. See [`runtime-projections.md`](./runtime-projections.md) and [`sources.md`](./sources.md).
+
+We haven't built this yet, but it's worth keeping the door open: code that reads `entry.blobKey` directly is going to be in the way. Code that goes through a storage-reference boundary for Workspace-owned content is not.
 
 ### Tree state and Durable Object facets
 
@@ -131,7 +132,7 @@ It's worth naming these out loud:
 
 - **Authority atom:** one Workspace Durable Object. Owns identity, head version, the public API, lifecycle decisions. Not changing.
 - **Isolation atom:** a file copy (also a revision). Today: rows in a shared SQLite table. Likely future: a facet per tree state.
-- **Byte ownership atom:** a content reference. Today: an R2 blob key. Likely future: a tagged ref pointing at R2, DO storage, an external source, or a cached external source.
+- **Byte ownership atom:** a Workspace content storage reference. Today: an R2 blob key. Likely future: a tagged ref pointing at R2, DO storage, or a Workspace-owned cache. External sources remain separate file authorities composed through mounted views rather than byte owners inside Workspace entries.
 
 Product code should only see the first two, and only through the names in [`product-api.md`](./product-api.md).
 
@@ -155,7 +156,7 @@ The current implementation scans and hashes. A future implementation can be a re
 
 ## How the demo wires it together
 
-`examples/photo-agent-demo` is a real Worker that exercises every primitive end-to-end. The point isn't "photo editing" — it's proving that the same Workspace draft is usable simultaneously from a Sandbox shell and from delegated Worker code, with one publication boundary.
+`examples/photo-agent-demo` is a real Worker that exercises every primitive end-to-end. The point isn't "photo editing" — it's proving that one Workspace working copy — called a draft in the product UI — is usable simultaneously from a Sandbox shell and from delegated Worker code, with one publication boundary.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -185,11 +186,11 @@ The current implementation scans and hashes. A future implementation can be a re
                                 ┌──────────────────────┐ ┌─────────────────────────┐
                                 │ Sandbox (container)  │ │ Worker Loader            │
                                 │ /workspace mounted   │ │ Dynamic Worker w/        │
-                                │ from draft copy      │ │ env.WORKSPACE (scoped)   │
+                                │ from working copy    │ │ env.WORKSPACE (scoped)   │
                                 │ ImageMagick, sh, …   │ │ readFile/writeFile/…     │
                                 └──────────────────────┘ └─────────────────────────┘
                                           │                       │
-                                          └────── both mutate the same draft ──────┐
+                                          └──── both mutate the same working copy ─┐
                                                                                    │
                                                           PhotoAgent.commitDraft() ─┘
                                                           → copy.apply() → revision
@@ -197,8 +198,8 @@ The current implementation scans and hashes. A future implementation can be a re
 
 Wiring choices worth knowing:
 
-- **One draft per `PhotoAgent` instance.** The agent stores `draftEditId` in its own state. The Sandbox and the Dynamic Worker both bind to the same file copy, so a `convert` in Sandbox and a `writeFile('/notes/edit-summary.md')` from a Dynamic Worker land in one draft and apply together.
-- **Sandboxes are scoped per draft.** `getSandbox(env.Sandbox, ${workspaceName}-${draftEditId}, { sleepAfter: "60s" })`. Concurrent users and drafts don't share `/workspace`.
+- **One working copy per `PhotoAgent` draft.** The agent stores `draftEditId` in its own state. The Sandbox and the Dynamic Worker both bind to the same file copy, so a `convert` in Sandbox and a `writeFile('/notes/edit-summary.md')` from a Dynamic Worker land in one working copy and apply together.
+- **Sandboxes are scoped per draft working copy.** `getSandbox(env.Sandbox, ${workspaceName}-${draftEditId}, { sleepAfter: "60s" })`. Concurrent users and draft working copies don't share `/workspace`.
 - **The Dynamic Worker binding goes through a loopback `WorkerEntrypoint`.** `this.ctx.exports.WorkspaceFileCapability({ props: { workspaceName, draftEditId } })`. Worker Loader RPC references can't be serialised through `env`, but service stubs through entrypoint props can.
 - **The UI is event-driven, not polled.** `PhotoAgent.setState({ photo })` pushes change keys over the existing WebSocket; the browser only fetches `/photos/{original|draft|current}` when keys change.
 - **No tool implicitly publishes.** `commitDraft` is its own agent tool, gated on user intent.

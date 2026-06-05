@@ -1,6 +1,6 @@
 # Product model
 
-This doc describes what Workspace is conceptually and the principles we keep coming back to when designing it. For the in/out test, see [`product-boundaries.md`](./product-boundaries.md). For the target user-facing API, see [`product-api.md`](./product-api.md). For how it's actually built, see [`architecture.md`](./architecture.md).
+This doc describes what Workspace is conceptually and the principles we keep coming back to when designing it. For the in/out test, see [`product-boundaries.md`](./product-boundaries.md). For the target user-facing API, see [`product-api.md`](./product-api.md). For the emerging runtime vocabulary, see [`runtime-projections.md`](./runtime-projections.md). For how it's actually built, see [`architecture.md`](./architecture.md).
 
 ## What Workspace is
 
@@ -17,15 +17,15 @@ The unit of "publish" is explicit. The unit of "isolate" is explicit. Everything
 
 ### Workspace is file state, not execution
 
-It owns files, directories, metadata, working copies, the publish boundary, the discard boundary, and revisions.
+It owns the Workspace-owned file tree: files, directories, metadata, working copies, the publish boundary, the discard boundary, and revisions.
 
 It does not own command execution, Dynamic Worker loading, container or Sandbox lifecycle, agent orchestration, scheduling, policy, or Git remotes. Those belong to the products built on top.
 
 ### Adapters depend on Workspace; Workspace doesn't depend on adapters
 
-Workspace defines its semantics once. Each runtime gets a projection that maps those semantics onto its conventions: `/workspace` for a Sandbox, scoped `env.WORKSPACE` for a Dynamic Worker, direct RPC for a trusted Worker.
+Workspace defines its semantics once. Runtime adapters consume those semantics and project Workspace-owned authorities, or mounted views containing them, into runtime-native shapes: `/workspace` for a Sandbox, scoped `env.WORKSPACE` for a Dynamic Worker, direct RPC for a trusted Worker.
 
-Workspace doesn't become Sandbox-shaped, Dynamic-Worker-shaped, or container-shaped. The projection lives in the projection layer.
+Workspace doesn't become Sandbox-shaped, Dynamic-Worker-shaped, or container-shaped. Runtime mechanics live in adapters and projection layers.
 
 ### Capabilities are the boundary
 
@@ -53,15 +53,15 @@ Workspace doesn't know about original photos, draft edits, code artifacts, agent
 
 ### Sources are not Workspace
 
-Files in a Workspace might have come from a GitHub repo, a Hugging Face model, an S3 bucket, an Artifacts ref, or a user upload. Workspace doesn't know or care. Those systems have their own lifecycles, and bridging them is product work — see [`sources.md`](./sources.md).
+Files in a Workspace might have come from a GitHub repo, a Hugging Face model, an S3 bucket, an Artifacts ref, or a user upload. If a product imports those bytes, Workspace owns the imported file state. If a product mounts a stable source snapshot beside a Workspace-owned overlay, the source still owns unchanged source bytes. Bridging those systems is product/source-adapter work — see [`sources.md`](./sources.md).
 
-Workspace can record where a file came from as metadata. It does not watch the source for changes.
+Workspace can record where imported files came from as metadata. It does not watch the source for changes.
 
 ## Semantic model
 
 ### Durable tree
 
-A Workspace contains a tree of files and directories. Each entry has path, type, size, and timestamps. Two categories of metadata are part of the long-term model:
+A Workspace contains a tree of Workspace-owned files and directories. Each entry has path, type, size, and timestamps. A product may compose that tree with external source authorities in a mounted view, but those source-owned files are not automatically Workspace entries. Two categories of metadata are part of the long-term model:
 
 - **Generic file metadata** — content type, content digest, small string metadata.
 - **Provenance metadata** — adapter id, source ref, source version, source path — for files imported from an external source. See [`sources.md`](./sources.md).
@@ -70,9 +70,9 @@ Directories are explicit. `mkdir` creates one; `writeFile` requires the parent t
 
 ### Working copies (file copies)
 
-A working copy is an isolated, mutable view of the tree, initialized from the current files.
+A working copy is an isolated, mutable view of Workspace-owned file state, usually initialized from current files.
 
-You can use it directly through a Worker, expose it to a Sandbox through a filesystem projection, or hand it to a Dynamic Worker through a scoped binding. Changes inside the copy don't affect current files until commit.
+You can use it directly through a Worker, expose it to a Sandbox through a filesystem projection, or hand it to a Dynamic Worker through a scoped binding. In source-backed project views, a working copy can act as the writable overlay on top of a stable source snapshot. Changes inside the copy don't affect current files until apply, and they don't affect external sources until product export.
 
 Working copies are durable. They can be looked up, listed, resumed, and cleaned up without the calling product having to track their state separately.
 
@@ -96,7 +96,7 @@ Products need to know when files change. The current model exposes a head versio
 
 ## Projections
 
-Each projection is a different shape of access to the same durable state.
+Each current projection is a different shape of access to Workspace-owned durable state. The broader model also allows mounted views that compose Workspace-owned overlays with source snapshots and runtime-local authorities; see [`runtime-projections.md`](./runtime-projections.md).
 
 ### Trusted control
 
@@ -131,7 +131,7 @@ Bounded by root prefix, read globs, write globs, optional delete, no apply autho
 
 ### Filesystem
 
-Sandboxes and containers see a working copy as a local directory. The product attaches it, runs commands, captures useful changes, and decides on apply:
+Sandboxes and containers see a working copy, or a mounted view containing a working copy, as a local directory. The product attaches it, runs commands, captures useful Workspace-owned changes, and decides on apply or export:
 
 ```ts
 const copyResult = await workspace.files.copy("photo-edit");

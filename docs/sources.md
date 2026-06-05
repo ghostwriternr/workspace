@@ -1,6 +1,6 @@
 # Sources
 
-A Workspace doesn't know where its files came from. Uploaded bytes, a checkout of a GitHub repo, a Hugging Face model snapshot, a slice of an S3 bucket — they all land in Workspace the same way: as durable files in a tree.
+A Workspace doesn't own external sources. Uploaded bytes, a checkout of a GitHub repo, a Hugging Face model snapshot, a slice of an S3 bucket — a product may import them into Workspace-owned files, or it may mount a stable source snapshot beside a Workspace-owned writable layer.
 
 This doc explains why that matters, what stays out of Workspace, and how products bridge external systems into a Workspace.
 
@@ -10,9 +10,9 @@ For the conceptual model, see [`product-model.md`](./product-model.md). For boun
 
 External systems have their own lifecycle. A GitHub branch moves. An S3 object is overwritten. A Hugging Face revision is reissued. Artifacts versions expire.
 
-Workspace doesn't track any of that. It owns the file state a product chose to import, and that's it. If `main` moves on GitHub, the Workspace doesn't change. If a model revision is replaced, the imported files don't change.
+Workspace doesn't track any of that. It owns the file state a product chose to import or write into Workspace-owned layers, and that's it. If `main` moves on GitHub, a previously resolved source snapshot doesn't move. If a model revision is replaced, imported Workspace files don't change.
 
-That's deliberate. Workspace is meant to be a stable, inspectable, publishable working tree. Reasoning about it has to be possible without reasoning about every system it might have been seeded from.
+That's deliberate. Workspace is meant to provide stable, inspectable, publishable file state. Reasoning about it has to be possible without letting every external lifecycle leak into Workspace core.
 
 ## What a "source" is
 
@@ -32,21 +32,24 @@ Sources have:
 
 Workspace itself doesn't need to understand any of that. Products do.
 
-## Adapters live outside
+## Source adapters live outside core
 
-The product code that talks to GitHub, Hugging Face, S3, or anywhere else is an **adapter**. Adapters are not part of Workspace. They live in product code, in separate packages, in whatever shape fits the source.
+The product code that talks to GitHub, Hugging Face, S3, or anywhere else is a **source adapter**. Source adapters are not part of Workspace core. They live in product code or separate packages, in whatever shape fits the source.
 
-Anyone should be able to write one. The interface Workspace needs to support them is small:
+The Workspace ecosystem can provide source adapter packages, but the dependency direction stays the same: source adapters consume Workspace concepts; Workspace core does not depend on source-specific lifecycles.
 
-- A way to write file bytes into a file copy.
-- A way to record where those bytes came from, if the product cares.
-- A way to read them back.
+Anyone should be able to write one. The integration surface stays small:
+
+- Workspace core needs source-independent tree write primitives for eager import.
+- The broader Workspace ecosystem needs shared file-authority concepts for products that want source-backed views.
+- Products may record provenance for Workspace-owned bytes, if they care.
+- Source adapters need a way to read source bytes when a view, import, search, or export needs them.
 
 No part of Workspace core depends on a specific adapter, and no adapter needs Workspace's permission to exist.
 
-## What an adapter does
+## What a source adapter does
 
-An adapter is small. The shape it exposes to product code is roughly:
+For eager import, a source adapter is small. The shape it exposes to product code is roughly:
 
 - **Resolve a snapshot.** Take whatever the user gave you (`github:owner/repo@main`, `s3:bucket/prefix`, …) and return an identity plus a strongly-versioned snapshot — a commit SHA, an etag manifest, a revision id. Strong versioning is what lets a product reason about reproducibility.
 - **List files in that snapshot.** Yield file records — `{ path, contents, metadata? }` — typically as an async iterable so large sources can stream rather than buffer.
@@ -54,7 +57,7 @@ An adapter is small. The shape it exposes to product code is roughly:
 
 The product creates a file copy, then hands the adapter's iterable to `copy.files.writeTree(root, entries)` (see [`product-api.md`](./product-api.md)). `root` is the absolute Workspace directory where the source should land; each entry path is relative to that root. If the adapter stream fails, the product discards the copy. If import succeeds, the product decides whether to apply the copy. The adapter itself doesn't call `apply` and doesn't hold Workspace identity.
 
-The first source package, `packages/source/github`, does this for GitHub REST: it resolves a ref to a commit SHA, walks the recursive tree API, and streams blob contents as `WorkspaceTreeEntry` values. If the GitHub stream fails while `writeTree` is consuming it, the operation returns `WorkspaceTreeSourceError`. A trivial S3 or external-R2 source package would do the same against object APIs. Source packages stay small: the cost of supporting a new source is bounded, and the surface a product has to trust stays narrow.
+The first source package, `packages/source/github`, does this for GitHub REST: it resolves a ref to a commit SHA, walks the recursive tree API, and streams blob contents as `WorkspaceTreeEntry` values. If the GitHub stream fails while `writeTree` is consuming it, the operation returns `WorkspaceTreeSourceError`. A trivial S3 or external-R2 source package would do the same against object APIs. Source packages stay small: the cost of supporting a new source is bounded, and the surface a product has to trust stays narrow. Future source-backed mounted views will need an additional read-only file authority shape, but that should stay outside Workspace core for the same dependency-direction reason.
 
 ## Provenance, not auto-sync
 
@@ -68,16 +71,16 @@ It does not mean Workspace watches the source. There is no background sync, no r
 
 The rule is: **provenance is recorded, but lifecycle stays with the source.**
 
-## Hydration modes
+## Ways sources participate
 
 Adapters don't have to copy everything into Workspace eagerly.
 
-- **Eager import.** Read the source bytes, write them as Workspace files. Simple. Right for small repos, uploads, small datasets, generated outputs. This is what the prototype does today for everything.
-- **Reference.** Record the source ref and a digest if available; don't copy bytes until a runtime needs them. Right for large model weights, large datasets, or sparse access. Requires a hydration step at use time.
-- **Cached external.** Like reference, but Workspace stores a copy of the bytes after the first read. Subsequent reads are local. The source ref + version is the cache key.
-- **Overlay.** The Workspace holds only the diff relative to a source snapshot. Right for coding-agent edits against a large repo, where most files are unchanged and exporting a patch is the goal. Requires a real source-snapshot anchor.
+- **Eager import.** Read the source bytes, write them as Workspace-owned files. Simple. Right for small repos, uploads, small datasets, generated outputs. This is what the prototype does today for everything.
+- **Mounted source snapshot.** Resolve the source to a stable snapshot and expose it as a read-only file authority in a mounted view. Right for large repos, model weights, datasets, or sparse access. Workspace does not own unchanged source bytes in this mode.
+- **Workspace overlay.** Compose a Workspace-owned writable layer over a source snapshot. Reads see overlay changes first and then source files. Writes and deletes land in Workspace-owned state. Right for coding-agent edits where most source files are unchanged and export is the likely outcome.
+- **Product cache.** Cache source bytes in product- or Workspace-owned storage after reads, without changing the source's ownership. Useful for latency and rate limits; cache lifecycle must be explicit.
 
-The prototype only implements eager import. The other modes are real future work, but the choice is per-adapter and per-file, not a global Workspace setting.
+The prototype only implements eager import. The other modes are real future work. The important boundary is ownership: importing makes bytes Workspace-owned; mounting keeps bytes source-owned; overlay writes are Workspace-owned.
 
 ## Internal R2 is not a source
 
@@ -92,7 +95,7 @@ The fact that both happen to be R2 is incidental. The boundary is who owns the l
 
 The same shape works in reverse. A product can:
 
-- Generate a patch from a Workspace draft and open a GitHub PR.
+- Generate a patch from a Workspace working copy or overlay and open a GitHub PR.
 - Upload a Workspace revision's files to a Hugging Face model repo.
 - Sync a directory in current files to an S3 prefix.
 - Hand a Workspace revision tree to Artifacts as a Git push.
@@ -104,15 +107,16 @@ None of that is Workspace core. Workspace exposes the file state; product adapte
 A coding agent, a data-science agent, a publishing pipeline, a generated-app preview — each one will need at least one source adapter, sometimes several. The pattern is consistent:
 
 1. The product resolves a source snapshot (commit SHA, revision id, manifest).
-2. The product imports or references files into a Workspace file copy.
-3. The agent (or user) edits a working copy.
+2. The product imports files into a Workspace file copy, or mounts a stable source snapshot beside a Workspace-owned working copy/overlay.
+3. The agent (or user) edits the Workspace-owned working copy/overlay.
 4. The product exports the result somewhere — back to the source, to a different destination, or nowhere.
 5. The product decides retention.
 
-Workspace's job is steps 2 through (whatever the product calls) 4. Steps 1 and 5 are firmly product territory.
+Workspace's job is the durable file-state part of steps 2 and 3: represent imported Workspace-owned files, provide working copies or overlays, and preserve edits until the product applies or discards them. Mounted source snapshots and export in step 4 are product/source-adapter work over Workspace-compatible file authorities. Steps 1 and 5 are firmly product territory.
 
 ## See also
 
 - [`product-model.md`](./product-model.md) — what Workspace is conceptually.
 - [`product-boundaries.md`](./product-boundaries.md) — what stays out.
-- [`known-limitations.md`](./known-limitations.md) — including the current "file content always equals R2 blob" assumption, which gets in the way of non-eager source modes.
+- [`runtime-projections.md`](./runtime-projections.md) — how sources, file authorities, mounted views, and runtime projections relate.
+- [`known-limitations.md`](./known-limitations.md) — including the current eager-import/R2-storage assumptions, which get in the way of source-backed mounted views.

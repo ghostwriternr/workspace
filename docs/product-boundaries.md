@@ -6,13 +6,13 @@ For the conceptual model, see [`product-model.md`](./product-model.md). For the 
 
 ## What Workspace owns
 
-- Durable files and directories.
-- File contents and generic file metadata.
+- Workspace-owned durable files and directories.
+- Workspace-owned file contents and generic file metadata.
 - Working-copy semantics (file copies).
 - Scoped file capabilities for delegated code.
-- Filesystem attachment semantics for Sandboxes and containers.
+- Runtime-independent filesystem attachment semantics.
 - Module and asset projections from Workspace trees (planned).
-- Explicit commit and discard of working-copy changes.
+- Explicit apply and discard of working-copy changes.
 - Immutable revisions as recovery points.
 
 ## What Workspace does not own
@@ -29,7 +29,7 @@ For the conceptual model, see [`product-model.md`](./product-model.md). For the 
 - Arbitrary object-bucket mounting.
 - Full distributed POSIX semantics.
 
-Execution products decide how work runs. Workspace decides what durable files exist before and after that work.
+Execution products decide how work runs. Workspace decides what Workspace-owned durable files exist before and after that work.
 
 ## Authority
 
@@ -41,7 +41,7 @@ Delegated code (Dynamic Workers, plugins, generated code, Sandbox/container comm
 
 Workspace never publishes execution-local changes implicitly. Not when a process writes a file. Not when a command exits. Not when a Dynamic Worker returns. Not when a Sandbox shuts down. Not because execution succeeded.
 
-The publish operation is `commit`. The escape hatch is `discard`.
+The publish operation is `apply`. The escape hatch is `discard`.
 
 Working-copy changes may be durable before they're published. Durable draft state and published current state are different concepts.
 
@@ -56,3 +56,5 @@ For any proposed feature, ask:
 5. Is it a core semantic, or a product/controller concern?
 
 If the answer points to execution, orchestration, loading, Git, policy, source-specific lifecycle, or product-specific domain state — keep it out of Workspace core. If it's an adapter, preserve the dependency direction: adapters consume Workspace semantics; Workspace doesn't consume adapters.
+
+For the emerging vocabulary around file authorities, mounted views, runtime projections, and adapter responsibilities, see [`runtime-projections.md`](./runtime-projections.md).

@@ -8,9 +8,11 @@ Head, working copies, and revisions all live in the same SQLite database inside 
 
 The direction this is heading is named in [`architecture.md`](./architecture.md): one facet per tree state, with `ctx.facets.clone()` doing the copies (and using copy-on-write where the platform supports it). The relevant platform APIs aren't shipped yet, so this is a future-implementation item, not an immediate one. In the meantime, the public API should not expose session tables or row-copy behaviour.
 
-## Content is always an R2 blob
+## Workspace-owned content is always an R2 blob
 
-Every file entry points at a blob in `WORKSPACE_BLOBS`. That bakes in two assumptions that won't hold for every workload: that Workspace owns the bytes, and that they live in R2. We want a small `ContentRef` shape — see [`architecture.md`](./architecture.md) — so an entry can also point at an external source reference, a cached external reference, or eventually DO-local storage for small/hot files. Until that exists, every file content has to be eagerly imported as R2 bytes.
+Every Workspace-owned file entry points at a blob in `WORKSPACE_BLOBS`. That bakes in the assumption that Workspace-owned bytes always live in R2. We want a small Workspace content storage reference — see [`architecture.md`](./architecture.md) — so Workspace-owned entries can eventually point at R2, DO-local storage for small/hot files, or a Workspace-owned cache.
+
+External source bytes should remain owned by source authorities, not by Workspace entries that point back to those sources. Until mounted source-backed views exist, products that want source files inside Workspace must eagerly import them as R2-backed Workspace bytes.
 
 ## No source provenance
 
@@ -36,7 +38,7 @@ Long-term: a mount-like implementation that avoids full-tree scans and avoids re
 
 The first GitHub source adapter uses GitHub REST tree/blob APIs: resolve a commit, fetch the recursive tree, then fetch blobs in bounded concurrent chunks as the import stream is consumed. This keeps the adapter small and easy to test, but large repositories are still API-call-heavy.
 
-Future options include tarball import, sparse import, or reference-based hydration once `ContentRef` exists.
+Future options include tarball import, sparse import, or source-backed mounted views where unchanged source bytes remain owned by a stable source snapshot and Workspace stores only the writable overlay.
 
 ## GitHub symlinks are imported as files
 

@@ -1,12 +1,12 @@
 # Product API
 
-This doc describes the user-facing API we want product code (and agent tools) to see. The current-files, file-copy, attachment/capture, and scoped file layers exist today. See [`architecture.md`](./architecture.md) for how the lower layers work, and `examples/photo-agent-demo` for the proving ground.
+This doc describes the user-facing API we want product code (and agent tools) to see for today's Workspace-owned file trees. The current-files, file-copy, attachment/capture, and scoped file layers exist today. See [`architecture.md`](./architecture.md) for how the lower layers work, and `examples/photo-agent-demo` for the proving ground.
 
-For the conceptual model behind these names, see [`product-model.md`](./product-model.md).
+For the conceptual model behind these names, see [`product-model.md`](./product-model.md). For the broader mounted-view direction — source snapshots, runtime-local mounts, overlays, and runtime adapters — see [`runtime-projections.md`](./runtime-projections.md).
 
-## The shape we want
+## Current product shape
 
-A product or agent author should be able to read Workspace code and follow it without knowing about Durable Objects, RPC stubs, sessions, loopback entrypoints, or projection internals. They should see:
+A product or agent author should be able to read Workspace code and follow it without knowing about Durable Objects, RPC stubs, sessions, loopback entrypoints, or projection internals. For a Workspace-owned tree, they should see:
 
 ```
 current files
@@ -121,7 +121,7 @@ Bulk import is the natural integration point for source adapters — see [`sourc
 
 ## Attachments and capture
 
-Attachments are how file copies become usable from a runtime. For Sandboxes and containers, that means files appear under a local path like `/workspace`.
+Attachments are the current stepping stone for making file copies usable from a runtime. For Sandboxes and containers, that means files appear under a local path like `/workspace`.
 
 ```ts
 const attachmentResult = await copy.files.attach(sandbox, "/workspace");
@@ -136,6 +136,8 @@ if (Result.isError(capture)) return capture;
 `capture()` is the attachment's responsibility, not the copy's. It records execution-local file changes back into the file copy.
 
 This distinction exists because not every runtime is a live mount. Today's Sandbox integration materialises files into the container and reads changes back on capture. A future native mount might make capture automatic or unnecessary — but the product-level model stays the same: execution changes become file-copy state before they become current Workspace state.
+
+This attachment API is narrower than the mounted-view model in [`runtime-projections.md`](./runtime-projections.md). It does not yet express source bases, runtime-local child mounts, overlays, refresh, or generation checks.
 
 Capture is not publication. Captured files are still isolated in the copy.
 
