@@ -25,11 +25,12 @@
   "durable_objects": {
     "bindings": [
       { "name": "CodingAgent", "class_name": "CodingAgent" },
-      { "name": "Sandbox", "class_name": "Sandbox" }
+      { "name": "Sandbox", "class_name": "Sandbox" },
+      { "name": "WORKSPACE_OBJECTS", "class_name": "WorkspaceObject" }
     ]
   },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["CodingAgent", "Sandbox"] }
+    { "tag": "v1", "new_sqlite_classes": ["CodingAgent", "Sandbox", "WorkspaceObject"] }
   ],
   "observability": { "enabled": true },
   "upload_source_maps": true

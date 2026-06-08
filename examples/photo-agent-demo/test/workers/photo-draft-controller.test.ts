@@ -228,8 +228,21 @@ function createDependencies(options: CreateDependenciesOptions): TestDependencie
     repositories[options.draftEditId] = options.copy ?? {};
   }
 
-  const { artifacts, driver } = createFakeArtifactsWorkspace(repositories);
-  const workspace = Workspace.fromArtifacts(artifacts, "demo");
+  const { artifacts, driver, object } = createFakeArtifactsWorkspace(repositories);
+  void object.recordCurrentRepository({
+    repository: "demo",
+    remote: "https://git.example/demo.git",
+    defaultBranch: "main",
+  });
+  if (options.draftEditId) {
+    void object.recordCopy({
+      copyId: options.draftEditId,
+      baseRepository: "demo",
+      remote: `https://git.example/${options.draftEditId}.git`,
+      defaultBranch: "main",
+    });
+  }
+  const workspace = Workspace.fromArtifacts({ artifacts, object, name: "demo" });
   let draftEditId = options.draftEditId;
 
   return {

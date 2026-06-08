@@ -6,7 +6,7 @@ It's the missing primitive between "object storage" and "filesystem inside a run
 
 ## What you get
 
-- A durable file tree backed by Artifacts as the versioned file authority.
+- A durable file tree backed by Artifacts as the versioned file authority, with a small WorkspaceObject Durable Object for per-Workspace control metadata.
 - Isolated working copies you can hand to a runtime: a Sandbox sees it at `/workspace`, a Dynamic Worker sees it as `env.WORKSPACE`, a trusted Worker uses it directly.
 - Explicit publish (`apply`) and explicit throwaway (`discard`). Nothing is published implicitly when a command exits or a Worker returns.
 - Immutable revisions of head as recovery points.
@@ -19,6 +19,7 @@ Workspace is source-agnostic: product flows might import files from a user uploa
 - [`docs/product-model.md`](./docs/product-model.md) — the conceptual model: working copies, projections, authority.
 - [`docs/product-api.md`](./docs/product-api.md) — the user-facing API we're aiming for.
 - [`docs/runtime-projections.md`](./docs/runtime-projections.md) — the emerging vocabulary for file authorities, mounted views, and runtime adapters.
+- [`docs/workspace-object.md`](./docs/workspace-object.md) — why Workspace uses a Durable Object for coordination metadata.
 - [`docs/product-boundaries.md`](./docs/product-boundaries.md) — what Workspace is and isn't.
 - [`docs/sources.md`](./docs/sources.md) — how external systems (GitHub, Hugging Face, S3, …) relate to a Workspace.
 - [`docs/known-limitations.md`](./docs/known-limitations.md) — honest list of prototype gaps.

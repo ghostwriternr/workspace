@@ -1,4 +1,5 @@
 import { Result, type Result as BetterResult } from "better-result";
+import type { WorkspaceObjectClient } from "@cloudflare/workspace";
 import { RepoImportController, type ArtifactsImportBinding, type RepoImportSummary } from "../repo/import-controller";
 
 const importPathPattern = /^\/api\/workspaces\/([^/]+)\/imports\/github$/;
@@ -13,8 +14,13 @@ type CodingAgentNamespace = {
   getByName(name: string): { refreshRepoState(lastImport?: RepoImportSummary): Promise<unknown> };
 };
 
+type WorkspaceObjectNamespace = {
+  getByName(name: string): WorkspaceObjectClient;
+};
+
 type RepoImportRuntime = {
   artifacts: ArtifactsImportBinding;
+  workspaceObjects: WorkspaceObjectNamespace;
 };
 
 export type RepoImportRequestOptions = {
@@ -43,6 +49,7 @@ export async function handleRepoImportRequest(
 
   const controller = new RepoImportController({
     artifacts: runtime.artifacts,
+    workspaceObjectForName: (workspaceName) => runtime.workspaceObjects.getByName(workspaceName),
   });
   const result = await controller.importGitHubRepo({
     workspaceName: decodeURIComponent(match[1] ?? ""),

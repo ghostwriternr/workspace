@@ -42,7 +42,8 @@ describe("Workspace", () => {
   afterEach(() => resetFakeArtifacts());
 
   it("constructs with the default internal Git driver", () => {
-    const workspace = Workspace.fromArtifacts(new FakeArtifactsBinding(new FakeArtifactsWorkspaceDriver({})), "repo");
+    const artifacts = new FakeArtifactsBinding(new FakeArtifactsWorkspaceDriver({}));
+    const workspace = Workspace.fromArtifacts({ artifacts, object: createFakeArtifacts().object, name: "repo" });
 
     expect(workspace.files).toBeDefined();
   });
@@ -223,6 +224,41 @@ describe("Workspace", () => {
     if (Result.isOk(current)) expect(text(current.value)).toBe("draft");
   });
 
+  it("records working copy repository access in WorkspaceObject", async () => {
+    const { workspace, object } = createWorkspace({ repo: { "/note.txt": bytes("current") } });
+
+    const copy = await workspace.files.copy("metadata");
+    if (Result.isError(copy)) throw new Error("copy failed");
+
+    await expect(object.repositoryAccess(copy.value.id)).resolves.toEqual({
+      repository: copy.value.id,
+      remote: `https://git.example/${copy.value.id}.git`,
+      defaultBranch: "main",
+      baseRepository: "repo",
+    });
+  });
+
+  it("records working copy metadata when Artifacts fork omits default branch", async () => {
+    const { workspace, artifacts, driver, object } = createWorkspace({ repo: { "/note.txt": bytes("current") } });
+    artifacts.get = async () => ({
+      name: "repo",
+      fork: async (name: string) => {
+        driver.forkRepository("repo", name);
+        return { name, remote: `https://git.example/${name}.git` };
+      },
+    });
+
+    const copy = await workspace.files.copy("metadata");
+    if (Result.isError(copy)) throw new Error("copy failed");
+
+    await expect(object.repositoryAccess(copy.value.id)).resolves.toEqual({
+      repository: copy.value.id,
+      remote: `https://git.example/${copy.value.id}.git`,
+      defaultBranch: "main",
+      baseRepository: "repo",
+    });
+  });
+
   it("attaches a file copy to a filesystem host and reconciles changed files", async () => {
     const { workspace } = createWorkspace({ repo: { "/photos/original.txt": bytes("original") } });
     const host = new FakeMountHost();
@@ -265,8 +301,13 @@ describe("Workspace", () => {
 });
 
 function createWorkspace(initial: Record<string, Record<string, Uint8Array>>) {
-  const { artifacts, driver } = createFakeArtifacts(initial);
-  return { workspace: Workspace.fromArtifacts(artifacts, "repo"), artifacts, driver };
+  const { artifacts, driver, object } = createFakeArtifacts(initial);
+  void object.recordCurrentRepository({
+    repository: "repo",
+    remote: "https://git.example/repo.git",
+    defaultBranch: "main",
+  });
+  return { workspace: Workspace.fromArtifacts({ artifacts, object, name: "repo" }), artifacts, driver, object };
 }
 
 class FakeMountHost {

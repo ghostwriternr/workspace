@@ -1,7 +1,10 @@
 import { Result } from "better-result";
 import { Workspace } from "@cloudflare/workspace";
 
-type PhotoArtifactsBinding = Parameters<typeof Workspace.fromArtifacts>[0];
+type PhotoArtifactsBinding = Parameters<typeof Workspace.fromArtifacts>[0]["artifacts"];
+type WorkspaceObjectNamespace = {
+  getByName(name: string): Parameters<typeof Workspace.fromArtifacts>[0]["object"];
+};
 
 type PhotoAgentNamespace = {
   getByName(name: string): PhotoAgentForRead;
@@ -19,6 +22,7 @@ const readRoutePattern = /^\/api\/workspaces\/([^/]+)\/photos\/(original|current
 export async function handlePhotoReadRequest(
   request: Request,
   artifacts: PhotoArtifactsBinding,
+  workspaceObjects: WorkspaceObjectNamespace,
   photoAgents?: PhotoAgentNamespace,
 ): Promise<Response | undefined> {
   const url = new URL(request.url);
@@ -32,7 +36,11 @@ export async function handlePhotoReadRequest(
   }
 
   const workspaceName = decodeURIComponent(match[1]);
-  const workspace = Workspace.fromArtifacts(artifacts, workspaceName);
+  const workspace = Workspace.fromArtifacts({
+    artifacts,
+    object: workspaceObjects.getByName(workspaceName),
+    name: workspaceName,
+  });
   const target = match[2];
 
   if (target === "draft") {

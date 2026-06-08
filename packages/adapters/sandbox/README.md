@@ -26,7 +26,11 @@ import { getSandbox } from "@cloudflare/sandbox";
 import { Workspace } from "@cloudflare/workspace";
 import { createWorkspaceSandboxCommandRunner } from "@cloudflare/workspace-adapter-sandbox";
 
-const workspace = Workspace.fromArtifacts(env.ARTIFACTS, workspaceName);
+const workspace = Workspace.fromArtifacts({
+  artifacts: env.ARTIFACTS,
+  object: env.WORKSPACE_OBJECTS.getByName(workspaceName),
+  name: workspaceName,
+});
 const copy = await workspace.files.copy("agent-working-copy");
 if (copy.status === "error") return copy;
 

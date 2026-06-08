@@ -25,11 +25,12 @@
   "durable_objects": {
     "bindings": [
       { "name": "PhotoAgent", "class_name": "PhotoAgent" },
-      { "name": "Sandbox", "class_name": "Sandbox" }
+      { "name": "Sandbox", "class_name": "Sandbox" },
+      { "name": "WORKSPACE_OBJECTS", "class_name": "WorkspaceObject" }
     ]
   },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["PhotoAgent", "Sandbox"] }
+    { "tag": "v1", "new_sqlite_classes": ["PhotoAgent", "Sandbox", "WorkspaceObject"] }
   ],
   "observability": { "enabled": true },
   "upload_source_maps": true

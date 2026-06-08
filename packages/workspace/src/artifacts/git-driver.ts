@@ -2,6 +2,7 @@ import git from "isomorphic-git";
 import http from "isomorphic-git/http/web";
 import { Volume, createFsFromVolume } from "memfs";
 import type { WorkspaceEntry, WorkspaceRevision, WorkspaceStat } from "../model/entries";
+import type { WorkspaceObjectClient } from "../workspace-object";
 import type { ArtifactsWorkspaceDriver, ArtifactsWorkspaceFileWrite } from "./authority";
 import type { ArtifactsBindingClient, ArtifactsRepoClient } from "./binding";
 
@@ -16,12 +17,18 @@ type RepoAccess = {
 
 type Fs = ReturnType<typeof createFsFromVolume>;
 
-export function createIsomorphicGitArtifactsWorkspaceDriver(artifacts: ArtifactsBindingClient): ArtifactsWorkspaceDriver {
-  return new IsomorphicGitArtifactsWorkspaceDriver(artifacts);
+export function createIsomorphicGitArtifactsWorkspaceDriver(
+  artifacts: ArtifactsBindingClient,
+  workspaceObject: WorkspaceObjectClient,
+): ArtifactsWorkspaceDriver {
+  return new IsomorphicGitArtifactsWorkspaceDriver(artifacts, workspaceObject);
 }
 
 class IsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
-  constructor(private readonly artifacts: ArtifactsBindingClient) {}
+  constructor(
+    private readonly artifacts: ArtifactsBindingClient,
+    private readonly workspaceObject: WorkspaceObjectClient,
+  ) {}
 
   async repositoryExists(repository: string): Promise<boolean> {
     try {
@@ -145,6 +152,7 @@ class IsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver 
       fs: checkout.fs,
       http,
       dir: checkout.dir,
+      url: checkout.access.remote,
       ref: checkout.branch,
       remoteRef: checkout.branch,
       onAuth: () => auth(checkout.access),
@@ -175,30 +183,31 @@ class IsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver 
 
   private async repositoryHasCommits(repository: string): Promise<boolean> {
     const repo = await this.artifacts.get(repository);
-    const log = (repo as { log?: unknown }).log;
+    const log = (repo as { log?: (opts?: { limit?: number }) => Promise<unknown> }).log;
     if (typeof log !== "function") {
       return true;
     }
 
-    const commits = await log.call(repo, { limit: 1 }) as unknown;
+    const commits = await log({ limit: 1 });
     return Array.isArray(commits) && commits.length > 0;
   }
 
   private async repoAccess(repository: string, scope: "read" | "write"): Promise<RepoAccess> {
     const repo = await this.artifacts.get(repository);
-    const remote = await repoStringField(repo, "remote");
-    const defaultBranch = await repoStringField(repo, "defaultBranch");
-    const name = await repoStringField(repo, "name") ?? repository;
-    const createToken = (repo as { createToken?: unknown }).createToken;
+    const recorded = await this.workspaceObject.repositoryAccess(repository);
+    const remote = recorded?.remote ?? repoStringField(repo, "remote");
+    const defaultBranch = recorded?.defaultBranch ?? repoStringField(repo, "defaultBranch");
+    const name = repoStringField(repo, "name") ?? recorded?.repository ?? repository;
+    const createToken = (repo as { createToken?: (scope: "read" | "write", ttl: number) => Promise<{ plaintext: string }> }).createToken;
     if (!remote || !defaultBranch || typeof createToken !== "function") {
       throw new Error(`Artifacts repo does not expose git remote access: ${describeArtifactsRepo(repo)}`);
     }
-    const token = await createToken.call(repo, scope, 60 * 60) as { plaintext: string };
+    const token = (await createToken(scope, 60 * 60)).plaintext;
     return {
       name,
       remote,
       defaultBranch,
-      token: token.plaintext,
+      token,
     };
   }
 }
@@ -222,14 +231,9 @@ function describeArtifactsRepo(repo: ArtifactsRepoClient): string {
   });
 }
 
-async function repoStringField(repo: ArtifactsRepoClient, field: "name" | "remote" | "defaultBranch"): Promise<string | undefined> {
+function repoStringField(repo: ArtifactsRepoClient, field: "name" | "remote" | "defaultBranch"): string | undefined {
   const value = (repo as unknown as Record<string, unknown>)[field];
-  if (typeof value === "string") return value;
-  if (typeof value === "function") {
-    const result = await value.call(repo) as unknown;
-    return typeof result === "string" ? result : undefined;
-  }
-  return undefined;
+  return typeof value === "string" ? value : undefined;
 }
 
 function auth(access: RepoAccess): { username: string; password: string } {

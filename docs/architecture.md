@@ -47,16 +47,17 @@ The first three are built for Workspace-owned file copies. Module/asset projecti
 
 `packages/workspace` is anchored around Artifacts:
 
-- `Workspace.fromArtifacts(env.ARTIFACTS, name)` creates the product-facing Workspace object.
+- `Workspace.fromArtifacts({ artifacts, object, name })` creates the product-facing Workspace object.
 - Artifacts owns the durable/versioned repository.
-- Workspace presents current files, file copies, scoped capabilities, attach/reconcile, apply, and discard above that repository authority.
+- `WorkspaceObject` stores per-Workspace control metadata needed to use Artifacts reliably from Workers.
+- Workspace presents current files, file copies, scoped capabilities, attach/reconcile, apply, and discard above those authorities.
 - Temporary internal `isomorphic-git` plumbing fills the current gap until Artifacts exposes direct file mutation APIs.
 
 The public package surface does not expose Git, Artifacts repository handles, temporary clone state, or the old storage/runtime internals. Callers work in Workspace terms.
 
 ### Current implementation seam
 
-Artifacts already provides repository lifecycle, import, fork, delete, Git remotes, tokens, and read APIs. Workspace needs file mutation and apply/discard semantics. Until Artifacts grows those direct APIs, `packages/workspace/src/workspace/artifacts/` contains an internal driver that:
+Artifacts already provides repository lifecycle, import, fork, delete, Git remotes, tokens, and read APIs. Workspace needs file mutation and apply/discard semantics. Until Artifacts grows those direct APIs, `packages/workspace/src/artifacts/` contains an internal authority and driver that:
 
 - clones an Artifacts repo into an in-memory filesystem for reads or writes;
 - commits and pushes file writes back to the Artifacts repo;
@@ -78,7 +79,7 @@ Artifacts/Git does not preserve empty directories as first-class entries. Worksp
 
 It does **not** expose `apply`, `discard`, repository identity, revisions, or Workspace identity. This is the capability shape delegated code receives.
 
-`packages/adapters/dynamic-worker` adapts that capability to Worker Loader. It keeps the WorkerEntrypoint RPC boundary serializable by forwarding `ScopedWorkspaceRpcResult` DTOs, then unwraps those DTOs inside the loaded Worker harness so delegated code sees ordinary `env.WORKSPACE.readFile(...)` / `writeFile(...)` methods. The adapter owns Dynamic Worker loading mechanics; examples still own copy lookup, scopes, agent state, and apply/discard policy.
+`packages/adapters/dynamic-worker` adapts that capability to Worker Loader. It keeps the WorkerEntrypoint boundary serializable by forwarding `ScopedWorkspaceCapabilityResult` DTOs, then unwraps those DTOs inside the loaded Worker harness so delegated code sees ordinary `env.WORKSPACE.readFile(...)` / `writeFile(...)` methods. The adapter owns Dynamic Worker loading mechanics; examples still own copy lookup, scopes, agent state, and apply/discard policy.
 
 ### Filesystem projection
 
@@ -94,7 +95,7 @@ The current implementation scans and writes files through the product file-copy 
 
 Both examples use the same pattern:
 
-1. Trusted Worker code opens a Workspace with `Workspace.fromArtifacts(env.ARTIFACTS, name)`.
+1. Trusted Worker code opens a Workspace with `Workspace.fromArtifacts({ artifacts, object, name })`.
 2. The product creates or recovers a file copy.
 3. Runtime adapters receive only scoped file access or a mounted `/workspace` view.
 4. Runtime work reconciles into the file copy.
@@ -106,11 +107,12 @@ No runtime tool implicitly publishes.
 
 ```
 packages/workspace/
-  src/workspace/
-    artifacts/     Artifacts client + temporary internal Git driver
-    model/         path / errors / rpc / write-tree types
-    product/       Workspace, file copies, attach/reconcile, writeTree
+  src/
+    artifacts/     Artifacts authority + temporary internal Git driver
+    model/         path / errors / write-tree types
     projections/   scoped-file-capability, working-copy-mount
+    workspace.ts   Workspace, file copies, attach/reconcile, writeTree
+    workspace-object.ts  per-Workspace Durable Object control metadata
 
 packages/adapters/dynamic-worker/
   src/             Worker Loader runner for scoped Workspace file capabilities

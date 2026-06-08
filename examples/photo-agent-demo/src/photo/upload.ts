@@ -1,7 +1,7 @@
 import { Result, type Result as BetterResult } from "better-result";
-import { Workspace, type WorkspaceCurrentFileError } from "@cloudflare/workspace";
+import { Workspace, type WorkspaceCurrentFileError, type WorkspaceObjectClient } from "@cloudflare/workspace";
 
-type PhotoArtifactsBinding = Parameters<typeof Workspace.fromArtifacts>[0] & {
+type PhotoArtifactsBinding = Parameters<typeof Workspace.fromArtifacts>[0]["artifacts"] & {
   create(name: string, opts?: { description?: string; setDefaultBranch?: string }): Promise<unknown>;
 };
 
@@ -19,6 +19,7 @@ export type OriginalPhotoUpload = {
 
 export type UploadOriginalPhotoOptions = {
   artifacts: PhotoArtifactsBinding;
+  workspaceObject: WorkspaceObjectClient;
   workspaceName: string;
   contents: Uint8Array;
   contentType: string;
@@ -26,13 +27,14 @@ export type UploadOriginalPhotoOptions = {
 
 export async function uploadOriginalPhoto({
   artifacts,
+  workspaceObject,
   workspaceName,
   contents,
   contentType,
 }: UploadOriginalPhotoOptions): Promise<OriginalPhotoUpload> {
   const path = photoPathForContentType(contentType);
-  await ensurePhotoRepository(artifacts, workspaceName);
-  const workspace = Workspace.fromArtifacts(artifacts, workspaceName);
+  await ensurePhotoRepository(artifacts, workspaceObject, workspaceName);
+  const workspace = Workspace.fromArtifacts({ artifacts, object: workspaceObject, name: workspaceName });
 
   await ensurePhotosDirectory(workspace.files);
   await expectOk(workspace.files.write(path, contents), "write uploaded original photo");
@@ -63,7 +65,7 @@ function normalizedContentType(contentType: string): string {
   return contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
 }
 
-async function ensurePhotoRepository(artifacts: PhotoArtifactsBinding, workspaceName: string): Promise<void> {
+async function ensurePhotoRepository(artifacts: PhotoArtifactsBinding, workspaceObject: WorkspaceObjectClient, workspaceName: string): Promise<void> {
   try {
     await artifacts.get(workspaceName);
     return;
@@ -72,17 +74,38 @@ async function ensurePhotoRepository(artifacts: PhotoArtifactsBinding, workspace
       throw error;
     }
 
-    await artifacts.create(workspaceName, {
+    const created = await artifacts.create(workspaceName, {
       description: `Photo Workspace ${workspaceName}`,
       setDefaultBranch: "main",
     });
+    const access = workspaceAccessFrom(created, "main");
+    if (!access) {
+      throw new Error("Artifacts create response did not include repository access metadata.");
+    }
+    await workspaceObject.recordCurrentRepository({ repository: workspaceName, ...access });
   }
 }
 
+function workspaceAccessFrom(value: unknown, fallbackDefaultBranch: string): { remote: string; defaultBranch: string } | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const remote = (value as { remote?: unknown }).remote;
+  const defaultBranch = (value as { defaultBranch?: unknown }).defaultBranch;
+  if (typeof remote !== "string") return undefined;
+  return {
+    remote,
+    defaultBranch: typeof defaultBranch === "string" ? defaultBranch : fallbackDefaultBranch,
+  };
+}
+
 function isArtifactsNotFound(error: unknown): boolean {
-  return error instanceof Error &&
+  if (typeof error === "object" &&
+    error !== null &&
     (error as { name?: unknown; code?: unknown }).name === "ArtifactsError" &&
-    (error as { code?: unknown }).code === "NOT_FOUND";
+    (error as { code?: unknown }).code === "NOT_FOUND") {
+    return true;
+  }
+
+  return error instanceof Error && error.message.startsWith("ArtifactsError: Repository not found:");
 }
 
 async function ensurePhotosDirectory(workspace: WorkspaceForUpload): Promise<void> {

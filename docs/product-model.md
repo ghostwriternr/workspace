@@ -103,7 +103,11 @@ Each current projection is a different shape of access to Workspace-owned durabl
 Product Workers and Durable Objects use Workspace directly:
 
 ```ts
-const workspace = Workspace.fromArtifacts(env.ARTIFACTS, name);
+const workspace = Workspace.fromArtifacts({
+  artifacts: env.ARTIFACTS,
+  object: env.WORKSPACE_OBJECTS.getByName(name),
+  name,
+});
 const copyResult = await workspace.files.copy("edit");
 if (Result.isError(copyResult)) return copyResult;
 

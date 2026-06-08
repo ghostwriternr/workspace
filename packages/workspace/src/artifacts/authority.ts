@@ -37,8 +37,8 @@ import type {
   WorkspaceAuthorityCopy,
   WorkspaceAuthorityFiles,
 } from "../authority";
+import type { WorkspaceObjectClient } from "../workspace-object";
 import type { ArtifactsBindingClient } from "./binding";
-
 export type { ArtifactsBindingClient, ArtifactsRepoClient } from "./binding";
 
 export type ArtifactsWorkspaceFileWrite = {
@@ -69,6 +69,7 @@ export type ArtifactsWorkspaceDriver = {
 
 type ArtifactsWorkspaceDriverFactory = (
   artifacts: ArtifactsBindingClient,
+  workspaceObject: WorkspaceObjectClient,
 ) => ArtifactsWorkspaceDriver;
 
 type ArtifactsCurrentFileError = ErrorDtoFor<
@@ -100,14 +101,20 @@ type ArtifactsWorkspaceAuthorityCopy = WorkspaceAuthorityCopy<
 let driverFactory: ArtifactsWorkspaceDriverFactory =
   createLazyIsomorphicGitArtifactsWorkspaceDriver;
 
+export type ArtifactsWorkspaceAuthorityOptions = {
+  artifacts: ArtifactsBindingClient;
+  object: WorkspaceObjectClient;
+  name: string;
+};
+
 export function createArtifactsWorkspaceAuthority(
-  artifacts: ArtifactsBindingClient,
-  repositoryName: string,
+  options: ArtifactsWorkspaceAuthorityOptions,
 ): ArtifactsWorkspaceAuthorityContract {
   return new ArtifactsWorkspaceAuthority(
-    artifacts,
-    repositoryName,
-    driverFactory(artifacts),
+    options.artifacts,
+    options.object,
+    options.name,
+    driverFactory(options.artifacts, options.object),
   );
 }
 
@@ -126,6 +133,7 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
 
   constructor(
     private readonly artifacts: ArtifactsBindingClient,
+    private readonly workspaceObject: WorkspaceObjectClient,
     private readonly repositoryName: string,
     private readonly driver: ArtifactsWorkspaceDriver,
   ) {
@@ -144,6 +152,16 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
         description: `Workspace working copy for ${this.repositoryName}`,
         defaultBranchOnly: true,
       });
+      const forkAccess = artifactsRepositoryAccessFrom(fork);
+      const baseAccess = await this.workspaceObject.repositoryAccess(this.repositoryName);
+      if (forkAccess) {
+        await this.workspaceObject.recordCopy({
+          copyId: fork.name,
+          baseRepository: this.repositoryName,
+          remote: forkAccess.remote,
+          defaultBranch: baseAccess?.defaultBranch ?? forkAccess.defaultBranch ?? "main",
+        });
+      }
       return Result.ok(new ArtifactsWorkspaceCopy(this, fork.name, Date.now()));
     } catch (error) {
       return copyNotFoundFromArtifacts(this.repositoryName, error);
@@ -190,6 +208,7 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
         id,
       );
       await this.artifacts.delete(id);
+      await this.workspaceObject.deleteCopy(id);
       return Result.ok(revision);
     } catch (error) {
       return copyNotFoundFromArtifacts(id, error);
@@ -204,6 +223,7 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
       if (!deleted) {
         return Result.err(copyNotFoundError(id));
       }
+      await this.workspaceObject.deleteCopy(id);
       return Result.ok(undefined);
     } catch (error) {
       return copyNotFoundFromArtifacts(id, error);
@@ -653,14 +673,18 @@ function dtoToResult<T, E>(result: DtoResult<T, E>): BetterResult<T, E> {
 
 function createLazyIsomorphicGitArtifactsWorkspaceDriver(
   artifacts: ArtifactsBindingClient,
+  workspaceObject: WorkspaceObjectClient,
 ): ArtifactsWorkspaceDriver {
-  return new LazyIsomorphicGitArtifactsWorkspaceDriver(artifacts);
+  return new LazyIsomorphicGitArtifactsWorkspaceDriver(artifacts, workspaceObject);
 }
 
 class LazyIsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
   private driver?: Promise<ArtifactsWorkspaceDriver>;
 
-  constructor(private readonly artifacts: ArtifactsBindingClient) {}
+  constructor(
+    private readonly artifacts: ArtifactsBindingClient,
+    private readonly workspaceObject: WorkspaceObjectClient,
+  ) {}
 
   async repositoryExists(repository: string): Promise<boolean> {
     const driver = await this.load();
@@ -714,8 +738,19 @@ class LazyIsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDri
 
   private load(): Promise<ArtifactsWorkspaceDriver> {
     this.driver ??= import("./git-driver").then((module) =>
-      module.createIsomorphicGitArtifactsWorkspaceDriver(this.artifacts),
+      module.createIsomorphicGitArtifactsWorkspaceDriver(this.artifacts, this.workspaceObject),
     );
     return this.driver;
   }
+}
+
+function artifactsRepositoryAccessFrom(value: unknown): { remote: string; defaultBranch?: string } | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const remote = (value as { remote?: unknown }).remote;
+  const defaultBranch = (value as { defaultBranch?: unknown }).defaultBranch;
+  if (typeof remote !== "string") return undefined;
+  return {
+    remote,
+    ...(typeof defaultBranch === "string" ? { defaultBranch } : {}),
+  };
 }

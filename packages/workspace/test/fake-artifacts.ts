@@ -6,23 +6,56 @@ import {
 } from "../src/artifacts/authority";
 import type { ArtifactsBindingClient, ArtifactsRepoClient } from "../src/artifacts/binding";
 import type { WorkspaceRevision } from "../src/model/entries";
+import type {
+  WorkspaceCopyRepositoryRecord,
+  WorkspaceCurrentRepositoryRecord,
+  WorkspaceObjectClient,
+  WorkspaceRepositoryAccess,
+} from "../src/workspace-object";
 
 export type Tree = Record<string, Uint8Array>;
 
 export type FakeArtifacts = {
   artifacts: FakeArtifactsBinding;
   driver: FakeArtifactsWorkspaceDriver;
+  object: FakeWorkspaceObject;
 };
 
 export function createFakeArtifacts(initial: Record<string, Tree> = {}): FakeArtifacts {
   const driver = new FakeArtifactsWorkspaceDriver(initial);
   const artifacts = new FakeArtifactsBinding(driver);
+  const object = new FakeWorkspaceObject();
   setArtifactsWorkspaceDriverFactoryForTests(() => driver);
-  return { artifacts, driver };
+  return { artifacts, driver, object };
 }
 
 export function resetFakeArtifacts(): void {
   resetArtifactsWorkspaceDriverFactoryForTests();
+}
+
+export class FakeWorkspaceObject implements WorkspaceObjectClient {
+  private readonly accessByRepository = new Map<string, WorkspaceRepositoryAccess>();
+
+  async recordCurrentRepository(record: WorkspaceCurrentRepositoryRecord): Promise<void> {
+    this.accessByRepository.set(record.repository, { ...record });
+  }
+
+  async recordCopy(record: WorkspaceCopyRepositoryRecord): Promise<void> {
+    this.accessByRepository.set(record.copyId, {
+      repository: record.copyId,
+      remote: record.remote,
+      defaultBranch: record.defaultBranch,
+      baseRepository: record.baseRepository,
+    });
+  }
+
+  async repositoryAccess(repository: string): Promise<WorkspaceRepositoryAccess | undefined> {
+    return this.accessByRepository.get(repository);
+  }
+
+  async deleteCopy(copyId: string): Promise<void> {
+    this.accessByRepository.delete(copyId);
+  }
 }
 
 export class FakeArtifactsBinding implements ArtifactsBindingClient {
@@ -31,10 +64,10 @@ export class FakeArtifactsBinding implements ArtifactsBindingClient {
 
   constructor(readonly driver: FakeArtifactsWorkspaceDriver) {}
 
-  async create(name: string): Promise<{ name: string }> {
+  async create(name: string): Promise<{ name: string; remote: string; defaultBranch?: string }> {
     this.createdRepositories.push(name);
     this.driver.createRepository(name);
-    return { name };
+    return repositoryResult(name);
   }
 
   async get(name: string): Promise<ArtifactsRepoClient> {
@@ -59,9 +92,9 @@ class FakeArtifactsRepo implements ArtifactsRepoClient {
     readonly name: string,
   ) {}
 
-  async fork(name: string): Promise<{ name: string }> {
+  async fork(name: string): Promise<{ name: string; remote: string; defaultBranch?: string }> {
     this.driver.forkRepository(this.name, name);
-    return { name };
+    return repositoryResult(name);
   }
 }
 
@@ -175,6 +208,14 @@ export class FakeArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
 
 function cloneTree(tree: Tree): Tree {
   return Object.fromEntries(Object.entries(tree).map(([path, contents]) => [path, new Uint8Array(contents)]));
+}
+
+function repositoryResult(name: string): { name: string; remote: string; defaultBranch: string } {
+  return {
+    name,
+    remote: `https://git.example/${name}.git`,
+    defaultBranch: "main",
+  };
 }
 
 function artifactsError(code: string, message: string): Error & { name: "ArtifactsError"; code: string; numericCode: number } {

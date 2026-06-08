@@ -5,8 +5,8 @@
   "compatibility_date": "2026-05-25",
   "compatibility_flags": ["nodejs_compat", "experimental"],
   "durable_objects": {
-    "bindings": []
+    "bindings": [{ "name": "WORKSPACE_OBJECTS", "class_name": "WorkspaceObject" }]
   },
-  "migrations": [],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["WorkspaceObject"] }],
   "observability": { "enabled": true }
 }

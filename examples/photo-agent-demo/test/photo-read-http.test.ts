@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
+import type { WorkspaceObjectClient } from "@cloudflare/workspace";
 import { handlePhotoReadRequest } from "../src/http/photo-read";
 import { createFakeArtifactsWorkspace, resetFakeArtifactsWorkspace } from "./fake-artifacts-workspace";
 
@@ -11,11 +12,12 @@ describe("photo read HTTP route", () => {
   afterEach(() => resetFakeArtifactsWorkspace());
 
   it("serves uploaded original image bytes from an Artifacts-backed Workspace", async () => {
-    const { artifacts } = createFakeArtifactsWorkspace({ demo: { "/photos/original.png": originalPng } });
+    const { artifacts, object } = workspace({ demo: { "/photos/original.png": originalPng } }, "demo");
 
     const response = await handlePhotoReadRequest(
       new Request("http://example.com/api/workspaces/demo/photos/original"),
       artifacts,
+      workspaceObjects(object),
     );
 
     expect(response?.status).toBe(200);
@@ -24,11 +26,12 @@ describe("photo read HTTP route", () => {
   });
 
   it("serves committed current image bytes", async () => {
-    const { artifacts } = createFakeArtifactsWorkspace({ demo: { "/photos/current": currentJpg } });
+    const { artifacts, object } = workspace({ demo: { "/photos/current": currentJpg } }, "demo");
 
     const response = await handlePhotoReadRequest(
       new Request("http://example.com/api/workspaces/demo/photos/current"),
       artifacts,
+      workspaceObjects(object),
     );
 
     expect(response?.status).toBe(200);
@@ -37,9 +40,11 @@ describe("photo read HTTP route", () => {
   });
 
   it("serves draft preview image bytes from the workspace's agent", async () => {
+    const { artifacts, object } = workspace({ demo: {} }, "demo");
     const response = await handlePhotoReadRequest(
       new Request("http://example.com/api/workspaces/demo/photos/draft"),
-      createFakeArtifactsWorkspace({ demo: {} }).artifacts,
+      artifacts,
+      workspaceObjects(object),
       { getByName: () => new FakePhotoAgent(draftJpg) },
     );
 
@@ -49,9 +54,11 @@ describe("photo read HTTP route", () => {
   });
 
   it("returns 404 when the requested image is missing", async () => {
+    const { artifacts, object } = workspace({ demo: {} }, "demo");
     const response = await handlePhotoReadRequest(
       new Request("http://example.com/api/workspaces/demo/photos/current"),
-      createFakeArtifactsWorkspace({ demo: {} }).artifacts,
+      artifacts,
+      workspaceObjects(object),
     );
 
     expect(response?.status).toBe(404);
@@ -59,9 +66,11 @@ describe("photo read HTTP route", () => {
   });
 
   it("returns 404 when the workspace repository is missing", async () => {
+    const { artifacts, object } = createFakeArtifactsWorkspace();
     const response = await handlePhotoReadRequest(
       new Request("http://example.com/api/workspaces/demo/photos/current"),
-      createFakeArtifactsWorkspace().artifacts,
+      artifacts,
+      workspaceObjects(object),
     );
 
     expect(response?.status).toBe(404);
@@ -69,14 +78,30 @@ describe("photo read HTTP route", () => {
   });
 
   it("ignores non-photo-read routes", async () => {
+    const { artifacts, object } = createFakeArtifactsWorkspace();
     const response = await handlePhotoReadRequest(
       new Request("http://example.com/api/demo-capabilities"),
-      createFakeArtifactsWorkspace().artifacts,
+      artifacts,
+      workspaceObjects(object),
     );
 
     expect(response).toBeUndefined();
   });
 });
+
+function workspace(initial: Record<string, Record<string, Uint8Array>>, name: string) {
+  const fake = createFakeArtifactsWorkspace(initial);
+  void fake.object.recordCurrentRepository({
+    repository: name,
+    remote: `https://git.example/${name}.git`,
+    defaultBranch: "main",
+  });
+  return fake;
+}
+
+function workspaceObjects(object: WorkspaceObjectClient) {
+  return { getByName: () => object };
+}
 
 class FakePhotoAgent {
   constructor(private readonly draft: Uint8Array) {}

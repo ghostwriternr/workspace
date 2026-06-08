@@ -17,7 +17,11 @@ current files
 ```
 
 ```ts
-const workspace = Workspace.fromArtifacts(env.ARTIFACTS, "family-photo");
+const workspace = Workspace.fromArtifacts({
+  artifacts: env.ARTIFACTS,
+  object: env.WORKSPACE_OBJECTS.getByName("family-photo"),
+  name: "family-photo",
+});
 
 const write = await workspace.files.write("/photos/original.jpg", imageBytes);
 if (Result.isError(write)) return write;

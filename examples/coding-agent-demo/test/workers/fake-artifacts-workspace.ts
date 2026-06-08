@@ -13,12 +13,18 @@ export type FakeArtifactsWorkspace = FakeArtifacts & {
 
 export function createFakeArtifactsWorkspace(tree: Tree = {}): FakeArtifactsWorkspace {
   const workspaceName = `repo-${crypto.randomUUID()}`;
-  const { artifacts, driver } = createFakeArtifacts({ [workspaceName]: tree });
+  const { artifacts, driver, object } = createFakeArtifacts({ [workspaceName]: tree });
+  void object.recordCurrentRepository({
+    repository: workspaceName,
+    remote: `https://git.example/${workspaceName}.git`,
+    defaultBranch: "main",
+  });
   return {
     artifacts,
     driver,
+    object,
     workspaceName,
-    workspace: Workspace.fromArtifacts(artifacts, workspaceName),
+    workspace: Workspace.fromArtifacts({ artifacts, object, name: workspaceName }),
   };
 }
 

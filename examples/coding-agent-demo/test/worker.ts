@@ -1,3 +1,4 @@
+export { WorkspaceObject } from "@cloudflare/workspace/workers";
 export { WorkspaceFileCapability } from "../src/workspace/workspace-file-capability";
 
 export default {

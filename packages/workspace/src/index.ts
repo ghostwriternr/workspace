@@ -21,6 +21,13 @@ export {
   type WorkspaceTreeSourceError,
 } from "./workspace";
 export { type WorkspaceEntry, type WorkspaceRevision, type WorkspaceStat } from "./model/entries";
+export type {
+  WorkspaceObject,
+  WorkspaceCopyRepositoryRecord,
+  WorkspaceCurrentRepositoryRecord,
+  WorkspaceObjectClient,
+  WorkspaceRepositoryAccess,
+} from "./workspace-object";
 export { type WorkspaceTreeEntry } from "./model/write-tree";
 export {
   type WorkspaceFileMount,

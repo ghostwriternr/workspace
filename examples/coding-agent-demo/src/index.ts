@@ -5,6 +5,7 @@ export { Sandbox } from "@cloudflare/sandbox";
 import { handleDemoRequest } from "./http/demo";
 import { handleRepoImportRequest } from "./http/repo-import";
 
+export { WorkspaceObject } from "@cloudflare/workspace/workers";
 export { CodingAgent } from "./agent/coding-agent";
 export { WorkspaceFileCapability } from "./workspace/workspace-file-capability";
 
@@ -12,7 +13,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const importResponse = await handleRepoImportRequest(
       request,
-      { artifacts: env.ARTIFACTS },
+      { artifacts: env.ARTIFACTS, workspaceObjects: env.WORKSPACE_OBJECTS },
       { agents: env.CodingAgent },
     );
     if (importResponse) {

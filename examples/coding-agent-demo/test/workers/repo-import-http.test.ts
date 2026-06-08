@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { FakeWorkspaceObject } from "@cloudflare/workspace/testing";
 import { handleRepoImportRequest } from "../../src/http/repo-import";
 
 describe("repo import HTTP", () => {
   it("imports a public GitHub repo through Artifacts", async () => {
     const workspaceName = `repo-import-http-${crypto.randomUUID()}`;
+    const workspaceObject = new FakeWorkspaceObject();
     const importRepo = vi.fn(async () => ({
       id: "repo_456",
       name: workspaceName,
@@ -21,7 +23,7 @@ describe("repo import HTTP", () => {
         body: JSON.stringify({ owner: "cloudflare", repo: "example", ref: "main" }),
         headers: { "content-type": "application/json" },
       }),
-      { artifacts: { import: importRepo } },
+      { artifacts: { import: importRepo }, workspaceObjects: workspaceObjects(workspaceObject) },
     );
 
     expect(importRepo).toHaveBeenCalledWith({
@@ -50,6 +52,11 @@ describe("repo import HTTP", () => {
         repositoryId: "repo_456",
       },
     });
+    await expect(workspaceObject.repositoryAccess(workspaceName)).resolves.toMatchObject({
+      repository: workspaceName,
+      remote: "https://artifacts.example/repo.git",
+      defaultBranch: "main",
+    });
   });
 
   it("returns a client error for non-object import JSON", async () => {
@@ -59,7 +66,7 @@ describe("repo import HTTP", () => {
         body: "null",
         headers: { "content-type": "application/json" },
       }),
-      { artifacts: { import: async () => ({ id: "unused" }) } },
+      { artifacts: { import: async () => artifactImport("unused") }, workspaceObjects: workspaceObjects(new FakeWorkspaceObject()) },
     );
 
     expect(response).toBeDefined();
@@ -78,7 +85,7 @@ describe("repo import HTTP", () => {
         body: JSON.stringify({ owner: "cloudflare", repo: "example" }),
         headers: { "content-type": "application/json" },
       }),
-      { artifacts: { import: async () => ({ id: "repo_789" }) } },
+      { artifacts: { import: async () => artifactImport("repo_789") }, workspaceObjects: workspaceObjects(new FakeWorkspaceObject()) },
       {
         agents: { getByName: () => ({ refreshRepoState }) },
       },
@@ -108,6 +115,7 @@ describe("repo import HTTP", () => {
             });
           },
         },
+        workspaceObjects: workspaceObjects(new FakeWorkspaceObject()),
       },
     );
 
@@ -126,8 +134,20 @@ describe("repo import HTTP", () => {
     await expect(
       handleRepoImportRequest(
         new Request("http://example.com/api/other", { method: "POST" }),
-        { artifacts: { import: async () => ({ id: "unused" }) } },
+        { artifacts: { import: async () => artifactImport("unused") }, workspaceObjects: workspaceObjects(new FakeWorkspaceObject()) },
       ),
     ).resolves.toBeUndefined();
   });
 });
+
+function workspaceObjects(object: FakeWorkspaceObject) {
+  return { getByName: () => object };
+}
+
+function artifactImport(id: string) {
+  return {
+    id,
+    remote: `https://artifacts.example/${id}.git`,
+    defaultBranch: "main",
+  };
+}

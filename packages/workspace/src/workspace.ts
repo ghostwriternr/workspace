@@ -13,7 +13,11 @@ import {
   type WorkspaceTreeEntryTooLargeError,
   type WorkspaceTreeSourceError,
 } from "./write-tree";
-import { createArtifactsWorkspaceAuthority, type ArtifactsBindingClient } from "./artifacts/authority";
+import {
+  createArtifactsWorkspaceAuthority,
+  type ArtifactsBindingClient,
+} from "./artifacts/authority";
+import type { WorkspaceObjectClient } from "./workspace-object";
 import type { ErrorDtoFor } from "./model/errors";
 import type {
   WorkspaceApplyError as WorkspaceApplyDomainError,
@@ -72,9 +76,15 @@ export type WorkspaceCopyLookupError = ErrorDtoFor<WorkspaceCopyDomainError>;
 export type WorkspaceApplyError = ErrorDtoFor<WorkspaceApplyDomainError>;
 export type WorkspaceDiscardError = ErrorDtoFor<WorkspaceDiscardDomainError>;
 
+export type WorkspaceArtifactsOptions = {
+  artifacts: ArtifactsBindingClient;
+  object: WorkspaceObjectClient;
+  name: string;
+};
+
 export class Workspace {
-  static fromArtifacts(artifacts: ArtifactsBindingClient, name: string): Workspace {
-    return new Workspace(createArtifactsWorkspaceAuthority(artifacts, name));
+  static fromArtifacts(options: WorkspaceArtifactsOptions): Workspace {
+    return new Workspace(createArtifactsWorkspaceAuthority(options));
   }
 
   readonly files: WorkspaceCurrentFiles;
