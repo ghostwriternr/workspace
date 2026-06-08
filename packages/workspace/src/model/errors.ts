@@ -63,12 +63,12 @@ export class DirectoryNotEmptyError extends TaggedError("DirectoryNotEmptyError"
   }
 }
 
-export class SessionNotFoundError extends TaggedError("SessionNotFoundError")<{
-  sessionId: string;
+export class WorkspaceCopyNotFoundError extends TaggedError("WorkspaceCopyNotFoundError")<{
+  copyId: string;
   message: string;
 }>() {
-  constructor(args: { sessionId: string }) {
-    super({ ...args, message: `Workspace session not found: ${args.sessionId}` });
+  constructor(args: { copyId: string }) {
+    super({ ...args, message: `Workspace file copy not found: ${args.copyId}` });
   }
 }
 
@@ -79,7 +79,7 @@ export type WorkspaceError =
   | NotDirectoryError
   | PathAlreadyExistsError
   | PathNotFoundError
-  | SessionNotFoundError;
+  | WorkspaceCopyNotFoundError;
 
 export type WorkspaceMkdirError = InvalidPathError | NotDirectoryError | PathAlreadyExistsError | PathNotFoundError;
 export type WorkspaceWriteError = InvalidPathError | IsDirectoryError | NotDirectoryError | PathNotFoundError;
@@ -88,16 +88,18 @@ export type WorkspaceReadError = InvalidPathError | IsDirectoryError | PathNotFo
 export type WorkspaceListError = InvalidPathError | NotDirectoryError | PathNotFoundError;
 export type WorkspaceDeleteError = InvalidPathError | DirectoryNotEmptyError | PathNotFoundError;
 export type WorkspaceStatError = InvalidPathError | PathNotFoundError;
-export type WorkspaceSessionInfoError = SessionNotFoundError;
-export type WorkspaceSessionMkdirError = WorkspaceMkdirError | SessionNotFoundError;
-export type WorkspaceSessionWriteError = WorkspaceWriteError | SessionNotFoundError;
-export type WorkspaceSessionWriteTreeError = WorkspaceWriteTreeError | SessionNotFoundError;
-export type WorkspaceSessionReadError = WorkspaceReadError | SessionNotFoundError;
-export type WorkspaceSessionListError = WorkspaceListError | SessionNotFoundError;
-export type WorkspaceSessionDeleteError = WorkspaceDeleteError | SessionNotFoundError;
-export type WorkspaceSessionStatError = WorkspaceStatError | SessionNotFoundError;
-export type WorkspaceSessionCommitError = SessionNotFoundError;
-export type WorkspaceSessionDiscardError = SessionNotFoundError;
+export type WorkspaceCopyError = WorkspaceCopyNotFoundError;
+export type WorkspaceCopyFileError =
+  | WorkspaceMkdirError
+  | WorkspaceWriteError
+  | WorkspaceWriteTreeError
+  | WorkspaceReadError
+  | WorkspaceListError
+  | WorkspaceDeleteError
+  | WorkspaceStatError
+  | WorkspaceCopyNotFoundError;
+export type WorkspaceApplyError = WorkspaceCopyNotFoundError;
+export type WorkspaceDiscardError = WorkspaceCopyNotFoundError;
 
 export type InvalidPathErrorDto = {
   tag: "InvalidPathError";
@@ -136,9 +138,9 @@ export type DirectoryNotEmptyErrorDto = {
   message: string;
 };
 
-export type SessionNotFoundErrorDto = {
-  tag: "SessionNotFoundError";
-  sessionId: string;
+export type WorkspaceCopyNotFoundErrorDto = {
+  tag: "WorkspaceCopyNotFoundError";
+  copyId: string;
   message: string;
 };
 
@@ -149,7 +151,7 @@ export type WorkspaceErrorDto =
   | NotDirectoryErrorDto
   | PathAlreadyExistsErrorDto
   | PathNotFoundErrorDto
-  | SessionNotFoundErrorDto;
+  | WorkspaceCopyNotFoundErrorDto;
 
 export type ErrorDtoFor<E extends WorkspaceError> = E extends DirectoryNotEmptyError
   ? DirectoryNotEmptyErrorDto
@@ -163,8 +165,8 @@ export type ErrorDtoFor<E extends WorkspaceError> = E extends DirectoryNotEmptyE
           ? PathAlreadyExistsErrorDto
           : E extends PathNotFoundError
             ? PathNotFoundErrorDto
-            : E extends SessionNotFoundError
-              ? SessionNotFoundErrorDto
+            : E extends WorkspaceCopyNotFoundError
+              ? WorkspaceCopyNotFoundErrorDto
               : never;
 
 export function workspaceErrorToDto<E extends WorkspaceError>(error: E): ErrorDtoFor<E> {
@@ -186,8 +188,8 @@ export function workspaceErrorToDto<E extends WorkspaceError>(error: E): ErrorDt
   if (PathNotFoundError.is(error)) {
     return { tag: "PathNotFoundError", path: error.path, message: error.message } as ErrorDtoFor<E>;
   }
-  if (SessionNotFoundError.is(error)) {
-    return { tag: "SessionNotFoundError", sessionId: error.sessionId, message: error.message } as ErrorDtoFor<E>;
+  if (WorkspaceCopyNotFoundError.is(error)) {
+    return { tag: "WorkspaceCopyNotFoundError", copyId: error.copyId, message: error.message } as ErrorDtoFor<E>;
   }
 
   const exhaustive: never = error;

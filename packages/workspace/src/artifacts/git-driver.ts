@@ -1,9 +1,9 @@
 import git from "isomorphic-git";
 import http from "isomorphic-git/http/web";
 import { Volume, createFsFromVolume } from "memfs";
-import { getArtifactsRepositoryAccess } from "./access-registry";
-import type { WorkspaceEntry, WorkspaceRevision, WorkspaceStat } from "../model/rpc";
-import type { ArtifactsBindingClient, ArtifactsRepoClient, ArtifactsWorkspaceDriver } from "./workspace-backend-client";
+import type { WorkspaceEntry, WorkspaceRevision, WorkspaceStat } from "../model/entries";
+import type { ArtifactsWorkspaceDriver, ArtifactsWorkspaceFileWrite } from "./authority";
+import type { ArtifactsBindingClient, ArtifactsRepoClient } from "./binding";
 
 const textEncoder = new TextEncoder();
 
@@ -88,12 +88,20 @@ class IsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver 
   }
 
   async writeFile(repository: string, path: string, contents: Uint8Array): Promise<void> {
+    await this.writeFiles(repository, [{ path, contents }]);
+  }
+
+  async writeFiles(repository: string, files: ArtifactsWorkspaceFileWrite[]): Promise<void> {
+    if (files.length === 0) return;
+
     const checkout = await this.clone(repository, "write");
-    const rel = relativeGitPath(path);
-    await mkdirp(checkout.fs, dirname(`${checkout.dir}/${rel}`));
-    await checkout.fs.promises.writeFile(`${checkout.dir}/${rel}`, contents);
-    await git.add({ fs: checkout.fs, dir: checkout.dir, filepath: rel });
-    await this.commitAndPush(checkout, `Update ${rel}`);
+    for (const file of files) {
+      const rel = relativeGitPath(file.path);
+      await mkdirp(checkout.fs, dirname(`${checkout.dir}/${rel}`));
+      await checkout.fs.promises.writeFile(`${checkout.dir}/${rel}`, file.contents);
+      await git.add({ fs: checkout.fs, dir: checkout.dir, filepath: rel });
+    }
+    await this.commitAndPush(checkout, `Update ${files.length === 1 ? relativeGitPath(files[0]!.path) : `${files.length} files`}`);
   }
 
   async deleteFile(repository: string, path: string): Promise<void> {
@@ -177,11 +185,6 @@ class IsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver 
   }
 
   private async repoAccess(repository: string, scope: "read" | "write"): Promise<RepoAccess> {
-    const registered = getArtifactsRepositoryAccess(repository);
-    if (registered) {
-      return registered;
-    }
-
     const repo = await this.artifacts.get(repository);
     const remote = await repoStringField(repo, "remote");
     const defaultBranch = await repoStringField(repo, "defaultBranch");

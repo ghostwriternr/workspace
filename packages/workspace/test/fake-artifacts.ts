@@ -1,19 +1,38 @@
-import type {
-  ArtifactsBindingClient,
-  ArtifactsRepoClient,
-  ArtifactsWorkspaceDriver,
-} from "../src/workspace/artifacts/workspace-backend-client";
 import type { WorkspaceEntry, WorkspaceStat } from "../src";
-import type { WorkspaceRevision } from "../src/workspace/model/rpc";
+import {
+  resetArtifactsWorkspaceDriverFactoryForTests,
+  setArtifactsWorkspaceDriverFactoryForTests,
+  type ArtifactsWorkspaceDriver,
+} from "../src/artifacts/authority";
+import type { ArtifactsBindingClient, ArtifactsRepoClient } from "../src/artifacts/binding";
+import type { WorkspaceRevision } from "../src/model/entries";
 
 export type Tree = Record<string, Uint8Array>;
 
+export type FakeArtifacts = {
+  artifacts: FakeArtifactsBinding;
+  driver: FakeArtifactsWorkspaceDriver;
+};
+
+export function createFakeArtifacts(initial: Record<string, Tree> = {}): FakeArtifacts {
+  const driver = new FakeArtifactsWorkspaceDriver(initial);
+  const artifacts = new FakeArtifactsBinding(driver);
+  setArtifactsWorkspaceDriverFactoryForTests(() => driver);
+  return { artifacts, driver };
+}
+
+export function resetFakeArtifacts(): void {
+  resetArtifactsWorkspaceDriverFactoryForTests();
+}
+
 export class FakeArtifactsBinding implements ArtifactsBindingClient {
+  readonly createdRepositories: string[] = [];
   readonly deletedRepositories: string[] = [];
 
   constructor(readonly driver: FakeArtifactsWorkspaceDriver) {}
 
   async create(name: string): Promise<{ name: string }> {
+    this.createdRepositories.push(name);
     this.driver.createRepository(name);
     return { name };
   }
@@ -47,6 +66,8 @@ class FakeArtifactsRepo implements ArtifactsRepoClient {
 }
 
 export class FakeArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
+  readonly forks: Array<{ source: string; target: string }> = [];
+  readonly writeBatches: Array<{ repository: string; files: Array<{ path: string; contents: Uint8Array }> }> = [];
   readonly writes: Array<{ repository: string; path: string; contents: Uint8Array }> = [];
   failWrites = false;
   private readonly repositories = new Map<string, Tree>();
@@ -55,6 +76,11 @@ export class FakeArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
     for (const [name, tree] of Object.entries(initial)) {
       this.repositories.set(name, cloneTree(tree));
     }
+  }
+
+  install(): this {
+    setArtifactsWorkspaceDriverFactoryForTests(() => this);
+    return this;
   }
 
   createRepository(name: string): void {
@@ -70,6 +96,7 @@ export class FakeArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
   }
 
   forkRepository(source: string, target: string): void {
+    this.forks.push({ source, target });
     this.repositories.set(target, cloneTree(this.tree(source)));
   }
 
@@ -116,9 +143,18 @@ export class FakeArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
   }
 
   async writeFile(repository: string, path: string, contents: Uint8Array): Promise<void> {
+    await this.writeFiles(repository, [{ path, contents }]);
+  }
+
+  async writeFiles(repository: string, files: Array<{ path: string; contents: Uint8Array }>): Promise<void> {
     if (this.failWrites) throw new Error("write failed");
-    this.tree(repository)[path] = new Uint8Array(contents);
-    this.writes.push({ repository, path, contents: new Uint8Array(contents) });
+    const tree = this.tree(repository);
+    const copied = files.map((file) => ({ path: file.path, contents: new Uint8Array(file.contents) }));
+    for (const file of copied) {
+      tree[file.path] = new Uint8Array(file.contents);
+      this.writes.push({ repository, path: file.path, contents: new Uint8Array(file.contents) });
+    }
+    this.writeBatches.push({ repository, files: copied });
   }
 
   async deleteFile(repository: string, path: string): Promise<void> {

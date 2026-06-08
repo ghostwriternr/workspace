@@ -1,25 +1,20 @@
 import { exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  resetArtifactsWorkspaceDriverFactoryForTests,
-  setArtifactsWorkspaceDriverFactoryForTests,
-} from "../../../../packages/workspace/src/workspace/artifacts/workspace-backend-client";
-import { FakeArtifactsWorkspaceDriver } from "../fake-artifacts-workspace";
+import { FakeArtifactsWorkspaceDriver, resetFakeArtifactsWorkspace } from "../fake-artifacts-workspace";
 
 const photoBytes = new TextEncoder().encode("photo");
 
 describe("WorkspaceFileCapability", () => {
-  afterEach(() => resetArtifactsWorkspaceDriverFactoryForTests());
+  afterEach(() => resetFakeArtifactsWorkspace());
 
   it("adapts an Artifacts-backed photo draft into a scoped WorkerEntrypoint binding", async () => {
     const workspaceName = `photo-workspace-file-capability-${crypto.randomUUID()}`;
     const draftEditId = `${workspaceName}-copy`;
-    const driver = new FakeArtifactsWorkspaceDriver({
+    new FakeArtifactsWorkspaceDriver({
       [draftEditId]: {
         "/photos/current": photoBytes,
       },
-    });
-    setArtifactsWorkspaceDriverFactoryForTests(() => driver);
+    }).install();
 
     const capability = exports.WorkspaceFileCapability({
       props: { workspaceName, draftEditId },

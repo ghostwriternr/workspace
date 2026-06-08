@@ -1,6 +1,6 @@
 import { Result } from "better-result";
 
-import type { WorkspaceEntry, WorkspaceStat } from "../model/rpc";
+import type { WorkspaceEntry, WorkspaceStat } from "../model/entries";
 
 export type ScopedWorkspaceAccessErrorDto = {
   tag: "ScopedWorkspaceAccessError";
@@ -31,15 +31,15 @@ export type ScopedWorkspaceErrorDto =
 
 export type ScopedWorkspaceOk<T = void> = T extends void ? { status: "ok" } : { status: "ok"; value: T };
 
-export type ScopedWorkspaceRpcResult<T = void> =
+export type ScopedWorkspaceCapabilityResult<T = void> =
   | ScopedWorkspaceOk<T>
   | { status: "error"; error: ScopedWorkspaceErrorDto };
 
 export type ScopedWorkspaceFileCapability = {
-  readFile(path: string): Promise<ScopedWorkspaceRpcResult<Uint8Array>>;
-  writeFile(path: string, contents: Uint8Array): Promise<ScopedWorkspaceRpcResult>;
-  list(path: string): Promise<ScopedWorkspaceRpcResult<WorkspaceEntry[]>>;
-  stat(path: string): Promise<ScopedWorkspaceRpcResult<WorkspaceStat>>;
+  readFile(path: string): Promise<ScopedWorkspaceCapabilityResult<Uint8Array>>;
+  writeFile(path: string, contents: Uint8Array): Promise<ScopedWorkspaceCapabilityResult>;
+  list(path: string): Promise<ScopedWorkspaceCapabilityResult<WorkspaceEntry[]>>;
+  stat(path: string): Promise<ScopedWorkspaceCapabilityResult<WorkspaceStat>>;
 };
 
 type WorkspaceFileResult<T = void> = Promise<Result<T, { tag: string; message?: string }>>;
@@ -77,14 +77,14 @@ class ScopedWorkspaceFileCapabilityTarget implements ScopedWorkspaceFileCapabili
     this.writeScopes = new WorkspaceScopeSet(options.write);
   }
 
-  async readFile(path: string): Promise<ScopedWorkspaceRpcResult<Uint8Array>> {
+  async readFile(path: string): Promise<ScopedWorkspaceCapabilityResult<Uint8Array>> {
     const target = this.resolveAllowedPath("readFile", path, this.readScopes);
     if (target.status === "error") return target;
 
     return resultToRpc(this.options.files.read(target.value));
   }
 
-  async writeFile(path: string, contents: Uint8Array): Promise<ScopedWorkspaceRpcResult> {
+  async writeFile(path: string, contents: Uint8Array): Promise<ScopedWorkspaceCapabilityResult> {
     const target = this.resolveAllowedPath("writeFile", path, this.writeScopes);
     if (target.status === "error") return target;
 
@@ -94,14 +94,14 @@ class ScopedWorkspaceFileCapabilityTarget implements ScopedWorkspaceFileCapabili
     return resultToRpc(this.options.files.write(target.value, contents));
   }
 
-  async list(path: string): Promise<ScopedWorkspaceRpcResult<WorkspaceEntry[]>> {
+  async list(path: string): Promise<ScopedWorkspaceCapabilityResult<WorkspaceEntry[]>> {
     const target = this.resolveAllowedPath("list", path, this.readScopes);
     if (target.status === "error") return target;
 
     return resultToRpc(this.options.files.list(target.value));
   }
 
-  async stat(path: string): Promise<ScopedWorkspaceRpcResult<WorkspaceStat>> {
+  async stat(path: string): Promise<ScopedWorkspaceCapabilityResult<WorkspaceStat>> {
     const target = this.resolveAllowedPath("stat", path, this.readScopes);
     if (target.status === "error") return target;
 
@@ -112,7 +112,7 @@ class ScopedWorkspaceFileCapabilityTarget implements ScopedWorkspaceFileCapabili
     operation: string,
     requestedPath: string,
     scopes: WorkspaceScopeSet,
-  ): ScopedWorkspaceRpcResult<string> {
+  ): ScopedWorkspaceCapabilityResult<string> {
     const path = scopedPath(this.root, requestedPath);
     if (path.status === "error") return path;
 
@@ -140,7 +140,7 @@ async function ensureParentDirectories(
   files: ScopedWorkspaceFiles,
   filePath: string,
   ensuredDirectories: Set<string>,
-): Promise<ScopedWorkspaceRpcResult> {
+): Promise<ScopedWorkspaceCapabilityResult> {
   for (const directory of parentDirectories(filePath)) {
     if (ensuredDirectories.has(directory)) {
       continue;
@@ -158,17 +158,17 @@ async function ensureParentDirectories(
 
 async function resultToRpc<T>(
   resultPromise: Promise<Result<T, { tag: string; message?: string }>>,
-): Promise<ScopedWorkspaceRpcResult<T>> {
+): Promise<ScopedWorkspaceCapabilityResult<T>> {
   const result = await resultPromise;
   if (Result.isError(result)) {
     return { status: "error", error: result.error };
   }
 
   if (result.value === undefined) {
-    return { status: "ok" } as ScopedWorkspaceRpcResult<T>;
+    return { status: "ok" } as ScopedWorkspaceCapabilityResult<T>;
   }
 
-  return { status: "ok", value: result.value } as ScopedWorkspaceRpcResult<T>;
+  return { status: "ok", value: result.value } as ScopedWorkspaceCapabilityResult<T>;
 }
 
 type ScopePattern = {
@@ -194,7 +194,7 @@ function pathMatchesScope(path: string, scope: ScopePattern): boolean {
   return path === scope.root || path.startsWith(`${scope.root}/`);
 }
 
-function scopedPath(root: string, requestedPath: string): ScopedWorkspaceRpcResult<string> {
+function scopedPath(root: string, requestedPath: string): ScopedWorkspaceCapabilityResult<string> {
   const normalizedRequest = normalizeWorkspacePath(requestedPath);
   if (normalizedRequest.status === "error") return normalizedRequest;
 
@@ -221,7 +221,7 @@ function normalizeTrustedWorkspacePath(path: string): string {
   return result.value;
 }
 
-function normalizeWorkspacePath(path: string): ScopedWorkspaceRpcResult<string> {
+function normalizeWorkspacePath(path: string): ScopedWorkspaceCapabilityResult<string> {
   if (path.includes("\0")) {
     return { status: "error", error: scopedPathError(path) };
   }

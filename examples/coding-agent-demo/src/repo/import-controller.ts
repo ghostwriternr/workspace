@@ -1,5 +1,4 @@
 import { Result, type Result as BetterResult } from "better-result";
-import { registerArtifactsRepositoryAccess } from "@cloudflare/workspace";
 
 export type RepoImportRequest = {
   workspaceName: string;
@@ -37,13 +36,7 @@ export type ArtifactsImportBinding = {
   import(params: {
     source: { url: string; branch?: string; depth?: number };
     target: { name: string; opts?: { description?: string; readOnly?: boolean } };
-  }): Promise<{
-    id: string;
-    name?: string;
-    remote?: string;
-    defaultBranch?: string;
-    token?: string;
-  }>;
+  }): Promise<{ id: string }>;
 };
 
 export type RepoImportControllerDependencies = {
@@ -69,15 +62,6 @@ export class RepoImportController {
           },
         },
       });
-
-      if (imported.remote && imported.defaultBranch && imported.token) {
-        registerArtifactsRepositoryAccess({
-          name: imported.name ?? request.workspaceName,
-          remote: imported.remote,
-          defaultBranch: request.ref ?? imported.defaultBranch,
-          token: imported.token,
-        });
-      }
 
       return Result.ok({
         workspaceName: request.workspaceName,

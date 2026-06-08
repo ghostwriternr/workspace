@@ -10,15 +10,7 @@ describe("RepoImportController", () => {
       artifacts: {
         import: async (params: unknown) => {
           imports.push(params);
-          return {
-            id: "repo_123",
-            name: "workspace-one",
-            description: null,
-            defaultBranch: "main",
-            remote: "https://artifacts.example/workspace-one.git",
-            token: "secret-token",
-            tokenExpiresAt: "2026-01-01T00:00:00.000Z",
-          };
+          return { id: "repo_123" };
         },
       },
     });

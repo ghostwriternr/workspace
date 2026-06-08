@@ -6,7 +6,7 @@ import {
   MountOperationError,
   UnsupportedMountEntryError,
   type WorkspaceMount,
-} from "../src/workspace/projections/working-copy-mount";
+} from "../src/projections/working-copy-mount";
 
 const originalBytes = new Uint8Array([1, 2, 3]);
 const currentBytes = new Uint8Array([4, 5, 6]);

@@ -1,5 +1,5 @@
-// Runtime exports used by Workers bindings. Product-facing helpers should avoid
-// forcing ordinary app code to import runtime classes just to work with files.
+// Runtime exports used by Workers bindings. File helpers should avoid forcing
+// ordinary app code to import runtime classes just to work with files.
 export {
   Workspace,
   WorkspaceFileCopy,
@@ -19,26 +19,24 @@ export {
   type WorkspaceTreeEntries,
   type WorkspaceTreeEntryTooLargeError,
   type WorkspaceTreeSourceError,
-} from "./workspace/product/workspace";
-export { type WorkspaceEntry, type WorkspaceStat } from "./workspace/model/rpc";
-export { type WorkspaceTreeEntry } from "./workspace/model/write-tree";
+} from "./workspace";
+export { type WorkspaceEntry, type WorkspaceRevision, type WorkspaceStat } from "./model/entries";
+export { type WorkspaceTreeEntry } from "./model/write-tree";
 export {
   type WorkspaceFileMount,
   type WorkspaceFileMountError,
   type WorkspaceFileMountHost,
   type WorkspaceFileMountHostEntry,
   type WorkspaceFileReconcileSummary,
-} from "./workspace/product/mount";
-export { registerArtifactsRepositoryAccess } from "./workspace/artifacts/access-registry";
-export type { ArtifactsRepositoryAccess } from "./workspace/artifacts/access-registry";
+} from "./mount";
 export {
   type ScopedWorkspaceAccessErrorDto,
   type ScopedWorkspaceErrorDto,
   type ScopedWorkspaceFileCapability,
   type ScopedWorkspaceOperationErrorDto,
   type ScopedWorkspacePathErrorDto,
-  type ScopedWorkspaceRpcResult,
-} from "./workspace/projections/scoped-file-capability";
+  type ScopedWorkspaceCapabilityResult,
+} from "./projections/scoped-file-capability";
 
 export default {
   fetch(): Response {

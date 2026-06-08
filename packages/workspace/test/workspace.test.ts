@@ -1,11 +1,7 @@
 import { Result } from "better-result";
 import { afterEach, describe, expect, it } from "vitest";
 import { Workspace } from "../src";
-import {
-  resetArtifactsWorkspaceDriverFactoryForTests,
-  setArtifactsWorkspaceDriverFactoryForTests,
-} from "../src/workspace/artifacts/workspace-backend-client";
-import { FakeArtifactsBinding, FakeArtifactsWorkspaceDriver } from "./fake-artifacts";
+import { createFakeArtifacts, FakeArtifactsBinding, FakeArtifactsWorkspaceDriver, resetFakeArtifacts } from "./fake-artifacts";
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -42,8 +38,15 @@ function closeableFailingAsyncEntries() {
   return source;
 }
 
-describe("Workspace product API", () => {
-  afterEach(() => resetArtifactsWorkspaceDriverFactoryForTests());
+describe("Workspace", () => {
+  afterEach(() => resetFakeArtifacts());
+
+  it("constructs with the default internal Git driver", () => {
+    const workspace = Workspace.fromArtifacts(new FakeArtifactsBinding(new FakeArtifactsWorkspaceDriver({})), "repo");
+
+    expect(workspace.files).toBeDefined();
+  });
+
 
   it("returns Result errors when the Artifacts repository is missing", async () => {
     const { workspace } = createWorkspace({});
@@ -72,7 +75,7 @@ describe("Workspace product API", () => {
   });
 
   it("writes async file trees into isolated copies before apply", async () => {
-    const { workspace } = createWorkspace({ repo: {} });
+    const { workspace, driver } = createWorkspace({ repo: {} });
     const copy = await workspace.files.copy("import-tree");
     if (Result.isError(copy)) throw new Error("copy failed");
 
@@ -92,6 +95,15 @@ describe("Workspace product API", () => {
     expect(Result.isOk(apply)).toBe(true);
     expect(Result.isOk(currentAfterApply)).toBe(true);
     if (Result.isOk(currentAfterApply)) expect(text(currentAfterApply.value)).toBe("# Draft");
+    expect(driver.writeBatches).toEqual([
+      {
+        repository: copy.value.id,
+        files: [
+          { path: "/imports/repo/README.md", contents: bytes("# Draft") },
+          { path: "/imports/repo/src/index.ts", contents: bytes("export const draft = true;") },
+        ],
+      },
+    ]);
   });
 
   it("lets later writeTree entries overwrite earlier entries", async () => {
@@ -109,6 +121,23 @@ describe("Workspace product API", () => {
     expect(Result.isOk(writeTree)).toBe(true);
     expect(Result.isOk(read)).toBe(true);
     if (Result.isOk(read)) expect(text(read.value)).toBe("two");
+  });
+
+  it("returns domain errors for file and directory collisions within a writeTree batch", async () => {
+    const { workspace, driver } = createWorkspace({ repo: {} });
+    const copy = await workspace.files.copy("conflicting-import");
+    if (Result.isError(copy)) throw new Error("copy failed");
+
+    const writeTree = await copy.value.files.writeTree("/imports", [
+      { path: "README.md/nested.txt", contents: bytes("nested") },
+      { path: "README.md", contents: bytes("file") },
+    ]);
+
+    expect(Result.isError(writeTree)).toBe(true);
+    if (Result.isError(writeTree)) {
+      expect(writeTree.error).toMatchObject({ tag: "IsDirectoryError", path: "/imports/README.md" });
+    }
+    expect(driver.writeBatches).toEqual([]);
   });
 
   it("does not change current files when copy writeTree has an invalid relative path", async () => {
@@ -236,9 +265,7 @@ describe("Workspace product API", () => {
 });
 
 function createWorkspace(initial: Record<string, Record<string, Uint8Array>>) {
-  const driver = new FakeArtifactsWorkspaceDriver(initial);
-  const artifacts = new FakeArtifactsBinding(driver);
-  setArtifactsWorkspaceDriverFactoryForTests(() => driver);
+  const { artifacts, driver } = createFakeArtifacts(initial);
   return { workspace: Workspace.fromArtifacts(artifacts, "repo"), artifacts, driver };
 }
 

@@ -49,7 +49,7 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import {
   Workspace,
   type ScopedWorkspaceFileCapability,
-  type ScopedWorkspaceRpcResult,
+  type ScopedWorkspaceCapabilityResult,
 } from "@cloudflare/workspace";
 import { createWorkspaceDynamicWorkerRunner } from "@cloudflare/workspace-adapter-dynamic-worker";
 
@@ -78,7 +78,7 @@ export class WorkspaceFiles extends WorkerEntrypoint<Env, { workspaceName: strin
     return capability.value.stat(path);
   }
 
-  private async capability(): Promise<ScopedWorkspaceRpcResult<ScopedWorkspaceFileCapability>> {
+  private async capability(): Promise<ScopedWorkspaceCapabilityResult<ScopedWorkspaceFileCapability>> {
     const workspace = Workspace.fromArtifacts(this.env.ARTIFACTS, this.ctx.props.workspaceName);
     const copy = await workspace.files.getCopy(this.ctx.props.copyId);
     if (Result.isError(copy)) return { status: "error", error: copy.error };

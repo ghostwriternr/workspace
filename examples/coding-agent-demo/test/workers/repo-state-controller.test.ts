@@ -71,7 +71,7 @@ describe("RepoStateController", () => {
 
     expect(Result.isError(state)).toBe(true);
     if (Result.isError(state)) {
-      expect(state.error.tag).toBe("SessionNotFoundError");
+      expect(state.error.tag).toBe("WorkspaceCopyNotFoundError");
     }
   });
 });

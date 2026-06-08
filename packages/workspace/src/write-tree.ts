@@ -1,5 +1,5 @@
 import { Result, type Result as BetterResult } from "better-result";
-import type { WorkspaceTreeEntry } from "../model/write-tree";
+import type { WorkspaceTreeEntry } from "./model/write-tree";
 
 const WRITE_TREE_BATCH_SIZE = 100;
 const WRITE_TREE_BATCH_MAX_BYTES = 16 * 1024 * 1024;

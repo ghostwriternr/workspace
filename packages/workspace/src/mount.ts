@@ -4,7 +4,7 @@ import {
   type WorkspaceMountError,
   type WorkspaceMountFiles,
   type WorkspaceMountReconcileSummary,
-} from "../projections/working-copy-mount";
+} from "./projections/working-copy-mount";
 
 export type WorkspaceFileMountHostEntry = {
   path: string;
