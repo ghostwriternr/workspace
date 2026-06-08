@@ -76,13 +76,13 @@ You can use it directly through a Worker, expose it to a Sandbox through a files
 
 Working copies are durable. They can be looked up, listed, resumed, and cleaned up without the calling product having to track their state separately.
 
-File copies are the **isolation atom** of Workspace — the unit you fork, edit, and either publish or throw away. Implementation can vary (today it's tables inside the Workspace Durable Object; long-term it's likely Durable Object facets — see [`architecture.md`](./architecture.md)). The product model doesn't change with the implementation.
+File copies are the **isolation atom** of Workspace — the unit you fork, edit, and either publish or throw away. Today they are Artifacts forks behind the Workspace API. The product model doesn't change with the implementation.
 
 ### Apply and discard
 
 `apply` publishes a working copy to current files and creates a revision. `discard` abandons it without changing current files.
 
-A working copy that branched from an older head version is rejected at apply (`SessionConflictError`). The product can inspect, retry, or throw it away. There's no merge or rebase yet — see [`known-limitations.md`](./known-limitations.md).
+A working copy can be rejected at apply if the underlying authority cannot publish it cleanly. The product can retry, export, or throw it away. There's no merge or rebase in Workspace — see [`product-boundaries.md`](./product-boundaries.md).
 
 ### Revisions
 
@@ -92,7 +92,7 @@ They are not Git commits. Workspace won't grow branches, remotes, or rebase sema
 
 ### Observability
 
-Products need to know when files change. The current model exposes a head version counter; a working copy can ask whether it's stale. Richer change streams (per-path tokens, subscriptions) can come later.
+Products need to know when files change. Today they generally refresh state after explicit Workspace operations. Richer change streams (per-path tokens, subscriptions) can come later when real callers need them.
 
 ## Projections
 
@@ -103,7 +103,7 @@ Each current projection is a different shape of access to Workspace-owned durabl
 Product Workers and Durable Objects use Workspace directly:
 
 ```ts
-const workspace = Workspace.get(env.WORKSPACES, name);
+const workspace = Workspace.fromArtifacts(env.ARTIFACTS, name);
 const copyResult = await workspace.files.copy("edit");
 if (Result.isError(copyResult)) return copyResult;
 

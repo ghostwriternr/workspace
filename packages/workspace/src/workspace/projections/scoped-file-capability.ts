@@ -1,5 +1,4 @@
 import { Result } from "better-result";
-import { RpcTarget } from "cloudflare:workers";
 
 import type { WorkspaceEntry, WorkspaceStat } from "../model/rpc";
 
@@ -66,14 +65,13 @@ export function createWorkspaceFileCapability(
   return new ScopedWorkspaceFileCapabilityTarget(options);
 }
 
-class ScopedWorkspaceFileCapabilityTarget extends RpcTarget implements ScopedWorkspaceFileCapability {
+class ScopedWorkspaceFileCapabilityTarget implements ScopedWorkspaceFileCapability {
   private readonly ensuredDirectories = new Set<string>();
   private readonly root: string;
   private readonly readScopes: WorkspaceScopeSet;
   private readonly writeScopes: WorkspaceScopeSet;
 
   constructor(private readonly options: ScopedWorkspaceFileCapabilityOptions) {
-    super();
     this.root = normalizeTrustedWorkspacePath(options.root);
     this.readScopes = new WorkspaceScopeSet(options.read);
     this.writeScopes = new WorkspaceScopeSet(options.write);

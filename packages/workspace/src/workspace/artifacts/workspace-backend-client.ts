@@ -33,9 +33,15 @@ import {
   type WorkspaceWriteRpcResult,
 } from "../model/rpc";
 import type { WorkspaceTreeEntry } from "../model/write-tree";
-import type { WorkspaceObjectClient } from "../product/workspace";
+import type { WorkspaceBackendClient } from "../product/workspace";
 
 export type ArtifactsBindingClient = {
+  create?(name: string, opts?: { readOnly?: boolean; description?: string; setDefaultBranch?: string }): Promise<{
+    name?: string;
+    remote?: string;
+    defaultBranch?: string;
+    token?: string;
+  }>;
   get(name: string): Promise<ArtifactsRepoClient>;
   delete(name: string): Promise<boolean>;
 };
@@ -64,11 +70,11 @@ type ArtifactsWorkspaceDriverFactory = (artifacts: ArtifactsBindingClient) => Ar
 
 let driverFactory: ArtifactsWorkspaceDriverFactory = createLazyIsomorphicGitArtifactsWorkspaceDriver;
 
-export function createArtifactsWorkspaceObjectClient(
+export function createArtifactsWorkspaceBackendClient(
   artifacts: ArtifactsBindingClient,
   repositoryName: string,
-): WorkspaceObjectClient {
-  return new ArtifactsWorkspaceObjectClient(artifacts, repositoryName, driverFactory(artifacts));
+): WorkspaceBackendClient {
+  return new ArtifactsWorkspaceBackendClient(artifacts, repositoryName, driverFactory(artifacts));
 }
 
 export function setArtifactsWorkspaceDriverFactoryForTests(factory: ArtifactsWorkspaceDriverFactory): void {
@@ -79,7 +85,7 @@ export function resetArtifactsWorkspaceDriverFactoryForTests(): void {
   driverFactory = createLazyIsomorphicGitArtifactsWorkspaceDriver;
 }
 
-class ArtifactsWorkspaceObjectClient implements WorkspaceObjectClient {
+class ArtifactsWorkspaceBackendClient implements WorkspaceBackendClient {
   constructor(
     private readonly artifacts: ArtifactsBindingClient,
     private readonly repositoryName: string,
@@ -240,7 +246,7 @@ async function readFileFromRepository(
     return toRpcError(parsed.error);
   }
 
-  const stat = await driver.stat(repository, path);
+  const stat = await statOrMissing(driver, repository, path);
   if (!stat) {
     return toRpcError(new PathNotFoundError({ path }));
   }
@@ -265,7 +271,7 @@ async function listRepository(
     return toRpcError(parsed.error);
   }
 
-  const stat = await driver.stat(repository, path);
+  const stat = await statOrMissing(driver, repository, path);
   if (!stat) {
     return toRpcError(new PathNotFoundError({ path }));
   }
@@ -286,7 +292,7 @@ async function statRepository(
     return toRpcError(parsed.error);
   }
 
-  const stat = await driver.stat(repository, path);
+  const stat = await statOrMissing(driver, repository, path);
   if (!stat) {
     return toRpcError(new PathNotFoundError({ path }));
   }
@@ -303,12 +309,12 @@ async function mkdirInRepository(
     return toRpcError(parsed.error);
   }
 
-  const existing = await driver.stat(repository, path);
+  const existing = await statOrMissing(driver, repository, path);
   if (existing) {
     return toRpcError(new PathAlreadyExistsError({ path }));
   }
 
-  const parent = await driver.stat(repository, parentPath(path));
+  const parent = await statOrMissing(driver, repository, parentPath(path));
   if (!parent) {
     return toRpcError(new PathNotFoundError({ path: parentPath(path) }));
   }
@@ -330,12 +336,12 @@ async function writeFileInRepository(
     return toRpcError(parsed.error);
   }
 
-  const existing = await driver.stat(repository, path);
+  const existing = await statOrMissing(driver, repository, path);
   if (existing?.type === "directory") {
     return toRpcError(new IsDirectoryError({ path }));
   }
 
-  const parent = await driver.stat(repository, parentPath(path));
+  const parent = await statOrMissing(driver, repository, parentPath(path));
   if (parent && parent.type !== "directory") {
     return toRpcError(new NotDirectoryError({ path: parentPath(path) }));
   }
@@ -355,7 +361,7 @@ async function writeTreeFileInRepository(
     return toRpcError(parsed.error);
   }
 
-  const existing = await driver.stat(repository, path);
+  const existing = await statOrMissing(driver, repository, path);
   if (existing?.type === "directory") {
     return toRpcError(new IsDirectoryError({ path }));
   }
@@ -374,7 +380,7 @@ async function deleteFromRepository(
     return toRpcError(parsed.error);
   }
 
-  const stat = await driver.stat(repository, path);
+  const stat = await statOrMissing(driver, repository, path);
   if (!stat) {
     return toRpcError(new PathNotFoundError({ path }));
   }
@@ -388,6 +394,27 @@ async function deleteFromRepository(
 
   await driver.deleteFile(repository, path);
   return { status: "ok" } as const;
+}
+
+async function statOrMissing(
+  driver: ArtifactsWorkspaceDriver,
+  repository: string,
+  path: string,
+): Promise<WorkspaceStat | null> {
+  try {
+    return await driver.stat(repository, path);
+  } catch (error) {
+    if (isArtifactsNotFound(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function isArtifactsNotFound(error: unknown): boolean {
+  return error instanceof Error &&
+    (error as { name?: unknown; code?: unknown }).name === "ArtifactsError" &&
+    (error as { code?: unknown }).code === "NOT_FOUND";
 }
 
 function sessionNotFoundFromArtifacts(id: string, _error: unknown): Extract<WorkspaceSessionInfoRpcResult, { status: "error" }> {

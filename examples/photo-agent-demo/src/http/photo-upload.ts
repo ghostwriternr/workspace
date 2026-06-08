@@ -1,6 +1,6 @@
 import { uploadOriginalPhoto } from "../photo/upload";
 
-type WorkspaceNamespace = Parameters<typeof uploadOriginalPhoto>[0]["workspaces"];
+type PhotoArtifactsBinding = Parameters<typeof uploadOriginalPhoto>[0]["artifacts"];
 
 type PhotoAgentNamespace = {
   getByName(name: string): { refreshPhotoState(): Promise<unknown> };
@@ -10,7 +10,7 @@ const uploadRoutePattern = /^\/api\/workspaces\/([^/]+)\/photos\/original$/;
 
 export async function handlePhotoUploadRequest(
   request: Request,
-  workspaces: WorkspaceNamespace,
+  artifacts: PhotoArtifactsBinding,
   photoAgents?: PhotoAgentNamespace,
 ): Promise<Response | undefined> {
   const url = new URL(request.url);
@@ -29,7 +29,7 @@ export async function handlePhotoUploadRequest(
 
   try {
     const upload = await uploadOriginalPhoto({
-      workspaces,
+      artifacts,
       workspaceName,
       contents,
       contentType,

@@ -12,7 +12,7 @@ import {
   type WorkspaceTreeEntryTooLargeError,
   type WorkspaceTreeSourceError,
 } from "./write-tree";
-import { createArtifactsWorkspaceObjectClient, type ArtifactsBindingClient } from "../artifacts/workspace-object-client";
+import { createArtifactsWorkspaceBackendClient, type ArtifactsBindingClient } from "../artifacts/workspace-backend-client";
 import { createWorkspaceFileCapability, type ScopedWorkspaceFileCapability } from "../projections/scoped-file-capability";
 import type {
   WorkspaceDeleteRpcResult,
@@ -37,7 +37,7 @@ import type {
 } from "../model/rpc";
 import type { WorkspaceTreeEntry } from "../model/write-tree";
 
-export type WorkspaceObjectClient = {
+export type WorkspaceBackendClient = {
   beginSession(): Promise<WorkspaceSessionInfoRpcResult>;
   getSession(id: string): Promise<WorkspaceSessionInfoRpcResult>;
   mkdir(path: string): Promise<WorkspaceMkdirRpcResult>;
@@ -55,10 +55,6 @@ export type WorkspaceObjectClient = {
   sessionDelete(id: string, path: string): Promise<WorkspaceSessionDeleteRpcResult>;
   sessionCommit(id: string): Promise<WorkspaceSessionCommitRpcResult>;
   sessionDiscard(id: string): Promise<WorkspaceSessionDiscardRpcResult>;
-};
-
-export type WorkspaceNamespace = {
-  getByName(name: string): WorkspaceObjectClient;
 };
 
 export type WorkspaceCurrentFiles = WorkspaceCurrentFilesApi & {
@@ -119,17 +115,13 @@ export type WorkspaceApplyError = RpcErrorOf<WorkspaceSessionCommitRpcResult>;
 export type WorkspaceDiscardError = RpcErrorOf<WorkspaceSessionDiscardRpcResult>;
 
 export class Workspace {
-  static get(namespace: WorkspaceNamespace, name: string): Workspace {
-    return new Workspace(namespace.getByName(name));
-  }
-
   static fromArtifacts(artifacts: ArtifactsBindingClient, name: string): Workspace {
-    return new Workspace(createArtifactsWorkspaceObjectClient(artifacts, name));
+    return new Workspace(createArtifactsWorkspaceBackendClient(artifacts, name));
   }
 
   readonly files: WorkspaceCurrentFiles;
 
-  private constructor(private readonly object: WorkspaceObjectClient) {
+  private constructor(private readonly object: WorkspaceBackendClient) {
     this.files = new WorkspaceFiles(object);
   }
 }
@@ -138,7 +130,7 @@ export class WorkspaceFileCopy {
   readonly files: WorkspaceFileCopyFiles;
 
   constructor(
-    private readonly object: WorkspaceObjectClient,
+    private readonly object: WorkspaceBackendClient,
     readonly id: string,
     readonly createdAt: number,
   ) {
@@ -156,7 +148,7 @@ export class WorkspaceFileCopy {
 
 class WorkspaceCopyFiles implements WorkspaceFileCopyFiles {
   constructor(
-    private readonly object: WorkspaceObjectClient,
+    private readonly object: WorkspaceBackendClient,
     private readonly copyId: string,
   ) {}
 
@@ -203,7 +195,7 @@ class WorkspaceCopyFiles implements WorkspaceFileCopyFiles {
 }
 
 class WorkspaceFiles implements WorkspaceCurrentFiles {
-  constructor(private readonly object: WorkspaceObjectClient) {}
+  constructor(private readonly object: WorkspaceBackendClient) {}
 
   async copy(_name?: string): Promise<BetterResult<WorkspaceFileCopy, WorkspaceCopyError>> {
     const info = rpcToResult(await this.object.beginSession());

@@ -13,7 +13,6 @@ Build only what is needed. Don't add inspection methods, convenience helpers, st
 ## Repo map
 
 - `packages/workspace/` — the Workspace package. Keep durable file-state primitives and Artifacts-backed work-surface APIs here.
-- `packages/source/github/` — GitHub REST source adapter experiments. Keep GitHub API/import concerns outside Workspace core.
 - `packages/adapters/dynamic-worker/` — Dynamic Worker adapter. Keep execution integration here, not in Workspace core.
 - `packages/adapters/sandbox/` — Sandbox adapter. Keep container execution integration here, not in Workspace core.
 - `examples/photo-agent-demo/` — example Worker. Agent/Sandbox/Dynamic Worker concerns live here, not in the package.

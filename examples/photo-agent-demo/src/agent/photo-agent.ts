@@ -4,6 +4,7 @@ import { tool, type ToolSet } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
 import { z } from "zod";
 
+import { Workspace } from "@cloudflare/workspace";
 import { createSandboxWorkspaceCommandRunner } from "../workspace/cloudflare-sandbox";
 import { createWorkspaceDynamicWorkerRunner } from "@cloudflare/workspace-adapter-dynamic-worker";
 import { PhotoDraftController, type PhotoState } from "../photo/draft-controller";
@@ -120,7 +121,7 @@ export class PhotoAgent extends Think<Env, PhotoAgentState> {
   private controller(): PhotoDraftController {
     return new PhotoDraftController({
       workspaceName: this.name,
-      workspaces: this.env.WORKSPACES,
+      workspace: Workspace.fromArtifacts(this.env.ARTIFACTS, this.name),
       commandRunner: createSandboxWorkspaceCommandRunner(this.env.Sandbox, this.name),
       dynamicWorkerRunner: createWorkspaceDynamicWorkerRunner(this.env.DYNAMIC_WORKERS),
       workspaceForDraft: (draftEditId) =>

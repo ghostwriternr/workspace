@@ -14,10 +14,7 @@ export class InvalidPathError extends TaggedError("InvalidPathError")<{
   message: string;
 }>() {
   constructor(args: { path: string; reason: InvalidPathReason }) {
-    super({
-      ...args,
-      message: invalidPathMessage(args.path, args.reason),
-    });
+    super({ ...args, message: invalidPathMessage(args.path, args.reason) });
   }
 }
 
@@ -26,10 +23,7 @@ export class PathNotFoundError extends TaggedError("PathNotFoundError")<{
   message: string;
 }>() {
   constructor(args: { path: string }) {
-    super({
-      ...args,
-      message: `Workspace path not found: ${args.path}`,
-    });
+    super({ ...args, message: `Workspace path not found: ${args.path}` });
   }
 }
 
@@ -38,10 +32,7 @@ export class PathAlreadyExistsError extends TaggedError("PathAlreadyExistsError"
   message: string;
 }>() {
   constructor(args: { path: string }) {
-    super({
-      ...args,
-      message: `Workspace path already exists: ${args.path}`,
-    });
+    super({ ...args, message: `Workspace path already exists: ${args.path}` });
   }
 }
 
@@ -50,10 +41,7 @@ export class IsDirectoryError extends TaggedError("IsDirectoryError")<{
   message: string;
 }>() {
   constructor(args: { path: string }) {
-    super({
-      ...args,
-      message: `Workspace path is a directory: ${args.path}`,
-    });
+    super({ ...args, message: `Workspace path is a directory: ${args.path}` });
   }
 }
 
@@ -62,10 +50,7 @@ export class NotDirectoryError extends TaggedError("NotDirectoryError")<{
   message: string;
 }>() {
   constructor(args: { path: string }) {
-    super({
-      ...args,
-      message: `Workspace path is not a directory: ${args.path}`,
-    });
+    super({ ...args, message: `Workspace path is not a directory: ${args.path}` });
   }
 }
 
@@ -74,22 +59,7 @@ export class DirectoryNotEmptyError extends TaggedError("DirectoryNotEmptyError"
   message: string;
 }>() {
   constructor(args: { path: string }) {
-    super({
-      ...args,
-      message: `Workspace directory is not empty: ${args.path}`,
-    });
-  }
-}
-
-export class RevisionNotFoundError extends TaggedError("RevisionNotFoundError")<{
-  revisionId: string;
-  message: string;
-}>() {
-  constructor(args: { revisionId: string }) {
-    super({
-      ...args,
-      message: `Workspace revision not found: ${args.revisionId}`,
-    });
+    super({ ...args, message: `Workspace directory is not empty: ${args.path}` });
   }
 }
 
@@ -98,24 +68,7 @@ export class SessionNotFoundError extends TaggedError("SessionNotFoundError")<{
   message: string;
 }>() {
   constructor(args: { sessionId: string }) {
-    super({
-      ...args,
-      message: `Workspace session not found: ${args.sessionId}`,
-    });
-  }
-}
-
-export class SessionConflictError extends TaggedError("SessionConflictError")<{
-  sessionId: string;
-  baseHeadVersion: number;
-  currentHeadVersion: number;
-  message: string;
-}>() {
-  constructor(args: { sessionId: string; baseHeadVersion: number; currentHeadVersion: number }) {
-    super({
-      ...args,
-      message: `Workspace session ${args.sessionId} is based on head version ${args.baseHeadVersion}, but current head is version ${args.currentHeadVersion}`,
-    });
+    super({ ...args, message: `Workspace session not found: ${args.sessionId}` });
   }
 }
 
@@ -126,15 +79,9 @@ export type WorkspaceError =
   | NotDirectoryError
   | PathAlreadyExistsError
   | PathNotFoundError
-  | RevisionNotFoundError
-  | SessionConflictError
   | SessionNotFoundError;
 
-export type WorkspaceMkdirError =
-  | InvalidPathError
-  | NotDirectoryError
-  | PathAlreadyExistsError
-  | PathNotFoundError;
+export type WorkspaceMkdirError = InvalidPathError | NotDirectoryError | PathAlreadyExistsError | PathNotFoundError;
 export type WorkspaceWriteError = InvalidPathError | IsDirectoryError | NotDirectoryError | PathNotFoundError;
 export type WorkspaceWriteTreeError = InvalidPathError | IsDirectoryError | NotDirectoryError;
 export type WorkspaceReadError = InvalidPathError | IsDirectoryError | PathNotFoundError;
@@ -149,7 +96,7 @@ export type WorkspaceSessionReadError = WorkspaceReadError | SessionNotFoundErro
 export type WorkspaceSessionListError = WorkspaceListError | SessionNotFoundError;
 export type WorkspaceSessionDeleteError = WorkspaceDeleteError | SessionNotFoundError;
 export type WorkspaceSessionStatError = WorkspaceStatError | SessionNotFoundError;
-export type WorkspaceSessionCommitError = SessionConflictError | SessionNotFoundError;
+export type WorkspaceSessionCommitError = SessionNotFoundError;
 export type WorkspaceSessionDiscardError = SessionNotFoundError;
 
 export type InvalidPathErrorDto = {
@@ -189,23 +136,9 @@ export type DirectoryNotEmptyErrorDto = {
   message: string;
 };
 
-export type RevisionNotFoundErrorDto = {
-  tag: "RevisionNotFoundError";
-  revisionId: string;
-  message: string;
-};
-
 export type SessionNotFoundErrorDto = {
   tag: "SessionNotFoundError";
   sessionId: string;
-  message: string;
-};
-
-export type SessionConflictErrorDto = {
-  tag: "SessionConflictError";
-  sessionId: string;
-  baseHeadVersion: number;
-  currentHeadVersion: number;
   message: string;
 };
 
@@ -216,8 +149,6 @@ export type WorkspaceErrorDto =
   | NotDirectoryErrorDto
   | PathAlreadyExistsErrorDto
   | PathNotFoundErrorDto
-  | RevisionNotFoundErrorDto
-  | SessionConflictErrorDto
   | SessionNotFoundErrorDto;
 
 export type ErrorDtoFor<E extends WorkspaceError> = E extends DirectoryNotEmptyError
@@ -232,80 +163,31 @@ export type ErrorDtoFor<E extends WorkspaceError> = E extends DirectoryNotEmptyE
           ? PathAlreadyExistsErrorDto
           : E extends PathNotFoundError
             ? PathNotFoundErrorDto
-            : E extends RevisionNotFoundError
-              ? RevisionNotFoundErrorDto
-              : E extends SessionConflictError
-                ? SessionConflictErrorDto
-                : E extends SessionNotFoundError
-                  ? SessionNotFoundErrorDto
-                  : never;
+            : E extends SessionNotFoundError
+              ? SessionNotFoundErrorDto
+              : never;
 
 export function workspaceErrorToDto<E extends WorkspaceError>(error: E): ErrorDtoFor<E> {
   if (DirectoryNotEmptyError.is(error)) {
-    return {
-      tag: "DirectoryNotEmptyError",
-      path: error.path,
-      message: error.message,
-    } as ErrorDtoFor<E>;
+    return { tag: "DirectoryNotEmptyError", path: error.path, message: error.message } as ErrorDtoFor<E>;
   }
   if (InvalidPathError.is(error)) {
-    return {
-      tag: "InvalidPathError",
-      path: error.path,
-      reason: error.reason,
-      message: error.message,
-    } as ErrorDtoFor<E>;
+    return { tag: "InvalidPathError", path: error.path, reason: error.reason, message: error.message } as ErrorDtoFor<E>;
   }
   if (IsDirectoryError.is(error)) {
-    return {
-      tag: "IsDirectoryError",
-      path: error.path,
-      message: error.message,
-    } as ErrorDtoFor<E>;
+    return { tag: "IsDirectoryError", path: error.path, message: error.message } as ErrorDtoFor<E>;
   }
   if (NotDirectoryError.is(error)) {
-    return {
-      tag: "NotDirectoryError",
-      path: error.path,
-      message: error.message,
-    } as ErrorDtoFor<E>;
+    return { tag: "NotDirectoryError", path: error.path, message: error.message } as ErrorDtoFor<E>;
   }
   if (PathAlreadyExistsError.is(error)) {
-    return {
-      tag: "PathAlreadyExistsError",
-      path: error.path,
-      message: error.message,
-    } as ErrorDtoFor<E>;
+    return { tag: "PathAlreadyExistsError", path: error.path, message: error.message } as ErrorDtoFor<E>;
   }
   if (PathNotFoundError.is(error)) {
-    return {
-      tag: "PathNotFoundError",
-      path: error.path,
-      message: error.message,
-    } as ErrorDtoFor<E>;
-  }
-  if (RevisionNotFoundError.is(error)) {
-    return {
-      tag: "RevisionNotFoundError",
-      revisionId: error.revisionId,
-      message: error.message,
-    } as ErrorDtoFor<E>;
-  }
-  if (SessionConflictError.is(error)) {
-    return {
-      tag: "SessionConflictError",
-      sessionId: error.sessionId,
-      baseHeadVersion: error.baseHeadVersion,
-      currentHeadVersion: error.currentHeadVersion,
-      message: error.message,
-    } as ErrorDtoFor<E>;
+    return { tag: "PathNotFoundError", path: error.path, message: error.message } as ErrorDtoFor<E>;
   }
   if (SessionNotFoundError.is(error)) {
-    return {
-      tag: "SessionNotFoundError",
-      sessionId: error.sessionId,
-      message: error.message,
-    } as ErrorDtoFor<E>;
+    return { tag: "SessionNotFoundError", sessionId: error.sessionId, message: error.message } as ErrorDtoFor<E>;
   }
 
   const exhaustive: never = error;

@@ -57,7 +57,7 @@ For eager import, a source adapter is small. The shape it exposes to product cod
 
 The product creates a file copy, then hands the adapter's iterable to `copy.files.writeTree(root, entries)` (see [`product-api.md`](./product-api.md)). `root` is the absolute Workspace directory where the source should land; each entry path is relative to that root. If the adapter stream fails, the product discards the copy. If import succeeds, the product decides whether to apply the copy. The adapter itself doesn't call `apply` and doesn't hold Workspace identity.
 
-The `packages/source/github` package does this for GitHub REST: it resolves a ref to a commit SHA, walks the recursive tree API, and streams blob contents as `WorkspaceTreeEntry` values. The coding-agent demo is moving to Artifacts import instead, because Artifacts is the durable/versioned file authority for that flow. The source package remains useful for adapter experiments and for products that want to own GitHub import behavior outside Artifacts. A trivial S3 or external-R2 source package would follow the same adapter pattern against object APIs. Source packages stay small: the cost of supporting a new source is bounded, and the surface a product has to trust stays narrow. Future source-backed mounted views will need an additional read-only file authority shape, but that should stay outside Workspace core for the same dependency-direction reason.
+The coding-agent demo imports GitHub repositories through Artifacts because Artifacts is the durable/versioned file authority for that flow. If a product wants to own source import behavior outside Artifacts, it can still implement this adapter shape in product code or a separate package. A trivial S3 or external-R2 source adapter would follow the same pattern against object APIs. Source adapters should stay small: the cost of supporting a new source is bounded, and the surface a product has to trust stays narrow. Future source-backed mounted views will need an additional read-only file authority shape, but that should stay outside Workspace core for the same dependency-direction reason.
 
 ## Provenance, not auto-sync
 
@@ -82,14 +82,11 @@ Adapters don't have to copy everything into Workspace eagerly.
 
 The prototype only implements eager import. The other modes are real future work. The important boundary is ownership: importing makes bytes Workspace-owned; mounting keeps bytes source-owned; overlay writes are Workspace-owned.
 
-## Internal R2 is not a source
+## External object storage is a source
 
-A product can build an "external R2 source adapter" that imports from a user's R2 bucket. That is not the same thing as the internal R2 bucket Workspace uses for its own content storage.
+A product can build an R2 or S3 source adapter that imports from a bucket it owns. That bucket remains an external source authority: its lifecycle, auth, retention, and refresh behavior belong to the product adapter, not Workspace core.
 
-- **Internal R2 (`WORKSPACE_BLOBS`).** Workspace's content store. Lifecycle owned by Workspace. Should be treated as private implementation detail; products shouldn't read or write it directly.
-- **External R2 source.** A bucket the product owns. Lifecycle owned by the product. Workspace reads through an adapter, same as any other source.
-
-The fact that both happen to be R2 is incidental. The boundary is who owns the lifecycle.
+Artifacts is different in this prototype because Workspace uses it as the durable/versioned Workspace authority. External object stores, GitHub, Hugging Face, and similar systems remain source authorities unless a product explicitly imports their bytes into Workspace-owned state.
 
 ## Export is the inverse
 
@@ -119,4 +116,4 @@ Workspace's job is the durable file-state part of steps 2 and 3: represent impor
 - [`product-model.md`](./product-model.md) — what Workspace is conceptually.
 - [`product-boundaries.md`](./product-boundaries.md) — what stays out.
 - [`runtime-projections.md`](./runtime-projections.md) — how sources, file authorities, mounted views, and runtime projections relate.
-- [`known-limitations.md`](./known-limitations.md) — including the current eager-import/R2-storage assumptions, which get in the way of source-backed mounted views.
+- [`known-limitations.md`](./known-limitations.md) — including current eager-import and temporary Git-plumbing assumptions.

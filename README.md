@@ -6,7 +6,7 @@ It's the missing primitive between "object storage" and "filesystem inside a run
 
 ## What you get
 
-- A durable file tree. The original prototype uses `WorkspaceObject` (Durable Object SQLite + R2); the coding-agent path is migrating to Artifacts as the durable/versioned file authority.
+- A durable file tree backed by Artifacts as the versioned file authority.
 - Isolated working copies you can hand to a runtime: a Sandbox sees it at `/workspace`, a Dynamic Worker sees it as `env.WORKSPACE`, a trusted Worker uses it directly.
 - Explicit publish (`apply`) and explicit throwaway (`discard`). Nothing is published implicitly when a command exits or a Worker returns.
 - Immutable revisions of head as recovery points.
@@ -29,7 +29,6 @@ Workspace is source-agnostic: product flows might import files from a user uploa
 
 ```
 packages/workspace/                 Reusable Workspace package and product-facing file API
-packages/source/github/             GitHub REST source adapter retained for source-adapter experiments
 packages/adapters/dynamic-worker/   Dynamic Worker adapter for scoped Workspace files
 packages/adapters/sandbox/          Sandbox adapter for mounted Workspace file copies
 examples/photo-agent-demo/           Worker app: Think agent edits photos via Sandbox + Dynamic Worker
@@ -40,9 +39,9 @@ examples/coding-agent-demo/  Worker app: imports public GitHub repos into Worksp
 
 ## Status
 
-Prototype. The core durable semantics work (current files, working copies, scoped file capabilities, filesystem projection, apply, and discard). The package is being re-anchored around Artifacts as the durable/versioned file authority while preserving Workspace concepts above it. See `docs/known-limitations.md` for the full list.
+Prototype. The core durable semantics work (current files, working copies, scoped file capabilities, filesystem projection, apply, and discard). Workspace uses Artifacts as its durable/versioned file authority, with temporary internal Git plumbing hidden inside `packages/workspace` until Artifacts exposes direct file mutation APIs. See `docs/known-limitations.md` for the full list.
 
-The photo agent example is deployed at <https://workspace-photo-agent-demo.ghostwriternr.workers.dev>. The coding agent example imports public GitHub repos through Artifacts and exposes Workspace-backed Dynamic Worker and Sandbox tools. `packages/source/*` packages bridge external file sources into Workspace flows when a product wants adapter-owned import logic. `packages/adapters/*` packages project Workspace capabilities into runtimes.
+The photo agent example is deployed at <https://workspace-photo-agent-demo.ghostwriternr.workers.dev>. The coding agent example imports public GitHub repos through Artifacts and exposes Workspace-backed Dynamic Worker and Sandbox tools. `packages/adapters/*` packages project Workspace capabilities into runtimes.
 
 ## Commands
 

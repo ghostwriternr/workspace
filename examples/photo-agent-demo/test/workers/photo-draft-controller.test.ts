@@ -57,7 +57,7 @@ describe("PhotoDraftController", () => {
         unchanged: 1,
       },
     });
-    expect(dependencies.workspace.beginSessionCount).toBe(1);
+    expect(dependencies.workspaceObject.beginSessionCount).toBe(1);
     expect(dependencies.sessionFiles["/photos/current"]).toEqual(draftPng);
     expect(dependencies.commandRunner.calls).toEqual([
       {
@@ -81,7 +81,7 @@ describe("PhotoDraftController", () => {
       command: "convert /workspace/photos/current -resize 512x512^ /workspace/photos/current",
     });
 
-    expect(dependencies.workspace.beginSessionCount).toBe(0);
+    expect(dependencies.workspaceObject.beginSessionCount).toBe(0);
     expect(dependencies.commandRunner.calls).toEqual([
       {
         command: "convert /workspace/photos/current -resize 512x512^ /workspace/photos/current",
@@ -109,7 +109,7 @@ describe("PhotoDraftController", () => {
       summary: "Dynamic Worker finished.",
       result: { wrote: "/notes/edit-summary.md" },
     });
-    expect(dependencies.workspace.beginSessionCount).toBe(0);
+    expect(dependencies.workspaceObject.beginSessionCount).toBe(0);
     expect(dependencies.dynamicWorkerRunner.calls).toEqual([
       {
         code: "export default async function(env) { const write = await env.WORKSPACE.writeFile('/notes/edit-summary.md', new TextEncoder().encode('cropped square')); if (write.status === 'error') return write; }",
@@ -218,7 +218,7 @@ function createDependencies(options: CreateDependenciesOptions) {
   const dynamicWorkerRunner = new FakeDynamicWorkerRunner(workspace.session, options.dynamicWorkerError);
   const dependencies = {
     workspaceName: "demo",
-    workspaces: { getByName: () => workspace },
+    workspace: fakePhotoWorkspace(workspace) as never,
     commandRunner,
     dynamicWorkerRunner,
     workspaceForDraft: () => ({}) as never,
@@ -227,11 +227,58 @@ function createDependencies(options: CreateDependenciesOptions) {
       dependencies.draftEditId = draftEditId;
     },
     draftEditId: options.draftEditId,
-    workspace,
+    workspaceObject: workspace,
     session: workspace.session,
     sessionFiles: workspace.session.files,
   };
   return dependencies;
+}
+
+function fakePhotoWorkspace(workspace: FakeWorkspace) {
+  return {
+    files: {
+      mkdir: (path: string) => rpcToResult(workspace.mkdir(path)),
+      write: (path: string, contents: Uint8Array) => rpcToResult(workspace.writeFile(path, contents)),
+      read: (path: string) => rpcToResult(workspace.readFile(path)),
+      list: (path: string) => rpcToResult(workspace.list(path)),
+      stat: (path: string) => rpcToResult(workspace.stat(path)),
+      delete: (path: string) => rpcToResult(workspace.delete(path)),
+      copy: async () => {
+        const started = await workspace.beginSession();
+        return Result.ok(fakePhotoCopy(workspace, started.value.sessionId));
+      },
+      getCopy: async (id: string) => {
+        const session = await workspace.getSession(id);
+        if (session.status === "error") return Result.err(session.error);
+        return Result.ok(fakePhotoCopy(workspace, session.value.sessionId));
+      },
+    },
+  };
+}
+
+function fakePhotoCopy(workspace: FakeWorkspace, sessionId: string) {
+  return {
+    id: sessionId,
+    files: {
+      mkdir: (path: string) => rpcToResult(workspace.sessionMkdir(sessionId, path)),
+      write: (path: string, contents: Uint8Array) => rpcToResult(workspace.sessionWriteFile(sessionId, path, contents)),
+      writeTree: (root: string, entries: Iterable<{ path: string; contents: Uint8Array }>) =>
+        rpcToResult(workspace.sessionWriteTreeBatch(sessionId, root, [...entries])),
+      read: (path: string) => rpcToResult(workspace.sessionReadFile(sessionId, path)),
+      list: (path: string) => rpcToResult(workspace.sessionList(sessionId, path)),
+      stat: (path: string) => rpcToResult(workspace.sessionStat(sessionId, path)),
+      delete: (path: string) => rpcToResult(workspace.sessionDelete(sessionId, path)),
+      attach: async () => Result.err({ tag: "TestError" as const }),
+      scoped: () => { throw new Error("not used"); },
+    },
+    apply: () => rpcToResult(workspace.sessionCommit(sessionId)),
+    discard: () => rpcToResult(workspace.sessionDiscard(sessionId)),
+  };
+}
+
+async function rpcToResult(pending: Promise<{ status: "ok"; value?: unknown } | { status: "error"; error: { tag: string } }>) {
+  const result = await pending;
+  return result.status === "error" ? Result.err(result.error) : Result.ok(result.value);
 }
 
 class FakeWorkspace {

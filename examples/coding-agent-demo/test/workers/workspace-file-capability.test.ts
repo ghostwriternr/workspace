@@ -5,7 +5,7 @@ import {
   resetArtifactsWorkspaceDriverFactoryForTests,
   setArtifactsWorkspaceDriverFactoryForTests,
   type ArtifactsWorkspaceDriver,
-} from "../../../../packages/workspace/src/workspace/artifacts/workspace-object-client";
+} from "../../../../packages/workspace/src/workspace/artifacts/workspace-backend-client";
 
 const readmeBytes = new TextEncoder().encode("# Repo");
 

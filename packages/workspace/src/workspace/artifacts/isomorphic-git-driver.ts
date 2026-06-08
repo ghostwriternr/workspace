@@ -3,7 +3,7 @@ import http from "isomorphic-git/http/web";
 import { Volume, createFsFromVolume } from "memfs";
 import { getArtifactsRepositoryAccess } from "./access-registry";
 import type { WorkspaceEntry, WorkspaceRevision, WorkspaceStat } from "../model/rpc";
-import type { ArtifactsBindingClient, ArtifactsRepoClient, ArtifactsWorkspaceDriver } from "./workspace-object-client";
+import type { ArtifactsBindingClient, ArtifactsRepoClient, ArtifactsWorkspaceDriver } from "./workspace-backend-client";
 
 const textEncoder = new TextEncoder();
 
@@ -147,6 +147,11 @@ class IsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver 
     const access = await this.repoAccess(repository, scope);
     const fs = createFsFromVolume(new Volume());
     const dir = "/repo";
+    if (!(await this.repositoryHasCommits(repository))) {
+      await git.init({ fs, dir, defaultBranch: access.defaultBranch });
+      return { fs, dir, branch: access.defaultBranch, access };
+    }
+
     await git.clone({
       fs,
       http,
@@ -158,6 +163,17 @@ class IsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver 
       onAuth: () => auth(access),
     });
     return { fs, dir, branch: access.defaultBranch, access };
+  }
+
+  private async repositoryHasCommits(repository: string): Promise<boolean> {
+    const repo = await this.artifacts.get(repository);
+    const log = (repo as { log?: unknown }).log;
+    if (typeof log !== "function") {
+      return true;
+    }
+
+    const commits = await log.call(repo, { limit: 1 }) as unknown;
+    return Array.isArray(commits) && commits.length > 0;
   }
 
   private async repoAccess(repository: string, scope: "read" | "write"): Promise<RepoAccess> {

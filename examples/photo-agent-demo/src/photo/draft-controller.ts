@@ -1,8 +1,7 @@
 import { Result, type Result as BetterResult } from "better-result";
 import {
-  Workspace,
-  type WorkspaceFileCopy,
-  type WorkspaceNamespace,
+  type WorkspaceCurrentFiles,
+  type WorkspaceFileCopyFiles,
 } from "@cloudflare/workspace";
 import type { WorkspaceFileReconcileSummary } from "@cloudflare/workspace";
 import type { WorkspaceSandboxCommandError, WorkspaceSandboxCommandRunner } from "@cloudflare/workspace-adapter-sandbox";
@@ -45,6 +44,20 @@ type RevisionInfo = {
 
 type WorkspaceOperationError = { tag: string };
 
+type PhotoFileCopy = {
+  id: string;
+  files: WorkspaceFileCopyFiles;
+  apply(): Promise<BetterResult<RevisionInfo, WorkspaceOperationError>>;
+  discard(): Promise<BetterResult<void, WorkspaceOperationError>>;
+};
+
+type PhotoWorkspace = {
+  files: WorkspaceCurrentFiles & {
+    copy(name?: string): Promise<BetterResult<PhotoFileCopy, WorkspaceOperationError>>;
+    getCopy(id: string): Promise<BetterResult<PhotoFileCopy, WorkspaceOperationError>>;
+  };
+};
+
 type WorkspaceReadableFiles = {
   read(path: string): Promise<BetterResult<Uint8Array, WorkspaceOperationError>>;
   list(path: string): Promise<BetterResult<WorkspaceEntry[], WorkspaceOperationError>>;
@@ -69,7 +82,7 @@ export type PhotoState = {
 
 export type PhotoDraftControllerDependencies = {
   workspaceName: string;
-  workspaces: WorkspaceNamespace;
+  workspace: PhotoWorkspace;
   commandRunner: WorkspaceSandboxCommandRunner;
   dynamicWorkerRunner: WorkspaceDynamicWorkerRunner;
   workspaceForDraft(draftEditId: string): WorkspaceDynamicWorkerFileCapability;
@@ -281,11 +294,11 @@ export class PhotoDraftController {
     return result.value;
   }
 
-  private workspace(): Workspace {
-    return Workspace.get(this.dependencies.workspaces, this.dependencies.workspaceName);
+  private workspace(): PhotoWorkspace {
+    return this.dependencies.workspace;
   }
 
-  private async withDraftCopy<T>(useCopy: (copy: WorkspaceFileCopy, draftEditId: string) => Promise<T>): Promise<T> {
+  private async withDraftCopy<T>(useCopy: (copy: PhotoFileCopy, draftEditId: string) => Promise<T>): Promise<T> {
     const started = await this.startDraft();
     const copy = await this.workspace().files.getCopy(started.draftEditId);
     if (Result.isError(copy)) {

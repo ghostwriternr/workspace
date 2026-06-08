@@ -6,7 +6,7 @@ For the conceptual model behind these names, see [`product-model.md`](./product-
 
 ## Current product shape
 
-A product or agent author should be able to read Workspace code and follow it without knowing about Durable Objects, RPC stubs, sessions, loopback entrypoints, or projection internals. For a Workspace-owned tree, they should see:
+A product or agent author should be able to read Workspace code and follow it without knowing about Artifacts handles, temporary Git plumbing, RPC stubs, loopback entrypoints, or projection internals. For a Workspace-owned tree, they should see:
 
 ```
 current files
@@ -57,7 +57,7 @@ The intent is intentionally boring. Product code says what it wants; the lower l
 | Discard       | Throw away a file copy without changing current files.    |
 | Scoped files  | Limited file access granted to delegated code.            |
 
-We avoid implementation terms (session, RPC result, stub disposal, loopback, projection, mount host) at the surface. They can exist underneath.
+We avoid implementation terms (Git remote, token, RPC result, stub disposal, loopback, projection, mount host) at the surface. They can exist underneath.
 
 ## Current files and file copies
 
@@ -111,9 +111,9 @@ if (Result.isError(applied)) return applied;
 
 Workspace validates and writes bounded batches into the copy. A batch is all-or-nothing, but the whole source stream is staged in the copy over time. Sources yield plain file entries. If reading the source stream fails, `writeTree` returns `WorkspaceTreeSourceError`; discard the copy. Current files are unchanged until `apply()` succeeds.
 
-Absolute entry paths, traversal segments, empty segments, and NUL bytes are rejected. Parent directories are created implicitly. Directories remain explicit underneath: writing `src/index.ts` under `/repo` ensures `/repo` and `/repo/src` exist after the call. Existing files may be overwritten. If a source yields the same path more than once, the later entry wins. Omitted files are left alone; this is materialisation, not sync, diff, or replace.
+Absolute entry paths, traversal segments, empty segments, and NUL bytes are rejected. Parent paths are materialized as needed by the underlying file authority. Existing files may be overwritten. If a source yields the same path more than once, the later entry wins. Omitted files are left alone; this is materialization, not sync, diff, or replace.
 
-Batches are bounded by entry count and accumulated content bytes before they cross the Worker RPC boundary. A single entry larger than the batch byte limit returns `WorkspaceTreeEntryTooLargeError`. Blob bytes may already have been written to the internal content store before a later metadata conflict is detected; unreferenced blobs are handled by the same future garbage-collection path as other overwritten content.
+Batches are bounded by entry count and accumulated content bytes before they cross into the Workspace write layer. A single entry larger than the batch byte limit returns `WorkspaceTreeEntryTooLargeError`.
 
 Bulk import is the natural integration point for source adapters — see [`sources.md`](./sources.md).
 
@@ -237,10 +237,9 @@ This keeps the result for preview or further edits, but does not change current 
 
 Out of the happy path:
 
-- managing Durable Object session lifetimes,
-- handling `beginSession` / `getSession` directly,
-- reading `session.info()` to figure out state,
-- branching on raw RPC result shapes,
+- managing Artifacts repository handles or tokens,
+- handling temporary Git remotes directly,
+- branching on raw transport result shapes,
 - disposing RPC stubs,
 - knowing about loopback entrypoint transport,
 - constructing scoped capability plumbing by hand,

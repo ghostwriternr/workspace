@@ -1,16 +1,10 @@
-type WorkspaceNamespace = {
-  getByName(name: string): WorkspaceForRead;
-};
+import { Result } from "better-result";
+import { Workspace } from "@cloudflare/workspace";
+
+type PhotoArtifactsBinding = Parameters<typeof Workspace.fromArtifacts>[0];
 
 type PhotoAgentNamespace = {
   getByName(name: string): PhotoAgentForRead;
-};
-
-type WorkspaceForRead = {
-  readFile(path: string): Promise<
-    | { status: "ok"; value: Uint8Array }
-    | { status: "error"; error: { tag: string } }
-  >;
 };
 
 type PhotoAgentForRead = {
@@ -24,7 +18,7 @@ const readRoutePattern = /^\/api\/workspaces\/([^/]+)\/photos\/(original|current
 
 export async function handlePhotoReadRequest(
   request: Request,
-  workspaces: WorkspaceNamespace,
+  artifacts: PhotoArtifactsBinding,
   photoAgents?: PhotoAgentNamespace,
 ): Promise<Response | undefined> {
   const url = new URL(request.url);
@@ -38,7 +32,7 @@ export async function handlePhotoReadRequest(
   }
 
   const workspaceName = decodeURIComponent(match[1]);
-  const workspace = workspaces.getByName(workspaceName);
+  const workspace = Workspace.fromArtifacts(artifacts, workspaceName);
   const target = match[2];
 
   if (target === "draft") {
@@ -66,8 +60,8 @@ export async function handlePhotoReadRequest(
     : [{ path: "/photos/current", contentType: undefined }];
 
   for (const candidate of candidates) {
-    const result = await workspace.readFile(candidate.path);
-    if (result.status === "ok") {
+    const result = await workspace.files.read(candidate.path);
+    if (Result.isOk(result)) {
       return imageResponse(result.value, candidate.contentType ?? contentTypeForImage(result.value));
     }
 

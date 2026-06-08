@@ -1,12 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { handlePhotoUploadRequest } from "../src/http/photo-upload";
+import { createFakeArtifactsWorkspace, resetFakeArtifactsWorkspace } from "./fake-artifacts-workspace";
 
 const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
 
 describe("photo upload HTTP route", () => {
-  it("accepts image bytes and stores them in Workspace", async () => {
-    const workspaces = new FakeWorkspaces();
+  afterEach(() => resetFakeArtifactsWorkspace());
+
+  it("accepts image bytes and stores them in an Artifacts-backed Workspace", async () => {
+    const { artifacts, driver } = createFakeArtifactsWorkspace();
     const request = new Request("http://example.com/api/workspaces/demo/photos/original", {
       method: "POST",
       headers: { "content-type": "image/png" },
@@ -15,7 +18,7 @@ describe("photo upload HTTP route", () => {
 
     const photoAgents = new FakePhotoAgents();
 
-    const response = await handlePhotoUploadRequest(request, workspaces.asNamespace(), photoAgents.asNamespace());
+    const response = await handlePhotoUploadRequest(request, artifacts, photoAgents.asNamespace());
 
     expect(response?.status).toBe(201);
     await expect(response?.json()).resolves.toEqual({
@@ -24,8 +27,29 @@ describe("photo upload HTTP route", () => {
       contentType: "image/png",
       bytes: pngBytes.byteLength,
     });
-    expect(workspaces.workspace("demo").files["/photos/original.png"]).toEqual(pngBytes);
+    expect(driver.file("demo", "/photos/original.png")).toEqual(pngBytes);
     expect(photoAgents.agent("demo").refreshes).toBe(1);
+  });
+
+  it("does not create a repository when Artifacts lookup fails for reasons other than not found", async () => {
+    const artifacts = {
+      get: async () => {
+        throw Object.assign(new Error("temporarily unavailable"), { name: "ArtifactsError", code: "INTERNAL_ERROR" });
+      },
+      create: async () => {
+        throw new Error("create should not be called");
+      },
+      delete: async () => false,
+    };
+
+    await expect(handlePhotoUploadRequest(
+      new Request("http://example.com/api/workspaces/demo/photos/original", {
+        method: "POST",
+        headers: { "content-type": "image/png" },
+        body: pngBytes,
+      }),
+      artifacts,
+    )).rejects.toThrow("temporarily unavailable");
   });
 
   it("returns 415 for unsupported content types", async () => {
@@ -35,7 +59,7 @@ describe("photo upload HTTP route", () => {
         headers: { "content-type": "text/plain" },
         body: "not an image",
       }),
-      new FakeWorkspaces().asNamespace(),
+      createFakeArtifactsWorkspace().artifacts,
     );
 
     expect(response?.status).toBe(415);
@@ -47,31 +71,12 @@ describe("photo upload HTTP route", () => {
   it("ignores non-upload routes", async () => {
     const response = await handlePhotoUploadRequest(
       new Request("http://example.com/api/demo-capabilities"),
-      new FakeWorkspaces().asNamespace(),
+      createFakeArtifactsWorkspace().artifacts,
     );
 
     expect(response).toBeUndefined();
   });
 });
-
-class FakeWorkspaces {
-  private readonly byName = new Map<string, FakeWorkspace>();
-
-  asNamespace() {
-    return {
-      getByName: (name: string) => this.workspace(name),
-    };
-  }
-
-  workspace(name: string): FakeWorkspace {
-    let workspace = this.byName.get(name);
-    if (!workspace) {
-      workspace = new FakeWorkspace();
-      this.byName.set(name, workspace);
-    }
-    return workspace;
-  }
-}
 
 class FakePhotoAgents {
   private readonly byName = new Map<string, FakePhotoAgent>();
@@ -97,28 +102,5 @@ class FakePhotoAgent {
 
   async refreshPhotoState() {
     this.refreshes += 1;
-  }
-}
-
-class FakeWorkspace {
-  readonly files: Record<string, Uint8Array> = {};
-  private photosExists = false;
-
-  async mkdir(path: string) {
-    if (path !== "/photos") {
-      throw new Error(`unexpected mkdir path: ${path}`);
-    }
-
-    if (this.photosExists) {
-      return { status: "error" as const, error: { tag: "PathAlreadyExistsError" } };
-    }
-
-    this.photosExists = true;
-    return { status: "ok" as const };
-  }
-
-  async writeFile(path: string, contents: Uint8Array) {
-    this.files[path] = contents;
-    return { status: "ok" as const };
   }
 }

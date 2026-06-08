@@ -10,7 +10,7 @@ AI agents are not the only audience for Workspace, but they are the workload tha
 
 The current prototype has durable current files, durable working copies, `apply()` / `discard()`, scoped file capabilities for Dynamic Workers, and a simple filesystem mount API (`copy.files.attach(...)` / `mount.reconcile()`). `packages/adapters/sandbox` uses that mount API to run shell commands against a materialized Workspace file copy. Today that mount implementation materializes one Workspace file copy into a host directory and reconciles regular files back by scanning and hashing.
 
-The current prototype also uses eager source import: source adapters stream bytes into Workspace-owned R2 blobs through `copy.files.writeTree(...)`.
+The current prototype also uses eager source import in some paths: source adapters stream bytes into Workspace-owned state through `copy.files.writeTree(...)`.
 
 This document describes the stronger model we want the implementation to grow toward. Runtime-local mounts, mounted-view composition, source-backed mounted views, working-copy overlays over source snapshots, working-copy generations, and richer Sandbox/runtime-local authority handling are not built yet.
 
@@ -566,7 +566,7 @@ Hydration fetches bytes from the authority that owns them so they can be read, s
 
 Examples:
 
-- reading an R2 blob for a Workspace-owned file;
+- reading stored bytes for a Workspace-owned file;
 - fetching a GitHub blob from a source snapshot authority;
 - filling a runtime cache before command execution;
 - caching a source read in a product-owned cache.

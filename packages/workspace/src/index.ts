@@ -19,7 +19,6 @@ export {
   type WorkspaceTreeEntries,
   type WorkspaceTreeEntryTooLargeError,
   type WorkspaceTreeSourceError,
-  type WorkspaceNamespace,
 } from "./workspace/product/workspace";
 export { type WorkspaceEntry, type WorkspaceStat } from "./workspace/model/rpc";
 export { type WorkspaceTreeEntry } from "./workspace/model/write-tree";
@@ -30,7 +29,6 @@ export {
   type WorkspaceFileMountHostEntry,
   type WorkspaceFileReconcileSummary,
 } from "./workspace/product/mount";
-export { WorkspaceObject } from "./workspace/runtime/workspace-object";
 export { registerArtifactsRepositoryAccess } from "./workspace/artifacts/access-registry";
 export type { ArtifactsRepositoryAccess } from "./workspace/artifacts/access-registry";
 export {

@@ -1,30 +1,22 @@
-import { Workspace, type WorkspaceEntry, type WorkspaceStat } from "@cloudflare/workspace";
 import {
   resetArtifactsWorkspaceDriverFactoryForTests,
   setArtifactsWorkspaceDriverFactoryForTests,
   type ArtifactsBindingClient,
   type ArtifactsRepoClient,
   type ArtifactsWorkspaceDriver,
-} from "../../../../packages/workspace/src/workspace/artifacts/workspace-backend-client";
+} from "../../../packages/workspace/src/workspace/artifacts/workspace-backend-client";
+import type { WorkspaceEntry, WorkspaceStat } from "@cloudflare/workspace";
 
 export type FakeArtifactsWorkspace = {
-  workspaceName: string;
-  workspace: Workspace;
-  driver: FakeArtifactsWorkspaceDriver;
   artifacts: FakeArtifactsBinding;
+  driver: FakeArtifactsWorkspaceDriver;
 };
 
-export function createFakeArtifactsWorkspace(tree: Record<string, Uint8Array> = {}): FakeArtifactsWorkspace {
-  const workspaceName = `repo-${crypto.randomUUID()}`;
-  const driver = new FakeArtifactsWorkspaceDriver({ [workspaceName]: tree });
+export function createFakeArtifactsWorkspace(initial: Record<string, Record<string, Uint8Array>> = {}): FakeArtifactsWorkspace {
+  const driver = new FakeArtifactsWorkspaceDriver(initial);
   const artifacts = new FakeArtifactsBinding(driver);
   setArtifactsWorkspaceDriverFactoryForTests(() => driver);
-  return {
-    workspaceName,
-    workspace: Workspace.fromArtifacts(artifacts, workspaceName),
-    driver,
-    artifacts,
-  };
+  return { artifacts, driver };
 }
 
 export function resetFakeArtifactsWorkspace(): void {
@@ -34,11 +26,19 @@ export function resetFakeArtifactsWorkspace(): void {
 type Tree = Record<string, Uint8Array>;
 
 class FakeArtifactsBinding implements ArtifactsBindingClient {
+  readonly createdRepositories: string[] = [];
+
   constructor(private readonly driver: FakeArtifactsWorkspaceDriver) {}
+
+  async create(name: string): Promise<{ name: string }> {
+    this.createdRepositories.push(name);
+    this.driver.createRepository(name);
+    return { name };
+  }
 
   async get(name: string): Promise<ArtifactsRepoClient> {
     if (!(await this.driver.repositoryExists(name))) {
-      throw new Error(`Repository not found: ${name}`);
+      throw artifactsNotFound(`Repository not found: ${name}`);
     }
     return new FakeArtifactsRepo(this.driver, name);
   }
@@ -60,7 +60,7 @@ class FakeArtifactsRepo implements ArtifactsRepoClient {
   }
 }
 
-class FakeArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
+export class FakeArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
   private readonly repositories = new Map<string, Tree>();
 
   constructor(initial: Record<string, Tree>) {
@@ -69,18 +69,26 @@ class FakeArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
     }
   }
 
+  createRepository(name: string): void {
+    this.repositories.set(name, {});
+  }
+
   async repositoryExists(repository: string): Promise<boolean> {
     return this.repositories.has(repository);
   }
 
   forkRepository(source: string, target: string): void {
     const tree = this.repositories.get(source);
-    if (!tree) throw new Error(`Repository not found: ${source}`);
+    if (!tree) throw artifactsNotFound(`Repository not found: ${source}`);
     this.repositories.set(target, cloneTree(tree));
   }
 
   deleteRepository(repository: string): boolean {
     return this.repositories.delete(repository);
+  }
+
+  file(repository: string, path: string): Uint8Array | undefined {
+    return this.repositories.get(repository)?.[path];
   }
 
   async readFile(repository: string, path: string): Promise<Uint8Array | null> {
@@ -89,8 +97,7 @@ class FakeArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
   }
 
   async list(repository: string, path: string): Promise<WorkspaceEntry[]> {
-    const tree = this.repositories.get(repository);
-    if (!tree) throw new Error(`Repository not found: ${repository}`);
+    const tree = this.tree(repository);
     const prefix = path === "/" ? "/" : `${path}/`;
     const entries = new Map<string, "directory" | "file">();
     for (const filePath of Object.keys(tree)) {
@@ -106,8 +113,7 @@ class FakeArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
   }
 
   async stat(repository: string, path: string): Promise<WorkspaceStat | null> {
-    const tree = this.repositories.get(repository);
-    if (!tree) throw new Error(`Repository not found: ${repository}`);
+    const tree = this.tree(repository);
     const file = tree[path];
     if (file) {
       return { path, type: "file", size: file.byteLength, createdAt: 0, updatedAt: 0 };
@@ -120,25 +126,29 @@ class FakeArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
   }
 
   async writeFile(repository: string, path: string, contents: Uint8Array): Promise<void> {
-    const tree = this.repositories.get(repository);
-    if (!tree) throw new Error(`Repository not found: ${repository}`);
-    tree[path] = new Uint8Array(contents);
+    this.tree(repository)[path] = new Uint8Array(contents);
   }
 
   async deleteFile(repository: string, path: string): Promise<void> {
-    const tree = this.repositories.get(repository);
-    if (!tree) throw new Error(`Repository not found: ${repository}`);
-    delete tree[path];
+    delete this.tree(repository)[path];
   }
 
   async applyWorkingCopy(baseRepository: string, workingCopyRepository: string): Promise<{ revisionId: string; createdAt: number }> {
-    const tree = this.repositories.get(workingCopyRepository);
-    if (!tree) throw new Error(`Repository not found: ${workingCopyRepository}`);
-    this.repositories.set(baseRepository, cloneTree(tree));
+    this.repositories.set(baseRepository, cloneTree(this.tree(workingCopyRepository)));
     return { revisionId: `revision-${workingCopyRepository}`, createdAt: 1 };
+  }
+
+  private tree(repository: string): Tree {
+    const tree = this.repositories.get(repository);
+    if (!tree) throw artifactsNotFound(`Repository not found: ${repository}`);
+    return tree;
   }
 }
 
 function cloneTree(tree: Tree): Tree {
   return Object.fromEntries(Object.entries(tree).map(([path, contents]) => [path, new Uint8Array(contents)]));
+}
+
+function artifactsNotFound(message: string): Error & { name: "ArtifactsError"; code: "NOT_FOUND" } {
+  return Object.assign(new Error(message), { name: "ArtifactsError" as const, code: "NOT_FOUND" as const });
 }
