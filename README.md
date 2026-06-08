@@ -1,48 +1,96 @@
 # Workspace
 
-Workspace is a durable file tree for Cloudflare execution environments. You can branch it into an isolated working copy, edit that copy from a Worker, a Sandbox, or a Dynamic Worker, and then either publish the changes or throw them away.
+Workspace is an agent-friendly work surface over Artifacts-backed durable file
+state on Cloudflare.
 
-It's the missing primitive between "object storage" and "filesystem inside a runtime", aimed at agents, generated apps, and any product that wants a draft → preview → publish loop over files.
+It gives products a named place to keep files, create durable working copies,
+hand those copies to Dynamic Workers or Sandboxes, and decide when proposed work
+becomes current. Artifacts owns the versioned file authority underneath;
+Workspace owns the product semantics above it.
 
 ## What you get
 
-- A durable file tree backed by Artifacts as the versioned file authority, with a small WorkspaceObject Durable Object for per-Workspace control metadata.
-- Isolated working copies you can hand to a runtime: a Sandbox sees it at `/workspace`, a Dynamic Worker sees it as `env.WORKSPACE`, a trusted Worker uses it directly.
-- Explicit publish (`apply`) and explicit throwaway (`discard`). Nothing is published implicitly when a command exits or a Worker returns.
-- Immutable revisions of head as recovery points.
+- Current files and durable working copies backed by Artifacts.
+- Explicit publish (`apply`) and throwaway (`discard`) boundaries.
+- Scoped file capabilities for delegated Worker code.
+- Sandbox filesystem access through runtime adapters.
+- A small per-Workspace Durable Object for coordination metadata, not file
+  storage.
 
-Workspace is source-agnostic: product flows might import files from a user upload, a GitHub checkout, a Hugging Face snapshot, an S3 bucket, or mount stable source snapshots beside Workspace-owned working copies. Bridging those systems in is product/source-adapter work (see [`docs/sources.md`](./docs/sources.md)). Runtime adapters, such as the Dynamic Worker and Sandbox adapters, project Workspace file capabilities into a specific execution environment without moving execution into Workspace core.
+Workspace is not an execution engine, Git porcelain, source lifecycle manager,
+or custom blob store. Source adapters seed or export Workspace state. Runtime
+adapters project working copies into execution environments.
+
+## Target shape
+
+```ts
+const workspaces = Workspace.bind({
+  artifacts: env.ARTIFACTS,
+  objects: env.WORKSPACE_OBJECTS,
+});
+
+const workspace = workspaces.get("my-project");
+
+const copyResult = await workspace.copies.create({ label: "agent-edit" });
+if (Result.isError(copyResult)) return copyResult;
+
+const copy = copyResult.value;
+await copy.files.write("/README.md", bytes);
+
+await sandbox.run({
+  copy,
+  command: "npm test",
+  root: "/workspace",
+});
+
+await copy.apply(); // or discard()
+```
+
+The implementation is still moving toward this API. See
+[`docs/product-api.md`](./docs/product-api.md) and
+[`docs/known-limitations.md`](./docs/known-limitations.md).
 
 ## Where to look
 
-- [`docs/architecture.md`](./docs/architecture.md) — how the system is actually built and how a demo flow runs end-to-end. **Start here.**
-- [`docs/product-model.md`](./docs/product-model.md) — the conceptual model: working copies, projections, authority.
-- [`docs/product-api.md`](./docs/product-api.md) — the user-facing API we're aiming for.
-- [`docs/runtime-projections.md`](./docs/runtime-projections.md) — the emerging vocabulary for file authorities, mounted views, and runtime adapters.
-- [`docs/workspace-object.md`](./docs/workspace-object.md) — why Workspace uses a Durable Object for coordination metadata.
-- [`docs/product-boundaries.md`](./docs/product-boundaries.md) — what Workspace is and isn't.
-- [`docs/sources.md`](./docs/sources.md) — how external systems (GitHub, Hugging Face, S3, …) relate to a Workspace.
-- [`docs/known-limitations.md`](./docs/known-limitations.md) — honest list of prototype gaps.
-- [`docs/photo-agent-demo.md`](./docs/photo-agent-demo.md) — what the example app proves.
-- [`AGENTS.md`](./AGENTS.md) — guardrails and conventions for anyone (or any agent) modifying the repo.
+- [`docs/product-model.md`](./docs/product-model.md) — core concepts and
+  product semantics.
+- [`docs/product-api.md`](./docs/product-api.md) — target API shape.
+- [`docs/architecture.md`](./docs/architecture.md) — current Artifacts-backed
+  implementation.
+- [`docs/runtime-adapters.md`](./docs/runtime-adapters.md) — Dynamic Worker and
+  Sandbox projection model.
+- [`docs/sources.md`](./docs/sources.md) — how external systems seed/export
+  Workspace state.
+- [`docs/product-boundaries.md`](./docs/product-boundaries.md) — what stays out
+  of Workspace core.
+- [`docs/known-limitations.md`](./docs/known-limitations.md) — current prototype
+  gaps.
+- [`docs/photo-agent-demo.md`](./docs/photo-agent-demo.md) — what the photo
+  example proves.
+- [`AGENTS.md`](./AGENTS.md) — guardrails and commands for agents modifying the
+  repo.
 
 ## Layout
 
-```
-packages/workspace/                 Reusable Workspace package and product-facing file API
-packages/adapters/dynamic-worker/   Dynamic Worker adapter for scoped Workspace files
-packages/adapters/sandbox/          Sandbox adapter for mounted Workspace file copies
-examples/photo-agent-demo/           Worker app: Think agent edits photos via Sandbox + Dynamic Worker
-                             over one Workspace working copy (called a draft in the UI)
-examples/coding-agent-demo/  Worker app: imports public GitHub repos into Workspace for
-                             agent-oriented coding flows
+```text
+packages/workspace/                 Workspace package and work-surface API
+packages/adapters/dynamic-worker/   Dynamic Worker adapter for scoped files
+packages/adapters/sandbox/          Sandbox adapter for mounted working copies
+examples/photo-agent-demo/          Think photo agent over one Workspace draft
+examples/coding-agent-demo/         Think coding agent over imported repos
 ```
 
 ## Status
 
-Prototype. The core durable semantics work (current files, working copies, scoped file capabilities, filesystem projection, apply, and discard). Workspace uses Artifacts as its durable/versioned file authority, with temporary internal Git plumbing hidden inside `packages/workspace` until Artifacts exposes direct file mutation APIs. See `docs/known-limitations.md` for the full list.
+Prototype. Workspace currently uses Artifacts as the durable/versioned file
+authority, a WorkspaceObject Durable Object for coordination metadata, and a
+temporary internal `isomorphic-git` bridge until Artifacts exposes direct file
+mutation APIs.
 
-The photo agent example is deployed at <https://workspace-photo-agent-demo.ghostwriternr.workers.dev>. The coding agent example imports public GitHub repos through Artifacts and exposes Workspace-backed Dynamic Worker and Sandbox tools. `packages/adapters/*` packages project Workspace capabilities into runtimes.
+The photo agent example is deployed at
+<https://workspace-photo-agent-demo.ghostwriternr.workers.dev>. The coding
+agent example imports public GitHub repositories through Artifacts and exposes
+Workspace-backed Dynamic Worker and Sandbox tools.
 
 ## Commands
 

@@ -79,12 +79,12 @@ export class WorkspaceFiles extends WorkerEntrypoint<Env, { workspaceName: strin
   }
 
   private async capability(): Promise<ScopedWorkspaceCapabilityResult<ScopedWorkspaceFileCapability>> {
-    const workspace = Workspace.fromArtifacts({
+    const workspaces = Workspace.bind({
       artifacts: this.env.ARTIFACTS,
-      object: this.env.WORKSPACE_OBJECTS.getByName(this.ctx.props.workspaceName),
-      name: this.ctx.props.workspaceName,
+      objects: this.env.WORKSPACE_OBJECTS,
     });
-    const copy = await workspace.files.getCopy(this.ctx.props.copyId);
+    const workspace = workspaces.get(this.ctx.props.workspaceName);
+    const copy = await workspace.copies.get(this.ctx.props.copyId);
     if (Result.isError(copy)) return { status: "error", error: copy.error };
 
     return {

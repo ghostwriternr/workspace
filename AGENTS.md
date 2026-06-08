@@ -17,6 +17,7 @@ Build only what is needed. Don't add inspection methods, convenience helpers, st
 - `packages/adapters/sandbox/` — Sandbox adapter. Keep container execution integration here, not in Workspace core.
 - `examples/photo-agent-demo/` — example Worker. Agent/Sandbox/Dynamic Worker concerns live here, not in the package.
 - `examples/coding-agent-demo/` — example Worker for importing public GitHub repos into Workspace before agent edits.
+- `docs/product-model.md` — product semantics and authority model.
 - `docs/architecture.md` — how things actually work in code.
 - `docs/product-boundaries.md` — the in/out-of-scope rules.
 
