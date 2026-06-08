@@ -9,7 +9,6 @@ import {
   type WorkspaceEntry,
   type WorkspaceFileCopy,
   type WorkspaceFileWriteTreeError,
-  type WorkspaceNamespace,
   type WorkspaceStat,
 } from "@cloudflare/workspace";
 import type {
@@ -27,7 +26,7 @@ import { normalizeAgentPath } from "../agent/path";
 
 export type RepoWorkingCopyControllerDependencies = {
   workspaceName: string;
-  workspaces: WorkspaceNamespace;
+  workspace: Workspace;
   dynamicWorkerRunner: WorkspaceDynamicWorkerRunner;
   shellRunner: WorkspaceSandboxCommandRunner;
   workspaceForWorkingCopy(workingCopyId: string): WorkspaceDynamicWorkerFileCapability;
@@ -292,7 +291,7 @@ export class RepoWorkingCopyController {
   }
 
   private async filesForRead(): Promise<BetterResult<RepoReadableFiles, WorkspaceCopyError>> {
-    const workspace = Workspace.get(this.dependencies.workspaces, this.dependencies.workspaceName);
+    const workspace = this.dependencies.workspace;
     const workingCopyId = this.dependencies.getWorkingCopyId();
     if (!workingCopyId) {
       return Result.ok(workspace.files);
@@ -307,7 +306,7 @@ export class RepoWorkingCopyController {
   }
 
   private async workingCopy(): Promise<BetterResult<WorkspaceFileCopy, WorkspaceCopyError>> {
-    const workspace = Workspace.get(this.dependencies.workspaces, this.dependencies.workspaceName);
+    const workspace = this.dependencies.workspace;
     const existing = this.dependencies.getWorkingCopyId();
     if (existing) {
       const copy = await workspace.files.getCopy(existing);
@@ -334,7 +333,7 @@ export class RepoWorkingCopyController {
       });
     }
 
-    const workspace = Workspace.get(this.dependencies.workspaces, this.dependencies.workspaceName);
+    const workspace = this.dependencies.workspace;
     const copy = await workspace.files.getCopy(workingCopyId);
     if (Result.isError(copy)) {
       this.dependencies.setWorkingCopyId(undefined);

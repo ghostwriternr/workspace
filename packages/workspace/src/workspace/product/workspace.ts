@@ -12,6 +12,7 @@ import {
   type WorkspaceTreeEntryTooLargeError,
   type WorkspaceTreeSourceError,
 } from "./write-tree";
+import { createArtifactsWorkspaceObjectClient, type ArtifactsBindingClient } from "../artifacts/workspace-object-client";
 import { createWorkspaceFileCapability, type ScopedWorkspaceFileCapability } from "../projections/scoped-file-capability";
 import type {
   WorkspaceDeleteRpcResult,
@@ -120,6 +121,10 @@ export type WorkspaceDiscardError = RpcErrorOf<WorkspaceSessionDiscardRpcResult>
 export class Workspace {
   static get(namespace: WorkspaceNamespace, name: string): Workspace {
     return new Workspace(namespace.getByName(name));
+  }
+
+  static fromArtifacts(artifacts: ArtifactsBindingClient, name: string): Workspace {
+    return new Workspace(createArtifactsWorkspaceObjectClient(artifacts, name));
   }
 
   readonly files: WorkspaceCurrentFiles;

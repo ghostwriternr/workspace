@@ -4,6 +4,7 @@ import { tool, type ToolSet } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
 import { z } from "zod";
 
+import { Workspace } from "@cloudflare/workspace";
 import { createWorkspaceDynamicWorkerRunner } from "@cloudflare/workspace-adapter-dynamic-worker";
 import { RepoWorkingCopyController } from "../repo/working-copy-controller";
 import { createSandboxCommandRunner } from "../workspace/cloudflare-sandbox";
@@ -126,7 +127,7 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
   @callable()
   async refreshRepoState(lastImport?: RepoImportSummary) {
     const repo = await new RepoStateController({
-      workspaces: this.env.WORKSPACES,
+      workspace: this.workspaceSurface(),
       workspaceName: this.name,
       workingCopyId: this.state.workingCopyId,
     }).listRepoState();
@@ -139,7 +140,7 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
 
   private workingCopyController(): RepoWorkingCopyController {
     return new RepoWorkingCopyController({
-      workspaces: this.env.WORKSPACES,
+      workspace: this.workspaceSurface(),
       workspaceName: this.name,
       dynamicWorkerRunner: createWorkspaceDynamicWorkerRunner(this.env.DYNAMIC_WORKERS),
       shellRunner: createSandboxCommandRunner(this.env.Sandbox, this.name),
@@ -147,6 +148,10 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
       getWorkingCopyId: () => this.state.workingCopyId,
       setWorkingCopyId: (workingCopyId) => this.setState({ ...this.state, workingCopyId }),
     });
+  }
+
+  private workspaceSurface(): Workspace {
+    return Workspace.fromArtifacts(this.env.ARTIFACTS, this.name);
   }
 }
 

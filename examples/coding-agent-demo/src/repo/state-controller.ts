@@ -1,5 +1,5 @@
 import { Result, type Result as BetterResult } from "better-result";
-import { Workspace, type WorkspaceEntry, type WorkspaceNamespace } from "@cloudflare/workspace";
+import { type Workspace, type WorkspaceEntry } from "@cloudflare/workspace";
 
 type WorkspaceOperationError = { tag: string; message?: string };
 
@@ -21,7 +21,7 @@ export type RepoState = {
 export type RepoStateError = WorkspaceOperationError;
 
 export type RepoStateControllerDependencies = {
-  workspaces: WorkspaceNamespace;
+  workspace: Workspace;
   workspaceName: string;
   workingCopyId?: string;
 };
@@ -30,8 +30,7 @@ export class RepoStateController {
   constructor(private readonly dependencies: RepoStateControllerDependencies) {}
 
   async listRepoState(): Promise<BetterResult<RepoState, RepoStateError>> {
-    const workspace = Workspace.get(this.dependencies.workspaces, this.dependencies.workspaceName);
-    const source = await this.filesToList(workspace);
+    const source = await this.filesToList(this.dependencies.workspace);
     if (Result.isError(source)) {
       return Result.err(source.error);
     }

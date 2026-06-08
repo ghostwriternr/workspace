@@ -20,6 +20,8 @@
     "wrangler": "^4.94.0"
   },
   "dependencies": {
-    "better-result": "^2.9.2"
+    "better-result": "^2.9.2",
+    "isomorphic-git": "^1.38.4",
+    "memfs": "^4.57.6"
   }
 }

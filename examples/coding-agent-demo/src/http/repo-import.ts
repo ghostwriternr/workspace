@@ -1,6 +1,5 @@
 import { Result, type Result as BetterResult } from "better-result";
-import type { WorkspaceNamespace } from "@cloudflare/workspace";
-import { RepoImportController, type GitHubSourceResolver, type RepoImportSummary } from "../repo/import-controller";
+import { RepoImportController, type ArtifactsImportBinding, type RepoImportSummary } from "../repo/import-controller";
 
 const importPathPattern = /^\/api\/workspaces\/([^/]+)\/imports\/github$/;
 
@@ -15,12 +14,10 @@ type CodingAgentNamespace = {
 };
 
 type RepoImportRuntime = {
-  workspaces: WorkspaceNamespace;
-  githubToken?: string;
+  artifacts: ArtifactsImportBinding;
 };
 
 export type RepoImportRequestOptions = {
-  resolveSource?: GitHubSourceResolver;
   agents?: CodingAgentNamespace;
 };
 
@@ -45,9 +42,7 @@ export async function handleRepoImportRequest(
   }
 
   const controller = new RepoImportController({
-    workspaces: runtime.workspaces,
-    resolveSource: options.resolveSource,
-    githubToken: runtime.githubToken,
+    artifacts: runtime.artifacts,
   });
   const result = await controller.importGitHubRepo({
     workspaceName: decodeURIComponent(match[1] ?? ""),
@@ -97,16 +92,7 @@ function isImportBody(value: unknown): value is GitHubImportBody {
 }
 
 function statusForError(error: { tag: string }): number {
-  if (error.tag === "InvalidGitHubSourceError" || error.tag === "InvalidPathError") {
-    return 400;
-  }
-  if (error.tag === "GitHubAuthenticationError") {
-    return 401;
-  }
-  if (error.tag === "GitHubSourceNotFoundError") {
-    return 404;
-  }
-  if (error.tag === "GitHubUpstreamError" || error.tag === "GitHubTreeTruncatedError") {
+  if (error.tag === "ArtifactsImportError") {
     return 502;
   }
   return 409;

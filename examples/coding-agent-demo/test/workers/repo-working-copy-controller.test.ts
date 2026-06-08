@@ -1,14 +1,17 @@
-import { env } from "cloudflare:workers";
 import { Result, type Result as BetterResult } from "better-result";
-import { describe, expect, it } from "vitest";
-import { Workspace } from "@cloudflare/workspace";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { RepoWorkingCopyController } from "../../src/repo/working-copy-controller";
+import { createFakeArtifactsWorkspace, resetFakeArtifactsWorkspace } from "./fake-artifacts-workspace";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 describe("RepoWorkingCopyController", () => {
+  afterEach(() => {
+    resetFakeArtifactsWorkspace();
+  });
+
   it("reads current files and directories without opening a working copy", async () => {
     const { controller, getWorkingCopyId } = await setupWorkingCopyController();
 
@@ -225,13 +228,9 @@ describe("RepoWorkingCopyController", () => {
 });
 
 async function setupWorkingCopyController() {
-  const workspaceName = `repo-working-${crypto.randomUUID()}`;
-  const workspace = Workspace.get(env.WORKSPACES, workspaceName);
-  const seed = unwrap(await workspace.files.copy("seed"));
-  await seed.files.writeTree("/", [
-    { path: "README.md", contents: encoder.encode("# Repo") },
-  ]);
-  await seed.apply();
+  const { workspaceName, workspace } = createFakeArtifactsWorkspace({
+    "/README.md": encoder.encode("# Repo"),
+  });
 
   let workingCopyId: string | undefined;
   const runner = {
@@ -265,7 +264,7 @@ async function setupWorkingCopyController() {
     },
   };
   const controller = new RepoWorkingCopyController({
-    workspaces: env.WORKSPACES,
+    workspace,
     workspaceName,
     dynamicWorkerRunner: runner,
     shellRunner,

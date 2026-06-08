@@ -31,6 +31,8 @@ export {
   type WorkspaceFileReconcileSummary,
 } from "./workspace/product/mount";
 export { WorkspaceObject } from "./workspace/runtime/workspace-object";
+export { registerArtifactsRepositoryAccess } from "./workspace/artifacts/access-registry";
+export type { ArtifactsRepositoryAccess } from "./workspace/artifacts/access-registry";
 export {
   type ScopedWorkspaceAccessErrorDto,
   type ScopedWorkspaceErrorDto,

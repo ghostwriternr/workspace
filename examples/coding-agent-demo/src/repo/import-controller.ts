@@ -1,19 +1,5 @@
 import { Result, type Result as BetterResult } from "better-result";
-import {
-  Workspace,
-  type WorkspaceApplyError,
-  type WorkspaceCopyError,
-  type WorkspaceDiscardError,
-  type WorkspaceFileWriteTreeError,
-  type WorkspaceNamespace,
-} from "@cloudflare/workspace";
-import {
-  resolveGitHubSource,
-  type GitHubSource,
-  type GitHubSourceOptions,
-  type GitHubSourceResolveError,
-  type GitHubSourceSnapshot,
-} from "@cloudflare/workspace-source-github";
+import { registerArtifactsRepositoryAccess } from "@cloudflare/workspace";
 
 export type RepoImportRequest = {
   workspaceName: string;
@@ -26,69 +12,107 @@ export type RepoImportRequest = {
 export type RepoImportSummary = {
   workspaceName: string;
   root: string;
-  source: GitHubSourceSnapshot;
+  source: GitHubArtifactSourceSnapshot;
   revisionId: string;
   createdAt: number;
 };
 
-export type RepoImportError =
-  | GitHubSourceResolveError
-  | WorkspaceCopyError
-  | WorkspaceFileWriteTreeError
-  | WorkspaceApplyError
-  | WorkspaceDiscardError;
+type GitHubArtifactSourceSnapshot = {
+  type: "github";
+  owner: string;
+  repo: string;
+  ref: string;
+  repositoryId: string;
+};
 
-export type GitHubSourceResolver = (options: GitHubSourceOptions) => Promise<BetterResult<GitHubSource, GitHubSourceResolveError>>;
+type ArtifactsImportError = {
+  tag: "ArtifactsImportError";
+  message: string;
+  code?: string;
+};
+
+export type RepoImportError = ArtifactsImportError;
+
+export type ArtifactsImportBinding = {
+  import(params: {
+    source: { url: string; branch?: string; depth?: number };
+    target: { name: string; opts?: { description?: string; readOnly?: boolean } };
+  }): Promise<{
+    id: string;
+    name?: string;
+    remote?: string;
+    defaultBranch?: string;
+    token?: string;
+  }>;
+};
 
 export type RepoImportControllerDependencies = {
-  workspaces: WorkspaceNamespace;
-  resolveSource?: GitHubSourceResolver;
-  githubToken?: string;
+  artifacts: ArtifactsImportBinding;
 };
 
 export class RepoImportController {
-  private readonly resolveSource: GitHubSourceResolver;
-
-  constructor(private readonly dependencies: RepoImportControllerDependencies) {
-    this.resolveSource = dependencies.resolveSource ?? resolveGitHubSource;
-  }
+  constructor(private readonly dependencies: RepoImportControllerDependencies) {}
 
   async importGitHubRepo(request: RepoImportRequest): Promise<BetterResult<RepoImportSummary, RepoImportError>> {
-    const source = await this.resolveSource({
-      owner: request.owner,
-      repo: request.repo,
-      ref: request.ref,
-      token: this.dependencies.githubToken,
-    });
-    if (Result.isError(source)) {
-      return Result.err(source.error);
-    }
+    const ref = request.ref ?? "HEAD";
+    try {
+      const imported = await this.dependencies.artifacts.import({
+        source: {
+          url: `https://github.com/${request.owner}/${request.repo}.git`,
+          branch: request.ref,
+          depth: 1,
+        },
+        target: {
+          name: request.workspaceName,
+          opts: {
+            description: `Imported from github.com/${request.owner}/${request.repo}`,
+          },
+        },
+      });
 
-    const workspace = Workspace.get(this.dependencies.workspaces, request.workspaceName);
-    const copy = await workspace.files.copy("github-import");
-    if (Result.isError(copy)) {
-      return Result.err(copy.error);
-    }
+      if (imported.remote && imported.defaultBranch && imported.token) {
+        registerArtifactsRepositoryAccess({
+          name: imported.name ?? request.workspaceName,
+          remote: imported.remote,
+          defaultBranch: request.ref ?? imported.defaultBranch,
+          token: imported.token,
+        });
+      }
 
-    const root = request.root ?? "/";
-    const writeTree = await copy.value.files.writeTree(root, source.value.entries());
-    if (Result.isError(writeTree)) {
-      await copy.value.discard();
-      return Result.err(writeTree.error);
+      return Result.ok({
+        workspaceName: request.workspaceName,
+        root: request.root ?? "/",
+        source: {
+          type: "github",
+          owner: request.owner,
+          repo: request.repo,
+          ref,
+          repositoryId: imported.id,
+        },
+        revisionId: imported.id,
+        createdAt: Date.now(),
+      });
+    } catch (error) {
+      return Result.err(artifactsImportError(error));
     }
-
-    const apply = await copy.value.apply();
-    if (Result.isError(apply)) {
-      await copy.value.discard();
-      return Result.err(apply.error);
-    }
-
-    return Result.ok({
-      workspaceName: request.workspaceName,
-      root,
-      source: source.value.snapshot,
-      revisionId: apply.value.revisionId,
-      createdAt: apply.value.createdAt,
-    });
   }
+}
+
+function artifactsImportError(error: unknown): ArtifactsImportError {
+  if (isArtifactsError(error)) {
+    return {
+      tag: "ArtifactsImportError",
+      message: error.message,
+      code: error.code,
+    };
+  }
+
+  return {
+    tag: "ArtifactsImportError",
+    message: error instanceof Error ? error.message : "Artifacts import failed.",
+  };
+}
+
+function isArtifactsError(error: unknown): error is Error & { name: "ArtifactsError"; code: string } {
+  return error instanceof Error && error.name === "ArtifactsError" && typeof (error as { code?: unknown }).code === "string";
 }

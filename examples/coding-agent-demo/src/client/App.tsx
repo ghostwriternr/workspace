@@ -139,7 +139,7 @@ export function App() {
         <div className="import-meta">
           <span>Last import</span>
           <strong>{lastImport ? `${lastImport.source.owner}/${lastImport.source.repo}@${lastImport.source.ref}` : "none"}</strong>
-          <code>{lastImport?.source.commitSha ?? "waiting for import"}</code>
+          <code>{lastImport?.source.repositoryId ?? "waiting for import"}</code>
         </div>
       </section>
 

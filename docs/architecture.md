@@ -45,7 +45,11 @@ The first three are built for Workspace-owned file copies. Module/asset projecti
 
 ## How a Workspace is built
 
-A single Workspace is one Durable Object plus an R2 bucket.
+The implementation is currently in transition. The original Workspace backend is one Durable Object plus an R2 bucket, and the photo demo still exercises that path. The coding-agent demo now constructs `Workspace.fromArtifacts(env.ARTIFACTS, name)`: Artifacts owns the durable/versioned repo, Workspace presents the same file/working-copy/apply/discard surface, and internal `isomorphic-git` plumbing fills the current gap until Artifacts exposes direct file mutation APIs.
+
+### Original DO + R2 backend
+
+A single original-backend Workspace is one Durable Object plus an R2 bucket.
 
 ### Storage
 

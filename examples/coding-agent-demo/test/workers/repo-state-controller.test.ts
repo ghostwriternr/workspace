@@ -1,27 +1,24 @@
-import { env } from "cloudflare:workers";
 import { Result } from "better-result";
-import { describe, expect, it } from "vitest";
-import { Workspace } from "@cloudflare/workspace";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { RepoStateController } from "../../src/repo/state-controller";
+import { createFakeArtifactsWorkspace, resetFakeArtifactsWorkspace } from "./fake-artifacts-workspace";
 
 const encoder = new TextEncoder();
 
 describe("RepoStateController", () => {
+  afterEach(() => {
+    resetFakeArtifactsWorkspace();
+  });
+
   it("lists current Workspace files recursively for repo state", async () => {
-    const workspaceName = `repo-state-${crypto.randomUUID()}`;
-    const workspace = Workspace.get(env.WORKSPACES, workspaceName);
-    const copy = await workspace.files.copy("seed");
-    if (Result.isError(copy)) throw new Error("copy failed");
+    const { workspace, workspaceName } = createFakeArtifactsWorkspace({
+      "/README.md": encoder.encode("# Repo"),
+      "/src/index.ts": encoder.encode("export {};"),
+      "/src/lib/util.ts": encoder.encode("export const util = true;"),
+    });
 
-    await copy.value.files.writeTree("/", [
-      { path: "README.md", contents: encoder.encode("# Repo") },
-      { path: "src/index.ts", contents: encoder.encode("export {};") },
-      { path: "src/lib/util.ts", contents: encoder.encode("export const util = true;") },
-    ]);
-    await copy.value.apply();
-
-    const state = await new RepoStateController({ workspaces: env.WORKSPACES, workspaceName }).listRepoState();
+    const state = await new RepoStateController({ workspace, workspaceName }).listRepoState();
 
     expect(Result.isOk(state)).toBe(true);
     if (Result.isError(state)) throw new Error("repo state failed");
@@ -38,22 +35,16 @@ describe("RepoStateController", () => {
   });
 
   it("lists files from an active working copy", async () => {
-    const workspaceName = `repo-state-working-${crypto.randomUUID()}`;
-    const workspace = Workspace.get(env.WORKSPACES, workspaceName);
-    const seed = await workspace.files.copy("seed");
-    if (Result.isError(seed)) throw new Error("seed copy failed");
-
-    await seed.value.files.writeTree("/", [
-      { path: "README.md", contents: encoder.encode("# Repo") },
-    ]);
-    await seed.value.apply();
+    const { workspace, workspaceName } = createFakeArtifactsWorkspace({
+      "/README.md": encoder.encode("# Repo"),
+    });
 
     const working = await workspace.files.copy("working");
     if (Result.isError(working)) throw new Error("working copy failed");
     await working.value.files.write("/notes.md", encoder.encode("draft note"));
 
     const state = await new RepoStateController({
-      workspaces: env.WORKSPACES,
+      workspace,
       workspaceName,
       workingCopyId: working.value.id,
     }).listRepoState();
@@ -71,9 +62,10 @@ describe("RepoStateController", () => {
   });
 
   it("returns a value error when an active working copy is missing", async () => {
+    const { workspace, workspaceName } = createFakeArtifactsWorkspace();
     const state = await new RepoStateController({
-      workspaces: env.WORKSPACES,
-      workspaceName: `repo-state-missing-working-${crypto.randomUUID()}`,
+      workspace,
+      workspaceName,
       workingCopyId: "missing-copy",
     }).listRepoState();
 

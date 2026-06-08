@@ -62,7 +62,7 @@ export class WorkspaceFileCapability extends WorkerEntrypoint<Env, WorkspaceFile
   }
 
   private async createWorkspaceFileCapability(): Promise<ScopedWorkspaceRpcResult<ScopedWorkspaceFileCapability>> {
-    const workspace = Workspace.get(this.env.WORKSPACES, this.ctx.props.workspaceName);
+    const workspace = Workspace.fromArtifacts(this.env.ARTIFACTS, this.ctx.props.workspaceName);
     const copy = await workspace.files.getCopy(this.ctx.props.workingCopyId);
     if (Result.isError(copy)) {
       return {
