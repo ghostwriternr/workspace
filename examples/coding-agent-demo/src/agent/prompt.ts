@@ -17,7 +17,7 @@ export function buildSystemPrompt(workspaceName: string, tools: readonly CodingT
     ...BASE_GUIDELINES,
   ].map((g) => `- ${g}`).join("\n");
 
-  return `You are a coding assistant helping a user work on a repository. You read files, make edits, write new files, and run JavaScript programs to search or transform code.
+  return `You are a coding assistant helping a user work on a repository. You read files, make edits, write new files, run JavaScript programs to search or transform code, and use shell commands when a task needs real process execution.
 
 The repository is loaded into a workspace called "${workspaceName}". Your tools may create or reuse a durable working copy. The working copy is not published until the user applies it. The user decides when to apply or throw away the working copy.
 

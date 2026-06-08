@@ -5,8 +5,9 @@ import {
   type WorkspaceNamespace,
 } from "@cloudflare/workspace";
 import type { WorkspaceFileReconcileSummary } from "@cloudflare/workspace";
-import type { DemoWorkspaceCommandRunner } from "../workspace/sandbox-workspace-command-runner";
+import type { WorkspaceSandboxCommandError, WorkspaceSandboxCommandRunner } from "@cloudflare/workspace-adapter-sandbox";
 import type {
+  WorkspaceDynamicWorkerExecutionError,
   WorkspaceDynamicWorkerFileCapability,
   WorkspaceDynamicWorkerResult,
   WorkspaceDynamicWorkerRunner,
@@ -69,7 +70,7 @@ export type PhotoState = {
 export type PhotoDraftControllerDependencies = {
   workspaceName: string;
   workspaces: WorkspaceNamespace;
-  commandRunner: Pick<DemoWorkspaceCommandRunner, "runWorkspaceCommand">;
+  commandRunner: WorkspaceSandboxCommandRunner;
   dynamicWorkerRunner: WorkspaceDynamicWorkerRunner;
   workspaceForDraft(draftEditId: string): WorkspaceDynamicWorkerFileCapability;
   getDraftEditId(): string | undefined;
@@ -130,23 +131,26 @@ export class PhotoDraftController {
     stderr: string;
     exitCode: number;
     reconcile: WorkspaceFileReconcileSummary;
-  }> {
+  } | { status: "error"; error: WorkspaceSandboxCommandError }> {
     return this.withDraftCopy(async (copy, draftEditId) => {
-      const result = await this.dependencies.commandRunner.runWorkspaceCommand({
+      const result = await this.dependencies.commandRunner.runCommand({
         files: copy.files,
         command,
         root: WORKSPACE_ROOT,
-        draftEditId,
+        sandboxId: draftEditId,
       });
+      if (Result.isError(result)) {
+        return { status: "error", error: result.error };
+      }
 
       return {
         status: "command-completed",
-        root: result.root,
-        command: result.command,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        exitCode: result.exitCode,
-        reconcile: result.reconcile,
+        root: result.value.root,
+        command: result.value.command,
+        stdout: result.value.stdout,
+        stderr: result.value.stderr,
+        exitCode: result.value.exitCode,
+        reconcile: result.value.reconcile,
       };
     });
   }
@@ -155,14 +159,14 @@ export class PhotoDraftController {
     status: "dynamic-worker-completed";
     summary: string;
     result: WorkspaceDynamicWorkerResult;
-  }> {
+  } | { status: "error"; error: WorkspaceDynamicWorkerExecutionError }> {
     return this.withDraftCopy(async (_copy, draftEditId) => {
       const result = await this.dependencies.dynamicWorkerRunner.run({
         code,
         workspace: this.dependencies.workspaceForDraft(draftEditId),
       });
       if (Result.isError(result)) {
-        throw new Error(result.error.message);
+        return { status: "error", error: result.error };
       }
 
       return {

@@ -19,11 +19,11 @@ describe("createSandboxWorkspaceCommandRunner", () => {
     });
     const runner = createSandboxWorkspaceCommandRunner({} as never, "manual-demo");
 
-    await runner.runWorkspaceCommand({
+    await runner.runCommand({
       files: workingCopy as never,
       command: "convert /workspace/photos/current /workspace/photos/current",
       root: "/workspace",
-      draftEditId: "draft-123",
+      sandboxId: "draft-123",
     });
 
     expect(getSandbox).toHaveBeenCalledWith({}, "manual-demo-draft-123", { sleepAfter: "60s" });

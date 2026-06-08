@@ -18,12 +18,18 @@ import type {
   WorkspaceDynamicWorkerResult,
   WorkspaceDynamicWorkerRunner,
 } from "@cloudflare/workspace-adapter-dynamic-worker";
+import type {
+  WorkspaceSandboxCommandError,
+  WorkspaceSandboxCommandRunner,
+  WorkspaceSandboxCommandResult,
+} from "@cloudflare/workspace-adapter-sandbox";
 import { normalizeAgentPath } from "../agent/path";
 
 export type RepoWorkingCopyControllerDependencies = {
   workspaceName: string;
   workspaces: WorkspaceNamespace;
   dynamicWorkerRunner: WorkspaceDynamicWorkerRunner;
+  shellRunner: WorkspaceSandboxCommandRunner;
   workspaceForWorkingCopy(workingCopyId: string): WorkspaceDynamicWorkerFileCapability;
   getWorkingCopyId(): string | undefined;
   setWorkingCopyId(workingCopyId: string | undefined): void;
@@ -61,6 +67,10 @@ export type RepoExactEditResult = {
 export type RepoRunResult = {
   status: "run-completed";
   result: WorkspaceDynamicWorkerResult;
+};
+
+export type RepoShellResult = WorkspaceSandboxCommandResult & {
+  status: "shell-completed";
 };
 
 export type RepoApplyWorkingCopyResult = {
@@ -105,6 +115,7 @@ export type RepoReadError = ReadOffsetOutOfRangeError | WorkspaceCurrentFileErro
 export type RepoWriteError = WorkspaceCopyError | WorkspaceFileWriteTreeError;
 export type RepoExactEditError = TextNotFoundError | AmbiguousTextEditError | WorkspaceCopyError | WorkspaceCopyFileError | WorkspaceFileWriteTreeError;
 export type RepoRunError = WorkspaceCopyError | WorkspaceDynamicWorkerExecutionError;
+export type RepoShellError = WorkspaceCopyError | WorkspaceSandboxCommandError;
 export type RepoApplyWorkingCopyError = NoActiveWorkingCopyError | WorkspaceCopyError | WorkspaceApplyError;
 export type RepoDiscardWorkingCopyError = NoActiveWorkingCopyError | WorkspaceCopyError | WorkspaceDiscardError;
 
@@ -217,6 +228,28 @@ export class RepoWorkingCopyController {
     return Result.ok({
       status: "run-completed",
       result: result.value,
+    });
+  }
+
+  async shell({ command }: { command: string }): Promise<BetterResult<RepoShellResult, RepoShellError>> {
+    const copy = await this.workingCopy();
+    if (Result.isError(copy)) {
+      return Result.err(copy.error);
+    }
+
+    const result = await this.dependencies.shellRunner.runCommand({
+      files: copy.value.files,
+      sandboxId: copy.value.id,
+      command,
+      root: "/workspace",
+    });
+    if (Result.isError(result)) {
+      return Result.err(result.error);
+    }
+
+    return Result.ok({
+      status: "shell-completed",
+      ...result.value,
     });
   }
 

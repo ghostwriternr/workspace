@@ -170,6 +170,31 @@ describe("RepoWorkingCopyController", () => {
     expect(decoder.decode(edited)).toBe("read # Repo");
   });
 
+  it("runs shell commands against the active working copy and reconciles changes", async () => {
+    const { controller, workspace, shellRunner, getWorkingCopyId } = await setupWorkingCopyController();
+
+    const result = await expectOk(controller.shell({ command: "npm test" }));
+
+    expect(result).toEqual({
+      status: "shell-completed",
+      command: "npm test",
+      root: "/workspace",
+      exitCode: 1,
+      stdout: "",
+      stderr: "tests failed",
+      reconcile: { created: ["/notes/shell.md"], modified: [], deleted: [], unchanged: 1 },
+    });
+    expect(getWorkingCopyId()).toEqual(expect.any(String));
+
+    const current = await workspace.files.read("/notes/shell.md");
+    const copy = unwrap(await workspace.files.getCopy(getWorkingCopyId()!));
+    const edited = unwrap(await copy.files.read("/notes/shell.md"));
+
+    expect(shellRunner.calls).toEqual([{ command: "npm test", workingCopyId: getWorkingCopyId() }]);
+    expect(Result.isError(current)).toBe(true);
+    expect(decoder.decode(edited)).toBe("shell wrote this");
+  });
+
   it("applies or discards only an active working copy", async () => {
     const applySetup = await setupWorkingCopyController();
     expect(await expectOk(applySetup.controller.write({ path: "/notes/apply.md", contents: "apply me" }))).toMatchObject({ status: "file-written" });
@@ -221,10 +246,29 @@ async function setupWorkingCopyController() {
       return Result.ok({ wrote: "/notes/edit.md" });
     },
   };
+  const shellRunner = {
+    calls: [] as Array<{ command: string; workingCopyId: string | undefined }>,
+    async runCommand(options: { command: string; sandboxId: string }) {
+      this.calls.push({ command: options.command, workingCopyId: options.sandboxId });
+      const copy = unwrap(await workspace.files.getCopy(options.sandboxId));
+      await copy.files.writeTree("/", [
+        { path: "notes/shell.md", contents: encoder.encode("shell wrote this") },
+      ]);
+      return Result.ok({
+        command: options.command,
+        root: "/workspace",
+        exitCode: 1,
+        stdout: "",
+        stderr: "tests failed",
+        reconcile: { created: ["/notes/shell.md"], modified: [], deleted: [], unchanged: 1 },
+      });
+    },
+  };
   const controller = new RepoWorkingCopyController({
     workspaces: env.WORKSPACES,
     workspaceName,
     dynamicWorkerRunner: runner,
+    shellRunner,
     workspaceForWorkingCopy: () => ({}) as never,
     getWorkingCopyId: () => workingCopyId,
     setWorkingCopyId: (next) => { workingCopyId = next; },
@@ -234,6 +278,7 @@ async function setupWorkingCopyController() {
     controller,
     workspace,
     runner,
+    shellRunner,
     getWorkingCopyId: () => workingCopyId,
   };
 }

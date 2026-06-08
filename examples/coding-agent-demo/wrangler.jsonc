@@ -5,19 +5,31 @@
   "compatibility_date": "2026-05-26",
   "compatibility_flags": ["nodejs_compat", "experimental"],
   "ai": { "binding": "AI" },
+  "vars": {
+    "SANDBOX_TRANSPORT": "rpc"
+  },
   "assets": {
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/agents/*", "/api/*", "/health"]
   },
   "worker_loaders": [{ "binding": "DYNAMIC_WORKERS" }],
+  "containers": [
+    {
+      "class_name": "Sandbox",
+      "image": "./Dockerfile",
+      "instance_type": "standard-1",
+      "max_instances": 10
+    }
+  ],
   "durable_objects": {
     "bindings": [
       { "name": "CodingAgent", "class_name": "CodingAgent" },
+      { "name": "Sandbox", "class_name": "Sandbox" },
       { "name": "WORKSPACES", "class_name": "WorkspaceObject" }
     ]
   },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["WorkspaceObject", "CodingAgent"] }
+    { "tag": "v1", "new_sqlite_classes": ["WorkspaceObject", "CodingAgent", "Sandbox"] }
   ],
   "r2_buckets": [
     { "binding": "WORKSPACE_BLOBS", "bucket_name": "workspace-coding-agent-demo-blobs" }

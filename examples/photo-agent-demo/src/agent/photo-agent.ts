@@ -50,7 +50,7 @@ export class PhotoAgent extends Think<Env, PhotoAgentState> {
         description: [
           "Run any shell command inside the isolated Sandbox with the active draft mounted at /workspace.",
           "Use this for image inspection and edits. Available tools include ImageMagick commands such as identify and convert.",
-          "Files written under /workspace become part of the draft preview after the command succeeds.",
+          "Files written under /workspace become part of the draft preview after the command exits, even if the command fails.",
           "Examples: `identify /workspace/photos/original.jpg`, `convert /workspace/photos/original.jpg -gravity center -crop 1024x1024+0+0 +repage /workspace/photos/current`, or short Python scripts that read and write /workspace files.",
         ].join(" "),
         inputSchema: z.object({

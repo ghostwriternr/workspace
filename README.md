@@ -11,7 +11,7 @@ It's the missing primitive between "object storage" and "filesystem inside a run
 - Explicit publish (`apply`) and explicit throwaway (`discard`). Nothing is published implicitly when a command exits or a Worker returns.
 - Immutable revisions of head as recovery points.
 
-Workspace is source-agnostic: product flows might import files from a user upload, a GitHub checkout, a Hugging Face snapshot, an S3 bucket, or mount stable source snapshots beside Workspace-owned working copies. Bridging those systems in is product/source-adapter work (see [`docs/sources.md`](./docs/sources.md)). Runtime adapters, such as the Dynamic Worker adapter, project Workspace file capabilities into a specific execution environment without moving execution into Workspace core.
+Workspace is source-agnostic: product flows might import files from a user upload, a GitHub checkout, a Hugging Face snapshot, an S3 bucket, or mount stable source snapshots beside Workspace-owned working copies. Bridging those systems in is product/source-adapter work (see [`docs/sources.md`](./docs/sources.md)). Runtime adapters, such as the Dynamic Worker and Sandbox adapters, project Workspace file capabilities into a specific execution environment without moving execution into Workspace core.
 
 ## Where to look
 
@@ -31,6 +31,7 @@ Workspace is source-agnostic: product flows might import files from a user uploa
 packages/workspace/                 Reusable Workspace package (DO + R2, sessions, projections)
 packages/source/github/             GitHub REST source adapter for streaming repo files
 packages/adapters/dynamic-worker/   Dynamic Worker adapter for scoped Workspace files
+packages/adapters/sandbox/          Sandbox adapter for mounted Workspace file copies
 examples/photo-agent-demo/           Worker app: Think agent edits photos via Sandbox + Dynamic Worker
                              over one Workspace working copy (called a draft in the UI)
 examples/coding-agent-demo/  Worker app: imports public GitHub repos into Workspace for
@@ -41,7 +42,7 @@ examples/coding-agent-demo/  Worker app: imports public GitHub repos into Worksp
 
 Prototype. The core durable semantics work (head tree, working copies, revisions, scoped file capabilities, filesystem projection). The first product-facing API layer exists for current files, file copies, streaming bulk tree writes into copies, filesystem mounts, reconcile, scoped file capabilities, apply, and discard. A first GitHub source adapter streams repository files into that import path. See `docs/known-limitations.md` for the full list.
 
-The photo agent example is deployed at <https://workspace-photo-agent-demo.ghostwriternr.workers.dev>. The coding agent example is starting as a GitHub import loop with basic Workspace-backed repo state. `packages/source/*` packages bridge external file sources into Workspace flows. `packages/adapters/*` packages project Workspace capabilities into runtimes.
+The photo agent example is deployed at <https://workspace-photo-agent-demo.ghostwriternr.workers.dev>. The coding agent example imports public GitHub repos and exposes Workspace-backed Dynamic Worker and Sandbox tools. `packages/source/*` packages bridge external file sources into Workspace flows. `packages/adapters/*` packages project Workspace capabilities into runtimes.
 
 ## Commands
 

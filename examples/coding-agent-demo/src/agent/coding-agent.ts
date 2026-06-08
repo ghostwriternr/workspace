@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { createWorkspaceDynamicWorkerRunner } from "@cloudflare/workspace-adapter-dynamic-worker";
 import { RepoWorkingCopyController } from "../repo/working-copy-controller";
+import { createSandboxCommandRunner } from "../workspace/cloudflare-sandbox";
 import { RepoStateController } from "../repo/state-controller";
 import type { RepoImportSummary } from "../repo/import-controller";
 import { buildSystemPrompt } from "./prompt";
@@ -72,6 +73,13 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
         }),
         execute: async (input) => resultToModelToolOutput(await this.workingCopyController().run(input)),
       }),
+      shell: tool({
+        description: codingToolDescription("shell"),
+        inputSchema: z.object({
+          command: z.string().min(1).describe("Shell command to run with the working copy mounted at /workspace."),
+        }),
+        execute: async (input) => resultToModelToolOutput(await this.workingCopyController().shell(input)),
+      }),
     };
   }
 
@@ -98,6 +106,11 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
   @callable()
   async run(input: { code: string }) {
     return resultToRpc(await this.workingCopyController().run(input));
+  }
+
+  @callable()
+  async shell(input: { command: string }) {
+    return resultToRpc(await this.workingCopyController().shell(input));
   }
 
   @callable()
@@ -129,6 +142,7 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
       workspaces: this.env.WORKSPACES,
       workspaceName: this.name,
       dynamicWorkerRunner: createWorkspaceDynamicWorkerRunner(this.env.DYNAMIC_WORKERS),
+      shellRunner: createSandboxCommandRunner(this.env.Sandbox, this.name),
       workspaceForWorkingCopy: (workingCopyId) => this.ctx.exports.WorkspaceFileCapability({ props: { workspaceName: this.name, workingCopyId } }),
       getWorkingCopyId: () => this.state.workingCopyId,
       setWorkingCopyId: (workingCopyId) => this.setState({ ...this.state, workingCopyId }),

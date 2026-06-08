@@ -1,5 +1,7 @@
 import { routeAgentRequest } from "agents";
 
+export { Sandbox } from "@cloudflare/sandbox";
+
 import { handleDemoRequest } from "./http/demo";
 import { handleRepoImportRequest } from "./http/repo-import";
 

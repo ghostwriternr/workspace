@@ -63,7 +63,7 @@ describe("PhotoDraftController", () => {
       {
         command: "identify /workspace/photos/original.png && convert /workspace/photos/original.png /workspace/photos/current",
         root: "/workspace",
-        draftEditId: "session-1",
+        sandboxId: "session-1",
       },
     ]);
   });
@@ -86,7 +86,7 @@ describe("PhotoDraftController", () => {
       {
         command: "convert /workspace/photos/current -resize 512x512^ /workspace/photos/current",
         root: "/workspace",
-        draftEditId: "session-1",
+        sandboxId: "session-1",
       },
     ]);
     expect(dependencies.sessionFiles["/photos/current"]).toEqual(draftPng);
@@ -183,6 +183,24 @@ describe("PhotoDraftController", () => {
       }),
     ).resolves.toMatchObject({ status: "command-completed" });
   });
+
+  it("returns command and Dynamic Worker errors as values", async () => {
+    const commandDependencies = createDependencies({ head: { "/photos/original.png": originalPng }, commandError: "mount failed" });
+    const commandController = new PhotoDraftController(commandDependencies);
+
+    await expect(commandController.runWorkspaceCommand({ command: "identify /workspace/photos/original.png" })).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "WorkspaceSandboxMountError", message: "mount failed" },
+    });
+
+    const workerDependencies = createDependencies({ head: { "/photos/original.png": originalPng }, dynamicWorkerError: "worker failed" });
+    const workerController = new PhotoDraftController(workerDependencies);
+
+    await expect(workerController.runDynamicWorker({ code: "export default async function() {}" })).resolves.toEqual({
+      status: "error",
+      error: { tag: "WorkspaceDynamicWorkerExecutionError", message: "worker failed" },
+    });
+  });
 });
 
 type CreateDependenciesOptions = {
@@ -190,12 +208,14 @@ type CreateDependenciesOptions = {
   session?: Record<string, Uint8Array>;
   draftEditId?: string;
   commandOutput?: Uint8Array;
+  commandError?: string;
+  dynamicWorkerError?: string;
 };
 
 function createDependencies(options: CreateDependenciesOptions) {
   const workspace = new FakeWorkspace(options.head, options.session ?? {});
-  const commandRunner = new FakeWorkspaceCommandRunner(options.commandOutput ?? draftPng);
-  const dynamicWorkerRunner = new FakeDynamicWorkerRunner(workspace.session);
+  const commandRunner = new FakeWorkspaceCommandRunner(options.commandOutput ?? draftPng, options.commandError);
+  const dynamicWorkerRunner = new FakeDynamicWorkerRunner(workspace.session, options.dynamicWorkerError);
   const dependencies = {
     workspaceName: "demo",
     workspaces: { getByName: () => workspace },
@@ -408,10 +428,16 @@ class FakeSession {
 class FakeDynamicWorkerRunner {
   readonly calls: Array<{ code: string }> = [];
 
-  constructor(private readonly session: FakeSession) {}
+  constructor(
+    private readonly session: FakeSession,
+    private readonly error?: string,
+  ) {}
 
   async run(options: { code: string }) {
     this.calls.push({ code: options.code });
+    if (this.error) {
+      return Result.err({ tag: "WorkspaceDynamicWorkerExecutionError" as const, message: this.error });
+    }
     await this.session.mkdir("/notes");
     await this.session.writeFile("/notes/edit-summary.md", new TextEncoder().encode("cropped square"));
     return Result.ok({ wrote: "/notes/edit-summary.md" });
@@ -419,16 +445,32 @@ class FakeDynamicWorkerRunner {
 }
 
 class FakeWorkspaceCommandRunner {
-  readonly calls: Array<{ command: string; root: string; draftEditId: string }> = [];
+  readonly calls: Array<{ command: string; root: string; sandboxId: string }> = [];
 
-  constructor(private readonly output: Uint8Array) {}
+  constructor(
+    private readonly output: Uint8Array,
+    private readonly error?: string,
+  ) {}
 
-  async runWorkspaceCommand(options: { files: WorkspaceFileCopyFiles; command: string; root: string; draftEditId: string }) {
-    this.calls.push({ command: options.command, root: options.root, draftEditId: options.draftEditId });
+  async runCommand(options: { files: WorkspaceFileCopyFiles; command: string; root?: string; sandboxId: string }) {
+    this.calls.push({ command: options.command, root: options.root ?? "/workspace", sandboxId: options.sandboxId });
+    if (this.error) {
+      return Result.err({
+        tag: "WorkspaceSandboxMountError" as const,
+        operation: "attach" as const,
+        message: this.error,
+        error: {
+          tag: "WorkspaceFileMountOperationError" as const,
+          operation: "attach",
+          errorTag: "TestError",
+          message: this.error,
+        },
+      });
+    }
     await options.files.write("/photos/current", this.output);
-    return {
+    return Result.ok({
       command: options.command,
-      root: options.root,
+      root: options.root ?? "/workspace",
       exitCode: 0,
       stdout: "ok",
       stderr: "",
@@ -438,7 +480,7 @@ class FakeWorkspaceCommandRunner {
         deleted: [],
         unchanged: 1,
       },
-    };
+    });
   }
 }
 

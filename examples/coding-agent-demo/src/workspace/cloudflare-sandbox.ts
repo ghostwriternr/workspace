@@ -1,11 +1,11 @@
 import { getSandbox, type Sandbox } from "@cloudflare/sandbox";
 import { createWorkspaceSandboxCommandRunner } from "@cloudflare/workspace-adapter-sandbox";
 
-export function createSandboxWorkspaceCommandRunner(
+export function createSandboxCommandRunner(
   sandboxes: DurableObjectNamespace<Sandbox>,
   workspaceName: string,
 ) {
-  return createWorkspaceSandboxCommandRunner((draftEditId) =>
-    getSandbox(sandboxes, `${workspaceName}-${draftEditId}`, { sleepAfter: "60s" }),
+  return createWorkspaceSandboxCommandRunner((workingCopyId) =>
+    getSandbox(sandboxes, `${workspaceName}-${workingCopyId}`, { sleepAfter: "60s" }),
   );
 }

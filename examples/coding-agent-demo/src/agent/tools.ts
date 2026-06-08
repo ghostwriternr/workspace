@@ -46,6 +46,17 @@ export const CODING_TOOLS = [
       "run is not a shell — no subprocesses, no package manager, no native tools. But it runs full JavaScript, so use it freely for anything you can express in code.",
     ],
   },
+  {
+    name: "shell",
+    description:
+      "Run a shell command against the repository in an isolated Sandbox with the working copy mounted at /workspace. Use this for package managers, test runners, native tools, and process execution. Files written under /workspace are reconciled back into the durable working copy after the command exits, even if the command fails.",
+    promptSnippet: "Run shell commands against the repository",
+    promptGuidelines: [
+      "Use shell when you need package managers, test runners, native tools, or real process execution.",
+      "shell runs with the working copy mounted at /workspace. Use paths under /workspace in commands.",
+      "Files written under /workspace are reconciled back into the durable working copy after the command exits, even when the exit code is nonzero. Failed commands can still teach you about the environment or leave useful files to inspect.",
+    ],
+  },
 ] as const satisfies readonly CodingToolDefinition[];
 
 export type CodingToolName = typeof CODING_TOOLS[number]["name"];

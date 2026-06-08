@@ -150,13 +150,13 @@ It does **not** expose `apply`, `discard`, `beginSession`, `getByName`, revision
 
 `packages/workspace/src/workspace/projections/working-copy-mount.ts`
 
-`copy.files.attach(...)` materialises a file copy into a host filesystem — today, into a Sandbox container under `/workspace`. On `mount.reconcile()`, it reads back changes and writes them into the copy as metadata + blob refs. The lower-level implementation is `attachWorkspaceMount(...)`.
+`copy.files.attach(...)` materialises a file copy into a host filesystem — today, into a Sandbox container under `/workspace`. On `mount.reconcile()`, it reads back changes and writes them into the copy as metadata + blob refs. The lower-level implementation is `attachWorkspaceMount(...)`, and `packages/adapters/sandbox` wraps that boundary for shell command execution.
 
 The current implementation scans and hashes. A future implementation can be a real mount. The semantic boundary stays the same: the runtime sees a normal filesystem; the file copy sees the changes after reconcile.
 
 ## How the demo wires it together
 
-`examples/photo-agent-demo` is a real Worker that exercises every primitive end-to-end. The point isn't "photo editing" — it's proving that one Workspace working copy — called a draft in the product UI — is usable simultaneously from a Sandbox shell and from delegated Worker code, with one publication boundary.
+`examples/photo-agent-demo` is a real Worker that exercises every primitive end-to-end. The point isn't "photo editing" — it's proving that one Workspace working copy — called a draft in the product UI — is usable simultaneously from a Sandbox shell and from delegated Worker code, with one publication boundary. `examples/coding-agent-demo` uses the same runtime adapters for repository-oriented coding tasks.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
