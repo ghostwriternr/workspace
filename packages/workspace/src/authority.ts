@@ -23,6 +23,6 @@ export type WorkspaceAuthorityCopy<CopyFileError, ApplyError, DiscardError> = {
 
 export type WorkspaceAuthority<CurrentFileError, CopyError, CopyLookupError, CopyFileError, ApplyError, DiscardError> = {
   files: WorkspaceAuthorityFiles<CurrentFileError>;
-  createCopy(name?: string): Promise<BetterResult<WorkspaceAuthorityCopy<CopyFileError, ApplyError, DiscardError>, CopyError>>;
+  createCopy(label?: string): Promise<BetterResult<WorkspaceAuthorityCopy<CopyFileError, ApplyError, DiscardError>, CopyError>>;
   getCopy(id: string): Promise<BetterResult<WorkspaceAuthorityCopy<CopyFileError, ApplyError, DiscardError>, CopyLookupError>>;
 };
