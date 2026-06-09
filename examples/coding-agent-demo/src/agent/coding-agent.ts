@@ -9,13 +9,13 @@ import { createWorkspaceDynamicWorkerRunner } from "@cloudflare/workspace-adapte
 import { RepoWorkingCopyController } from "../repo/working-copy-controller";
 import { createSandboxCommandRunner } from "../workspace/cloudflare-sandbox";
 import { RepoStateController } from "../repo/state-controller";
-import type { RepoImportSummary } from "../repo/import-controller";
+import type { GitHubImportSummary } from "@cloudflare/workspace-source-github";
 import { buildSystemPrompt } from "./prompt";
 import { resultToModelToolOutput } from "./tool-result";
 import { CODING_TOOLS, CODING_TOOL_NAMES, codingToolDescription } from "./tools";
 
 export type CodingAgentState = {
-  lastImport?: RepoImportSummary;
+  lastImport?: GitHubImportSummary;
   workingCopyId?: string;
 };
 
@@ -125,7 +125,7 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
   }
 
   @callable()
-  async refreshRepoState(lastImport?: RepoImportSummary) {
+  async refreshRepoState(lastImport?: GitHubImportSummary) {
     const repo = await new RepoStateController({
       workspace: this.workspaceSurface(),
       workspaceName: this.name,

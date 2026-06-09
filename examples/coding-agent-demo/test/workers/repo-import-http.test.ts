@@ -38,9 +38,10 @@ describe("repo import HTTP", () => {
     });
     expect(response).toBeDefined();
     expect(response?.status).toBe(200);
-    await expect(response?.json()).resolves.toMatchObject({
+    await expect(response?.json()).resolves.toEqual({
       status: "imported",
       workspaceName,
+      importedAt: 1,
       source: {
         adapter: "github",
         host: "github.com",

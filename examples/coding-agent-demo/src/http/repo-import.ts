@@ -1,7 +1,6 @@
 import { Result, type Result as BetterResult } from "better-result";
 import type { WorkspaceBinding } from "@cloudflare/workspace";
-import type { GitHubSource } from "@cloudflare/workspace-source-github";
-import { RepoImportController, type RepoImportSummary } from "../repo/import-controller";
+import type { GitHubImportSummary, GitHubSource } from "@cloudflare/workspace-source-github";
 
 const importPathPattern = /^\/api\/workspaces\/([^/]+)\/imports\/github$/;
 
@@ -12,7 +11,7 @@ type GitHubImportBody = {
 };
 
 type CodingAgentNamespace = {
-  getByName(name: string): { refreshRepoState(lastImport?: RepoImportSummary): Promise<unknown> };
+  getByName(name: string): { refreshRepoState(lastImport?: GitHubImportSummary): Promise<unknown> };
 };
 
 type RepoImportRuntime = {
@@ -44,15 +43,12 @@ export async function handleRepoImportRequest(
     return json({ status: "error", message: body.error }, { status: 400 });
   }
 
-  const controller = new RepoImportController({
-    github: runtime.github,
-    workspaces: runtime.workspaces,
-  });
-  const result = await controller.importGitHubRepo({
-    workspaceName: decodeURIComponent(match[1] ?? ""),
+  const workspaceName = decodeURIComponent(match[1] ?? "");
+  const result = await runtime.github.importRepository({
+    workspace: runtime.workspaces.get(workspaceName),
     owner: body.value.owner,
     repo: body.value.repo,
-    ref: body.value.ref,
+    ...(body.value.ref ? { ref: body.value.ref } : {}),
   });
 
   if (Result.isError(result)) {
