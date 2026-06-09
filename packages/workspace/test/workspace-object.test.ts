@@ -31,7 +31,6 @@ describe("WorkspaceObject", () => {
       copyId: "copy-repo-copy-1",
       label: "copy label",
       createdAt: 100,
-      baseRepository: "copy-repo",
       baseRevisionId: "revision-copy-repo-0",
     });
 
@@ -39,7 +38,6 @@ describe("WorkspaceObject", () => {
       copyId: "copy-repo-copy-1",
       label: "copy label",
       createdAt: 100,
-      baseRepository: "copy-repo",
       baseRevisionId: "revision-copy-repo-0",
     });
 

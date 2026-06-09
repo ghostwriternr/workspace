@@ -10,7 +10,6 @@ export type WorkspaceCopyRecord = {
   copyId: string;
   label?: string;
   createdAt: number;
-  baseRepository: string;
   baseRevisionId?: string;
 };
 
@@ -68,19 +67,16 @@ export class WorkspaceObject extends DurableObject<Record<string, never>> {
       `INSERT INTO workspace_copies (
          copy_id,
          label,
-         base_repository,
          created_at,
          updated_at,
          base_revision_id
-       ) VALUES (?, ?, ?, ?, ?, ?)
+       ) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(copy_id) DO UPDATE SET
          label = excluded.label,
-         base_repository = excluded.base_repository,
          updated_at = excluded.updated_at,
          base_revision_id = excluded.base_revision_id`,
       record.copyId,
       record.label ?? null,
-      record.baseRepository,
       record.createdAt,
       now,
       record.baseRevisionId ?? null,
@@ -89,7 +85,7 @@ export class WorkspaceObject extends DurableObject<Record<string, never>> {
 
   copy(copyId: string): WorkspaceCopyRecord | undefined {
     const row = this.ctx.storage.sql.exec<CopyRow>(
-      `SELECT copy_id, label, created_at, base_repository, base_revision_id
+      `SELECT copy_id, label, created_at, base_revision_id
          FROM workspace_copies
         WHERE copy_id = ?`,
       copyId,
@@ -100,7 +96,6 @@ export class WorkspaceObject extends DurableObject<Record<string, never>> {
       copyId: row.copy_id,
       ...(row.label ? { label: row.label } : {}),
       createdAt: row.created_at,
-      baseRepository: row.base_repository,
       ...(row.base_revision_id ? { baseRevisionId: row.base_revision_id } : {}),
     };
   }
@@ -127,7 +122,6 @@ export class WorkspaceObject extends DurableObject<Record<string, never>> {
       CREATE TABLE IF NOT EXISTS workspace_copies (
         copy_id TEXT PRIMARY KEY,
         label TEXT,
-        base_repository TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         base_revision_id TEXT
@@ -146,6 +140,5 @@ type CopyRow = {
   copy_id: string;
   label: string | null;
   created_at: number;
-  base_repository: string;
   base_revision_id: string | null;
 };

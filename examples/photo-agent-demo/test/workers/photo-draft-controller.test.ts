@@ -233,7 +233,6 @@ function createDependencies(options: CreateDependenciesOptions): TestDependencie
     void object.recordCopy({
       copyId: options.draftEditId,
       createdAt: 100,
-      baseRepository: "demo",
       baseRevisionId: "revision-demo-0",
     });
   }

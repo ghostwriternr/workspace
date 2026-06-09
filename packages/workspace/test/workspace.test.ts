@@ -486,7 +486,6 @@ describe("Workspace", () => {
       copyId: copy.value.id,
       label: "metadata",
       createdAt: copy.value.createdAt,
-      baseRepository: "repo",
       baseRevisionId: "revision-repo-0",
     });
   });
@@ -505,7 +504,6 @@ describe("Workspace", () => {
       copyId: copy.value.id,
       label: "metadata",
       createdAt: copy.value.createdAt,
-      baseRepository: "repo",
       baseRevisionId: "revision-repo-0",
     });
   });

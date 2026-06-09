@@ -23,7 +23,6 @@ describe("WorkspaceFileCapability", () => {
     await object.recordCopy({
       copyId: draftEditId,
       createdAt: 100,
-      baseRepository: workspaceName,
       baseRevisionId: `revision-${workspaceName}-0`,
     });
 

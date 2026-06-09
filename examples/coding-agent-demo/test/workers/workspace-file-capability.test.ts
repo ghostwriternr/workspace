@@ -66,7 +66,6 @@ async function installWorkingCopy(files: Record<string, Uint8Array>) {
   await object.recordCopy({
     copyId: workingCopyId,
     createdAt: 100,
-    baseRepository: workspaceName,
     baseRevisionId: `revision-${workspaceName}-0`,
   });
   return { workspaceName, workingCopyId };

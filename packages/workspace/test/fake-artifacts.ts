@@ -96,7 +96,7 @@ export class FakeArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
   failWrites = false;
   private readonly repositories = new Map<string, Tree>();
   private readonly revisions = new Map<string, string>();
-  private readonly workingCopies = new Map<string, { baseRepository: string; tree: Tree }>();
+  private readonly workingCopies = new Map<string, Tree>();
 
   constructor(initial: Record<string, Tree>) {
     for (const [name, tree] of Object.entries(initial)) {
@@ -128,15 +128,12 @@ export class FakeArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
     return this.repositories.delete(repository);
   }
 
-  seedWorkingCopy(baseRepository: string, copyId: string, tree: Tree): void {
-    this.workingCopies.set(copyId, {
-      baseRepository,
-      tree: cloneTree(tree),
-    });
+  seedWorkingCopy(_baseRepository: string, copyId: string, tree: Tree): void {
+    this.workingCopies.set(copyId, cloneTree(tree));
   }
 
   file(repository: string, path: string): Uint8Array | undefined {
-    return (this.repositories.get(repository) ?? this.workingCopies.get(repository)?.tree)?.[path];
+    return (this.repositories.get(repository) ?? this.workingCopies.get(repository))?.[path];
   }
 
   async readFile(repository: string, path: string): Promise<Uint8Array | null> {
@@ -179,10 +176,7 @@ export class FakeArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
 
   async createWorkingCopy(baseRepository: string, copyId: string): Promise<string | undefined> {
     const baseRevisionId = await this.currentRevision(baseRepository);
-    this.workingCopies.set(copyId, {
-      baseRepository,
-      tree: cloneTree(this.tree(baseRepository)),
-    });
+    this.workingCopies.set(copyId, cloneTree(this.tree(baseRepository)));
     return baseRevisionId;
   }
 
@@ -239,7 +233,7 @@ export class FakeArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
   private workingCopyTree(copyId: string): Tree {
     const copy = this.workingCopies.get(copyId);
     if (!copy) throw artifactsError("NOT_FOUND", `Working copy not found: ${copyId}`);
-    return copy.tree;
+    return copy;
   }
 
   private tree(repository: string): Tree {

@@ -124,7 +124,6 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
         copyId,
         ...(label ? { label } : {}),
         createdAt,
-        baseRepository: this.repositoryName,
         ...(baseRevisionId ? { baseRevisionId } : {}),
       });
       return Result.ok(new ArtifactsWorkspaceCopy(this, copyId, label, createdAt));
@@ -211,7 +210,7 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
   async copyExists(id: string): Promise<BetterResult<void, ArtifactsCopyError>> {
     try {
       const copy = await this.workspaceObject.copy(id);
-      if (copy?.baseRepository !== this.repositoryName) {
+      if (!copy) {
         return Result.err(copyNotFoundError(id));
       }
       return Result.ok(undefined);
