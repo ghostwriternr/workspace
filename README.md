@@ -52,34 +52,39 @@ See [`docs/product-api.md`](./docs/product-api.md) for the full surface and
 
 ## Where to look
 
+Cross-cutting docs (concepts, boundaries, current state):
+
 - [`docs/product-model.md`](./docs/product-model.md) — core concepts and
   product semantics.
-- [`docs/product-api.md`](./docs/product-api.md) — target API shape.
+- [`docs/product-api.md`](./docs/product-api.md) — the API surface callers
+  use.
 - [`docs/architecture.md`](./docs/architecture.md) — current Artifacts-backed
   implementation.
-- [`docs/runtime-adapters.md`](./docs/runtime-adapters.md) — Dynamic Worker and
-  Sandbox projection model.
+- [`docs/runtime-adapters.md`](./docs/runtime-adapters.md) — Dynamic Worker
+  and Sandbox projection model.
 - [`docs/sources.md`](./docs/sources.md) — how external systems seed/export
   Workspace state.
-- [`docs/product-boundaries.md`](./docs/product-boundaries.md) — what stays out
-  of Workspace core.
-- [`docs/known-limitations.md`](./docs/known-limitations.md) — current prototype
-  gaps.
-- [`docs/photo-agent-demo.md`](./docs/photo-agent-demo.md) — what the photo
-  example proves.
-- [`AGENTS.md`](./AGENTS.md) — guardrails and commands for agents modifying the
-  repo.
+- [`docs/product-boundaries.md`](./docs/product-boundaries.md) — what stays
+  out of Workspace core.
+- [`docs/known-limitations.md`](./docs/known-limitations.md) — current
+  prototype gaps.
+- [`AGENTS.md`](./AGENTS.md) — guardrails and commands for agents modifying
+  the repo.
 
-## Layout
+Per-package and per-example READMEs:
 
-```text
-packages/workspace/                 Workspace package and work-surface API
-packages/adapters/dynamic-worker/   Dynamic Worker adapter for scoped files
-packages/adapters/sandbox/          Sandbox adapter for mounted working copies
-packages/sources/github/            GitHub source adapter for repo imports
-examples/photo-agent-demo/          Think photo agent over one Workspace draft
-examples/coding-agent-demo/         Think coding agent over imported repos
-```
+- [`packages/workspace`](./packages/workspace/README.md) — the Workspace
+  package.
+- [`packages/adapters/dynamic-worker`](./packages/adapters/dynamic-worker/README.md)
+  — Dynamic Worker runtime adapter.
+- [`packages/adapters/sandbox`](./packages/adapters/sandbox/README.md) —
+  Sandbox runtime adapter.
+- [`packages/sources/github`](./packages/sources/github/README.md) — GitHub
+  source adapter.
+- [`examples/photo-agent-demo`](./examples/photo-agent-demo/README.md) —
+  Think photo agent over one Workspace draft.
+- [`examples/coding-agent-demo`](./examples/coding-agent-demo/README.md) —
+  Think coding agent over imported GitHub repos.
 
 ## Status
 
