@@ -24,8 +24,6 @@ describe("WorkspaceFileCapability", () => {
       copyId: draftEditId,
       createdAt: 100,
       baseRepository: workspaceName,
-      remote: `https://git.example/${workspaceName}.git`,
-      defaultBranch: "main",
       baseRevisionId: `revision-${workspaceName}-0`,
     });
 

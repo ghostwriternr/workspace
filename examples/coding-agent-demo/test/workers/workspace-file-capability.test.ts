@@ -67,8 +67,6 @@ async function installWorkingCopy(files: Record<string, Uint8Array>) {
     copyId: workingCopyId,
     createdAt: 100,
     baseRepository: workspaceName,
-    remote: `https://git.example/${workspaceName}.git`,
-    defaultBranch: "main",
     baseRevisionId: `revision-${workspaceName}-0`,
   });
   return { workspaceName, workingCopyId };

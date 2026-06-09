@@ -11,8 +11,6 @@ export type WorkspaceCopyRecord = {
   label?: string;
   createdAt: number;
   baseRepository: string;
-  remote: string;
-  defaultBranch: string;
   baseRevisionId?: string;
 };
 
@@ -71,24 +69,18 @@ export class WorkspaceObject extends DurableObject<Record<string, never>> {
          copy_id,
          label,
          base_repository,
-         remote,
-         default_branch,
          created_at,
          updated_at,
          base_revision_id
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ) VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(copy_id) DO UPDATE SET
          label = excluded.label,
          base_repository = excluded.base_repository,
-         remote = excluded.remote,
-         default_branch = excluded.default_branch,
          updated_at = excluded.updated_at,
          base_revision_id = excluded.base_revision_id`,
       record.copyId,
       record.label ?? null,
       record.baseRepository,
-      record.remote,
-      record.defaultBranch,
       record.createdAt,
       now,
       record.baseRevisionId ?? null,
@@ -97,7 +89,7 @@ export class WorkspaceObject extends DurableObject<Record<string, never>> {
 
   copy(copyId: string): WorkspaceCopyRecord | undefined {
     const row = this.ctx.storage.sql.exec<CopyRow>(
-      `SELECT copy_id, label, created_at, base_repository, remote, default_branch, base_revision_id
+      `SELECT copy_id, label, created_at, base_repository, base_revision_id
          FROM workspace_copies
         WHERE copy_id = ?`,
       copyId,
@@ -109,8 +101,6 @@ export class WorkspaceObject extends DurableObject<Record<string, never>> {
       ...(row.label ? { label: row.label } : {}),
       createdAt: row.created_at,
       baseRepository: row.base_repository,
-      remote: row.remote,
-      defaultBranch: row.default_branch,
       ...(row.base_revision_id ? { baseRevisionId: row.base_revision_id } : {}),
     };
   }
@@ -138,8 +128,6 @@ export class WorkspaceObject extends DurableObject<Record<string, never>> {
         copy_id TEXT PRIMARY KEY,
         label TEXT,
         base_repository TEXT NOT NULL,
-        remote TEXT NOT NULL,
-        default_branch TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         base_revision_id TEXT
@@ -159,7 +147,5 @@ type CopyRow = {
   label: string | null;
   created_at: number;
   base_repository: string;
-  remote: string;
-  default_branch: string;
   base_revision_id: string | null;
 };

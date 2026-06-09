@@ -487,8 +487,6 @@ describe("Workspace", () => {
       label: "metadata",
       createdAt: copy.value.createdAt,
       baseRepository: "repo",
-      remote: "https://git.example/repo.git",
-      defaultBranch: "main",
       baseRevisionId: "revision-repo-0",
     });
   });
@@ -508,8 +506,6 @@ describe("Workspace", () => {
       label: "metadata",
       createdAt: copy.value.createdAt,
       baseRepository: "repo",
-      remote: "https://git.example/repo.git",
-      defaultBranch: "main",
       baseRevisionId: "revision-repo-0",
     });
   });

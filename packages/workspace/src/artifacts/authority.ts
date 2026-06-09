@@ -125,8 +125,6 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
         ...(label ? { label } : {}),
         createdAt,
         baseRepository: this.repositoryName,
-        remote,
-        defaultBranch: current?.defaultBranch ?? repoAccess?.defaultBranch ?? "main",
         ...(baseRevisionId ? { baseRevisionId } : {}),
       });
       return Result.ok(new ArtifactsWorkspaceCopy(this, copyId, label, createdAt));

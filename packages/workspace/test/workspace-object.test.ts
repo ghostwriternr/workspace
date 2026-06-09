@@ -32,8 +32,6 @@ describe("WorkspaceObject", () => {
       label: "copy label",
       createdAt: 100,
       baseRepository: "copy-repo",
-      remote: "https://git.example/copy-repo.git",
-      defaultBranch: "main",
       baseRevisionId: "revision-copy-repo-0",
     });
 
@@ -42,8 +40,6 @@ describe("WorkspaceObject", () => {
       label: "copy label",
       createdAt: 100,
       baseRepository: "copy-repo",
-      remote: "https://git.example/copy-repo.git",
-      defaultBranch: "main",
       baseRevisionId: "revision-copy-repo-0",
     });
 
