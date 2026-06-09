@@ -1,17 +1,6 @@
-export type ArtifactsRepositoryResult = {
-  id?: string;
-  name: string;
-  remote?: string;
-  defaultBranch?: string;
-  token?: string;
-};
+export type ArtifactsRepositoryResult = ArtifactsCreateRepoResult;
+export type ArtifactsRepoClient = ArtifactsRepo;
+export type ArtifactsImportBindingClient = Pick<Artifacts, "import">;
 
-export type ArtifactsBindingClient = {
-  create?(name: string, opts?: { readOnly?: boolean; description?: string; setDefaultBranch?: string }): Promise<ArtifactsRepositoryResult>;
-  get(name: string): Promise<ArtifactsRepoClient>;
-  delete(name: string): Promise<boolean>;
-};
-
-export type ArtifactsRepoClient = {
-  name: string;
-};
+export type ArtifactsBindingClient = Pick<Artifacts, "get" | "delete"> &
+  Partial<Pick<Artifacts, "create" | "import">>;

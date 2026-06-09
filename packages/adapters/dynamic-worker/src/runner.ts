@@ -1,5 +1,4 @@
 import { Result, type Result as BetterResult } from "better-result";
-import type { WorkerEntrypoint } from "cloudflare:workers";
 import type { ScopedWorkspaceFileCapability } from "@cloudflare/workspace";
 
 export type WorkspaceDynamicWorkerResult = unknown;
@@ -9,7 +8,7 @@ export type WorkspaceDynamicWorkerExecutionError = {
   message: string;
 };
 
-export type WorkspaceDynamicWorkerFileCapability = Fetcher<WorkerEntrypoint<unknown, unknown> & ScopedWorkspaceFileCapability>;
+export type WorkspaceDynamicWorkerFileCapability = ScopedWorkspaceFileCapability;
 
 export type WorkspaceDynamicWorkerRunOptions = {
   code: string;

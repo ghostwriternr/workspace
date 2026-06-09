@@ -58,32 +58,6 @@ describe("photo upload HTTP route", () => {
     expect(driver.file("demo", "/photos/original.png")).toEqual(pngBytes);
   });
 
-  it("records the requested default branch when Artifacts create omits it", async () => {
-    const { artifacts, object } = createFakeArtifactsWorkspace();
-    artifacts.create = async (name: string) => {
-      artifacts.createdRepositories.push(name);
-      artifacts.driver.createRepository(name);
-      return { name, remote: `https://git.example/${name}.git` };
-    };
-
-    const response = await handlePhotoUploadRequest(
-      new Request("http://example.com/api/workspaces/demo/photos/original", {
-        method: "POST",
-        headers: { "content-type": "image/png" },
-        body: pngBytes,
-      }),
-      artifacts,
-      workspaceObjects(object),
-    );
-
-    expect(response?.status).toBe(201);
-    await expect(object.currentRepository()).resolves.toEqual({
-      repository: "demo",
-      remote: "https://git.example/demo.git",
-      defaultBranch: "main",
-    });
-  });
-
   it("creates a repository when remote Artifacts lookup returns only a not-found message", async () => {
     const { artifacts, driver, object } = createFakeArtifactsWorkspace();
     const originalGet = artifacts.get.bind(artifacts);

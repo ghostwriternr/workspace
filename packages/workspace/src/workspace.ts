@@ -17,6 +17,7 @@ import {
   createArtifactsWorkspaceAuthority,
   type ArtifactsBindingClient,
 } from "./artifacts/authority";
+import type { ArtifactsRepositoryResult } from "./artifacts/binding";
 import type { WorkspaceObjectClient } from "./workspace-object";
 import type { ErrorDtoFor } from "./model/errors";
 import type {
@@ -92,10 +93,7 @@ export type WorkspaceBindingOptions = {
   objects: WorkspaceObjectNamespace;
 };
 
-export type WorkspaceArtifactsRepository = {
-  remote?: string;
-  defaultBranch?: string;
-};
+export type WorkspaceArtifactsRepository = Partial<Pick<ArtifactsRepositoryResult, "remote" | "defaultBranch">>;
 
 export type WorkspaceAdoptArtifactsRepositoryToCurrentOptions = {
   repository: WorkspaceArtifactsRepository;

@@ -520,24 +520,6 @@ describe("Workspace", () => {
     });
   });
 
-  it("records working copy metadata when Artifacts get omits default branch", async () => {
-    const { workspace, artifacts, object } = createWorkspace({ repo: { "/note.txt": bytes("current") } });
-    artifacts.get = async () => ({
-      name: "repo",
-      remote: "https://git.example/repo.git",
-    });
-
-    const copy = await workspace.copies.create({ label: "metadata" });
-    if (Result.isError(copy)) throw new Error("copy failed");
-
-    await expect(object.copy(copy.value.id)).resolves.toEqual({
-      copyId: copy.value.id,
-      label: "metadata",
-      createdAt: copy.value.createdAt,
-      baseRevisionId: "revision-repo-0",
-    });
-  });
-
   it("attaches a working copy to a filesystem host and reconciles changed files", async () => {
     const { workspace } = createWorkspace({ repo: { "/photos/original.txt": bytes("original") } });
     const host = new FakeMountHost();

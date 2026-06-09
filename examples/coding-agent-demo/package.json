@@ -30,8 +30,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.40.0",
-    "@cloudflare/vitest-pool-workers": "^0.16.13",
+    "@cloudflare/vite-plugin": "^1.40.1",
+    "@cloudflare/vitest-pool-workers": "^0.16.14",
     "@types/node": "^25.9.1",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
@@ -40,6 +40,6 @@
     "typescript": "^5.5.2",
     "vite": "^8.0.14",
     "vitest": "^4.1.7",
-    "wrangler": "^4.98.0"
+    "wrangler": "^4.99.0"
   }
 }

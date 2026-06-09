@@ -1,32 +1,13 @@
 import { Result, type Result as BetterResult } from "better-result";
-import type { Workspace } from "@cloudflare/workspace";
+import type {
+  ArtifactsImportBindingClient,
+  ArtifactsRepositoryResult,
+  Workspace,
+} from "@cloudflare/workspace";
 
-export type GitHubSourceArtifactsBinding = {
-  import(params: GitHubArtifactsImportParams): Promise<GitHubArtifactsImportResult>;
-};
-
-export type GitHubArtifactsImportParams = {
-  source: {
-    url: string;
-    branch?: string;
-    depth?: number;
-  };
-  target: {
-    name: string;
-    opts?: {
-      description?: string;
-      readOnly?: boolean;
-    };
-  };
-};
-
-export type GitHubArtifactsImportResult = {
-  id?: string;
-  name: string;
-  remote?: string;
-  defaultBranch?: string;
-  token?: string;
-};
+export type GitHubSourceArtifactsBinding = ArtifactsImportBindingClient;
+export type GitHubArtifactsImportParams = Parameters<ArtifactsImportBindingClient["import"]>[0];
+export type GitHubArtifactsImportResult = ArtifactsRepositoryResult;
 
 export type GitHubSourceOptions = {
   artifacts: GitHubSourceArtifactsBinding;

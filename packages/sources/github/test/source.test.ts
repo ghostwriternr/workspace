@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { Result } from "better-result";
-import { Workspace } from "@cloudflare/workspace";
+import { Workspace, type ArtifactsImportBindingClient } from "@cloudflare/workspace";
 import { createFakeArtifacts, resetFakeArtifacts, FakeArtifactsBinding, type FakeArtifactsWorkspaceDriver } from "@cloudflare/workspace/testing";
 
 import { createGitHubSource } from "../src/index";
@@ -105,10 +105,8 @@ describe("GitHub source", () => {
   });
 });
 
-type ArtifactsImportParams = {
-  source: { url: string; branch?: string; depth?: number };
-  target: { name: string; opts?: { description?: string; readOnly?: boolean } };
-};
+type ArtifactsImportParams = Parameters<ArtifactsImportBindingClient["import"]>[0];
+type ArtifactsImportResult = Awaited<ReturnType<ArtifactsImportBindingClient["import"]>>;
 
 class ImportingArtifactsBinding extends FakeArtifactsBinding {
   readonly imports: ArtifactsImportParams[] = [];
@@ -118,7 +116,7 @@ class ImportingArtifactsBinding extends FakeArtifactsBinding {
     super(fakeDriver);
   }
 
-  async import(params: ArtifactsImportParams): Promise<{ id: string; name: string; remote: string; defaultBranch: string }> {
+  async import(params: ArtifactsImportParams): Promise<ArtifactsImportResult> {
     this.imports.push(params);
     if (this.failImport) {
       throw Object.assign(new Error("Artifacts import failed."), {
@@ -130,8 +128,11 @@ class ImportingArtifactsBinding extends FakeArtifactsBinding {
     return {
       id: params.target.name,
       name: params.target.name,
+      description: null,
       remote: `https://git.example/${params.target.name}.git`,
       defaultBranch: params.source.branch ?? "main",
+      token: `token-${params.target.name}`,
+      tokenExpiresAt: "2026-01-02T00:00:00.000Z",
     };
   }
 }

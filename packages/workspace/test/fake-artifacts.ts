@@ -5,7 +5,7 @@ import {
   setArtifactsWorkspaceDriverFactoryForTests,
   type ArtifactsWorkspaceDriver,
 } from "../src/artifacts/authority";
-import type { ArtifactsBindingClient, ArtifactsRepoClient } from "../src/artifacts/binding";
+import type { ArtifactsBindingClient, ArtifactsRepoClient, ArtifactsRepositoryResult } from "../src/artifacts/binding";
 import type { WorkspaceRevision } from "../src/model/entries";
 import type {
   WorkspaceCopyRecord,
@@ -65,7 +65,7 @@ export class FakeArtifactsBinding implements ArtifactsBindingClient {
 
   constructor(readonly driver: FakeArtifactsWorkspaceDriver) {}
 
-  async create(name: string): Promise<{ name: string; remote: string; defaultBranch?: string }> {
+  async create(name: string): Promise<ArtifactsRepositoryResult> {
     this.createdRepositories.push(name);
     this.driver.createRepository(name);
     return repositoryResult(name);
@@ -88,7 +88,41 @@ export class FakeArtifactsBinding implements ArtifactsBindingClient {
 }
 
 class FakeArtifactsRepo implements ArtifactsRepoClient {
-  constructor(readonly name: string) {}
+  readonly id: string;
+  readonly description: string | null = null;
+  readonly defaultBranch = "main";
+  readonly createdAt = "2026-01-01T00:00:00.000Z";
+  readonly updatedAt = "2026-01-01T00:00:00.000Z";
+  readonly lastPushAt: string | null = null;
+  readonly source: string | null = null;
+  readonly readOnly = false;
+  readonly remote: string;
+
+  constructor(readonly name: string) {
+    this.id = `id-${name}`;
+    this.remote = `https://git.example/${name}.git`;
+  }
+
+  async createToken(scope: "write" | "read" = "write"): Promise<ArtifactsCreateTokenResult> {
+    return {
+      id: `token-${this.name}`,
+      plaintext: `token-${this.name}`,
+      scope,
+      expiresAt: "2026-01-02T00:00:00.000Z",
+    };
+  }
+
+  async listTokens(): Promise<ArtifactsTokenListResult> {
+    return { tokens: [], total: 0 };
+  }
+
+  async revokeToken(): Promise<boolean> {
+    return true;
+  }
+
+  async fork(name: string): Promise<ArtifactsRepositoryResult> {
+    return repositoryResult(name);
+  }
 }
 
 export class FakeArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
@@ -275,11 +309,15 @@ function cloneTree(tree: Tree): Tree {
   return Object.fromEntries(Object.entries(tree).map(([path, contents]) => [path, new Uint8Array(contents)]));
 }
 
-function repositoryResult(name: string): { name: string; remote: string; defaultBranch: string } {
+function repositoryResult(name: string): ArtifactsRepositoryResult {
   return {
+    id: `id-${name}`,
     name,
-    remote: `https://git.example/${name}.git`,
+    description: null,
     defaultBranch: "main",
+    remote: `https://git.example/${name}.git`,
+    token: `token-${name}`,
+    tokenExpiresAt: "2026-01-02T00:00:00.000Z",
   };
 }
 

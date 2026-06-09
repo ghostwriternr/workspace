@@ -30,6 +30,12 @@ export {
   type WorkspaceTreeSourceError,
 } from "./workspace";
 export { type WorkspaceEntry, type WorkspaceRevision, type WorkspaceStat } from "./model/entries";
+export {
+  type ArtifactsBindingClient,
+  type ArtifactsImportBindingClient,
+  type ArtifactsRepositoryResult,
+  type ArtifactsRepoClient,
+} from "./artifacts/binding";
 export { type WorkspaceTreeEntry } from "./model/write-tree";
 export {
   type WorkspaceFileMount,

@@ -1,8 +1,12 @@
 {
   "extends": "../../../tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["es2024", "dom", "dom.iterable"],
-    "types": ["@cloudflare/workers-types"]
+    "lib": ["es2024", "dom", "dom.iterable"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "vitest.config.ts",
+    "../../workspace/worker-configuration.d.ts"
+  ]
 }
