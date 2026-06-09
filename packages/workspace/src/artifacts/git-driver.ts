@@ -7,6 +7,7 @@ import type { ArtifactsWorkspaceDriver, ArtifactsWorkspaceFileWrite } from "./au
 import type { ArtifactsBindingClient, ArtifactsRepoClient } from "./binding";
 
 const textEncoder = new TextEncoder();
+const EMPTY_REPOSITORY_REVISION_ID = "empty-repository";
 
 type RepoAccess = {
   name: string;
@@ -52,46 +53,13 @@ class IsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver 
   }
 
   async list(repository: string, path: string): Promise<WorkspaceEntry[]> {
-    const files = await this.listFiles(repository);
-    const prefix = path === "/" ? "" : `${relativeGitPath(path)}/`;
-    const entries = new Map<string, "directory" | "file">();
-
-    for (const file of files) {
-      if (!file.startsWith(prefix)) continue;
-      const rest = file.slice(prefix.length);
-      if (!rest) continue;
-      const [name, ...remaining] = rest.split("/");
-      entries.set(name, remaining.length === 0 ? "file" : "directory");
-    }
-
-    return [...entries]
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([name, type]) => ({
-        name,
-        path: path === "/" ? `/${name}` : `${path}/${name}`,
-        type,
-      }));
+    return entriesFromFiles(await this.listFiles(repository), path);
   }
 
   async stat(repository: string, path: string): Promise<WorkspaceStat | null> {
-    const files = await this.listFiles(repository);
-    const now = Date.now();
-    if (path === "/") {
-      return { path, type: "directory", size: null, createdAt: now, updatedAt: now };
-    }
-
-    const rel = relativeGitPath(path);
-    if (files.includes(rel)) {
-      const contents = await this.readFile(repository, path);
-      return { path, type: "file", size: contents?.byteLength ?? 0, createdAt: now, updatedAt: now };
-    }
-
-    const prefix = `${rel}/`;
-    if (files.some((file) => file.startsWith(prefix))) {
-      return { path, type: "directory", size: null, createdAt: now, updatedAt: now };
-    }
-
-    return null;
+    return statFromFiles(path, await this.listFiles(repository), (filePath) =>
+      this.readFile(repository, filePath),
+    );
   }
 
   async writeFile(repository: string, path: string, contents: Uint8Array): Promise<void> {
@@ -119,10 +87,84 @@ class IsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver 
     await this.commitAndPush(checkout, `Delete ${rel}`);
   }
 
-  async applyWorkingCopy(baseRepository: string, workingCopyRepository: string): Promise<WorkspaceRevision> {
-    const checkout = await this.clone(workingCopyRepository, "write");
+  async currentRevision(repository: string): Promise<string | undefined> {
+    if (!(await this.repositoryHasCommits(repository))) return undefined;
+    const checkout = await this.clone(repository, "read");
+    return await git.resolveRef({ fs: checkout.fs, dir: checkout.dir, ref: "HEAD" });
+  }
+
+  async createWorkingCopy(baseRepository: string, copyId: string): Promise<string | undefined> {
+    if (!(await this.repositoryHasCommits(baseRepository))) return undefined;
+
+    const checkout = await this.clone(baseRepository, "write");
+    await git.push({
+      fs: checkout.fs,
+      http,
+      dir: checkout.dir,
+      url: checkout.access.remote,
+      ref: checkout.branch,
+      remoteRef: workingCopyRef(copyId),
+      force: true,
+      onAuth: () => auth(checkout.access),
+    });
+    return await git.resolveRef({ fs: checkout.fs, dir: checkout.dir, ref: "HEAD" });
+  }
+
+  async readWorkingCopyFile(baseRepository: string, copyId: string, path: string): Promise<Uint8Array | null> {
+    const checkout = await this.cloneWorkingCopy(baseRepository, copyId, "read");
+    const rel = relativeGitPath(path);
+    if (!rel) return null;
+    try {
+      const contents = await checkout.fs.promises.readFile(`${checkout.dir}/${rel}`);
+      return contents instanceof Uint8Array ? new Uint8Array(contents) : textEncoder.encode(String(contents));
+    } catch {
+      return null;
+    }
+  }
+
+  async listWorkingCopy(baseRepository: string, copyId: string, path: string): Promise<WorkspaceEntry[]> {
+    const files = await this.listWorkingCopyFiles(baseRepository, copyId);
+    return entriesFromFiles(files, path);
+  }
+
+  async statWorkingCopy(baseRepository: string, copyId: string, path: string): Promise<WorkspaceStat | null> {
+    return statFromFiles(path, await this.listWorkingCopyFiles(baseRepository, copyId), (filePath) =>
+      this.readWorkingCopyFile(baseRepository, copyId, filePath),
+    );
+  }
+
+  async writeWorkingCopyFile(baseRepository: string, copyId: string, path: string, contents: Uint8Array): Promise<void> {
+    await this.writeWorkingCopyFiles(baseRepository, copyId, [{ path, contents }]);
+  }
+
+  async writeWorkingCopyFiles(baseRepository: string, copyId: string, files: ArtifactsWorkspaceFileWrite[]): Promise<void> {
+    if (files.length === 0) return;
+
+    const checkout = await this.cloneWorkingCopy(baseRepository, copyId, "write");
+    for (const file of files) {
+      const rel = relativeGitPath(file.path);
+      await mkdirp(checkout.fs, dirname(`${checkout.dir}/${rel}`));
+      await checkout.fs.promises.writeFile(`${checkout.dir}/${rel}`, file.contents);
+      await git.add({ fs: checkout.fs, dir: checkout.dir, filepath: rel });
+    }
+    await this.commitAndPush(checkout, `Update ${files.length === 1 ? relativeGitPath(files[0]!.path) : `${files.length} files`}`);
+  }
+
+  async deleteWorkingCopyFile(baseRepository: string, copyId: string, path: string): Promise<void> {
+    const checkout = await this.cloneWorkingCopy(baseRepository, copyId, "write");
+    const rel = relativeGitPath(path);
+    await checkout.fs.promises.unlink(`${checkout.dir}/${rel}`);
+    await git.remove({ fs: checkout.fs, dir: checkout.dir, filepath: rel });
+    await this.commitAndPush(checkout, `Delete ${rel}`);
+  }
+
+  async applyWorkingCopy(baseRepository: string, copyId: string): Promise<WorkspaceRevision> {
+    const checkout = await this.cloneWorkingCopy(baseRepository, copyId, "write");
     const base = await this.repoAccess(baseRepository, "write");
-    const revisionId = await git.resolveRef({ fs: checkout.fs, dir: checkout.dir, ref: "HEAD" });
+    const revisionId = await headRevision(checkout);
+    if (!revisionId) {
+      return { revisionId: EMPTY_REPOSITORY_REVISION_ID, createdAt: Date.now() };
+    }
     await git.push({
       fs: checkout.fs,
       http,
@@ -130,14 +172,33 @@ class IsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver 
       url: base.remote,
       ref: checkout.branch,
       remoteRef: base.defaultBranch,
-      force: true,
+      force: false,
       onAuth: () => auth(base),
     });
     return { revisionId, createdAt: Date.now() };
   }
 
+  async discardWorkingCopy(baseRepository: string, copyId: string): Promise<void> {
+    const checkout = await this.cloneForRemote(baseRepository, "write");
+    await git.push({
+      fs: checkout.fs,
+      http,
+      dir: checkout.dir,
+      url: checkout.access.remote,
+      ref: checkout.branch,
+      remoteRef: workingCopyRef(copyId),
+      delete: true,
+      onAuth: () => auth(checkout.access),
+    });
+  }
+
   private async listFiles(repository: string): Promise<string[]> {
     const checkout = await this.clone(repository, "read");
+    return git.listFiles({ fs: checkout.fs, dir: checkout.dir });
+  }
+
+  private async listWorkingCopyFiles(baseRepository: string, copyId: string): Promise<string[]> {
+    const checkout = await this.cloneWorkingCopy(baseRepository, copyId, "read");
     return git.listFiles({ fs: checkout.fs, dir: checkout.dir });
   }
 
@@ -154,20 +215,22 @@ class IsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver 
       dir: checkout.dir,
       url: checkout.access.remote,
       ref: checkout.branch,
-      remoteRef: checkout.branch,
+      remoteRef: checkout.remoteRef ?? checkout.branch,
       onAuth: () => auth(checkout.access),
     });
   }
 
   private async clone(repository: string, scope: "read" | "write"): Promise<Checkout> {
+    if (!(await this.repositoryHasCommits(repository))) {
+      return this.emptyCheckout(repository, scope, undefined);
+    }
+    return this.cloneForRemote(repository, scope);
+  }
+
+  private async cloneForRemote(repository: string, scope: "read" | "write"): Promise<Checkout> {
     const access = await this.repoAccess(repository, scope);
     const fs = createFsFromVolume(new Volume());
     const dir = "/repo";
-    if (!(await this.repositoryHasCommits(repository))) {
-      await git.init({ fs, dir, defaultBranch: access.defaultBranch });
-      return { fs, dir, branch: access.defaultBranch, access };
-    }
-
     await git.clone({
       fs,
       http,
@@ -180,6 +243,56 @@ class IsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver 
     });
     return { fs, dir, branch: access.defaultBranch, access };
   }
+
+  private async emptyCheckout(repository: string, scope: "read" | "write", branch: string | undefined): Promise<Checkout> {
+    const access = await this.repoAccess(repository, scope);
+    const fs = createFsFromVolume(new Volume());
+    const dir = "/repo";
+    const checkoutBranch = branch ?? access.defaultBranch;
+    await git.init({ fs, dir, defaultBranch: checkoutBranch });
+    return { fs, dir, branch: checkoutBranch, access };
+  }
+
+  private async cloneWorkingCopy(baseRepository: string, copyId: string, scope: "read" | "write"): Promise<Checkout> {
+    const copyAccess = await this.workspaceObject.repositoryAccess(copyId);
+    const emptyBaseCopy = copyAccess?.baseRevisionId === undefined;
+    const access = await this.repoAccess(baseRepository, scope);
+    const fs = createFsFromVolume(new Volume());
+    const dir = "/repo";
+    const branch = workingCopyLocalBranch(copyId);
+    const remoteRef = workingCopyRef(copyId);
+
+    await git.init({ fs, dir, defaultBranch: branch });
+    await git.addRemote({ fs, dir, remote: "origin", url: access.remote, force: true });
+    let fetched;
+    try {
+      fetched = await git.fetch({
+        fs,
+        http,
+        dir,
+        url: access.remote,
+        remoteRef,
+        singleBranch: true,
+        depth: scope === "read" ? 1 : undefined,
+        onAuth: () => auth(access),
+      });
+    } catch (error) {
+      if (emptyBaseCopy) {
+        return { fs, dir, branch, remoteRef, access };
+      }
+      throw error;
+    }
+    if (!fetched.fetchHead) {
+      if (emptyBaseCopy) {
+        return { fs, dir, branch, remoteRef, access };
+      }
+      throw new Error(`Could not fetch Workspace working copy ref: ${remoteRef}`);
+    }
+    await git.branch({ fs, dir, ref: branch, object: fetched.fetchHead, checkout: true, force: true });
+    await git.checkout({ fs, dir, ref: branch, force: true });
+    return { fs, dir, branch, remoteRef, access };
+  }
+
 
   private async repositoryHasCommits(repository: string): Promise<boolean> {
     const repo = await this.artifacts.get(repository);
@@ -216,6 +329,7 @@ type Checkout = {
   fs: Fs;
   dir: string;
   branch: string;
+  remoteRef?: string;
   access: RepoAccess;
 };
 
@@ -240,8 +354,72 @@ function auth(access: RepoAccess): { username: string; password: string } {
   return { username: "x-access-token", password: access.token };
 }
 
+function entriesFromFiles(files: string[], path: string): WorkspaceEntry[] {
+  const prefix = path === "/" ? "" : `${relativeGitPath(path)}/`;
+  const entries = new Map<string, "directory" | "file">();
+
+  for (const file of files) {
+    if (!file.startsWith(prefix)) continue;
+    const rest = file.slice(prefix.length);
+    if (!rest) continue;
+    const [name, ...remaining] = rest.split("/");
+    entries.set(name, remaining.length === 0 ? "file" : "directory");
+  }
+
+  return [...entries]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, type]) => ({
+      name,
+      path: path === "/" ? `/${name}` : `${path}/${name}`,
+      type,
+    }));
+}
+
+async function statFromFiles(
+  path: string,
+  files: string[],
+  read: (path: string) => Promise<Uint8Array | null>,
+): Promise<WorkspaceStat | null> {
+  const now = Date.now();
+  if (path === "/") {
+    return { path, type: "directory", size: null, createdAt: now, updatedAt: now };
+  }
+
+  const rel = relativeGitPath(path);
+  if (files.includes(rel)) {
+    const contents = await read(path);
+    return { path, type: "file", size: contents?.byteLength ?? 0, createdAt: now, updatedAt: now };
+  }
+
+  const prefix = `${rel}/`;
+  if (files.some((file) => file.startsWith(prefix))) {
+    return { path, type: "directory", size: null, createdAt: now, updatedAt: now };
+  }
+
+  return null;
+}
+
 function relativeGitPath(path: string): string {
   return path.replace(/^\/+/, "");
+}
+
+function workingCopyRef(copyId: string): string {
+  return `refs/workspace/copies/${copyId}`;
+}
+
+function workingCopyLocalBranch(copyId: string): string {
+  return `workspace/copies/${copyId}`;
+}
+
+async function headRevision(checkout: Checkout): Promise<string | undefined> {
+  try {
+    return await git.resolveRef({ fs: checkout.fs, dir: checkout.dir, ref: "HEAD" });
+  } catch (error) {
+    if (error instanceof Error && error.name === "NotFoundError") {
+      return undefined;
+    }
+    throw error;
+  }
 }
 
 function dirname(path: string): string {

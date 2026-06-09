@@ -1,3 +1,4 @@
+import { env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it } from "vitest";
 import { FakeArtifactsWorkspaceDriver, resetFakeArtifacts } from "@cloudflare/workspace/testing";
@@ -10,15 +11,10 @@ describe("WorkspaceFileCapability", () => {
   });
 
   it("adapts an Artifacts-backed working copy into a scoped WorkerEntrypoint binding", async () => {
-    const workingCopyId = `working-copy-${crypto.randomUUID()}`;
-    new FakeArtifactsWorkspaceDriver({
-      [workingCopyId]: {
-        "/README.md": readmeBytes,
-      },
-    }).install();
+    const { workspaceName, workingCopyId } = await installWorkingCopy({ "/README.md": readmeBytes });
 
     const capability = exports.WorkspaceFileCapability({
-      props: { workspaceName: "workspace-file-capability", workingCopyId },
+      props: { workspaceName, workingCopyId },
     });
 
     await expect(capability.readFile("README.md")).resolves.toEqual({ status: "ok", value: readmeBytes });
@@ -41,15 +37,10 @@ describe("WorkspaceFileCapability", () => {
   });
 
   it("creates parent directories for nested scoped writes", async () => {
-    const workingCopyId = `working-copy-${crypto.randomUUID()}`;
-    new FakeArtifactsWorkspaceDriver({
-      [workingCopyId]: {
-        "/README.md": readmeBytes,
-      },
-    }).install();
+    const { workspaceName, workingCopyId } = await installWorkingCopy({ "/README.md": readmeBytes });
 
     const capability = exports.WorkspaceFileCapability({
-      props: { workspaceName: "workspace-file-capability", workingCopyId },
+      props: { workspaceName, workingCopyId },
     });
 
     await expect(capability.writeFile("notes/edit.md", new TextEncoder().encode("nested write"))).resolves.toEqual({ status: "ok" });
@@ -59,3 +50,25 @@ describe("WorkspaceFileCapability", () => {
     });
   });
 });
+
+async function installWorkingCopy(files: Record<string, Uint8Array>) {
+  const workspaceName = "workspace-file-capability";
+  const workingCopyId = `working-copy-${crypto.randomUUID()}`;
+  new FakeArtifactsWorkspaceDriver({ [workspaceName]: {} })
+    .install()
+    .seedWorkingCopy(workspaceName, workingCopyId, files);
+  const object = env.WORKSPACE_OBJECTS.getByName(workspaceName);
+  await object.recordCurrentRepository({
+    repository: workspaceName,
+    remote: `https://git.example/${workspaceName}.git`,
+    defaultBranch: "main",
+  });
+  await object.recordCopy({
+    copyId: workingCopyId,
+    baseRepository: workspaceName,
+    remote: `https://git.example/${workspaceName}.git`,
+    defaultBranch: "main",
+    baseRevisionId: `revision-${workspaceName}-0`,
+  });
+  return { workspaceName, workingCopyId };
+}

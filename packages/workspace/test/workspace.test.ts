@@ -147,6 +147,96 @@ describe("Workspace", () => {
     if (Result.isOk(read)) expect(text(read.value)).toBe("draft");
   });
 
+  it("keeps working copies inside the current Artifacts repository", async () => {
+    const { workspace, artifacts, driver } = createWorkspace({ repo: { "/note.txt": bytes("current") } });
+
+    const created = await workspace.copies.create({ label: "agent-edit" });
+    if (Result.isError(created)) throw new Error("copy failed");
+    await created.value.files.write("/note.txt", bytes("draft"));
+    const apply = await created.value.apply();
+    const current = await workspace.files.read("/note.txt");
+
+    expect(Result.isOk(apply)).toBe(true);
+    expect(Result.isOk(current)).toBe(true);
+    if (Result.isOk(current)) expect(text(current.value)).toBe("draft");
+    expect(driver.hasRepository(created.value.id)).toBe(false);
+    expect(artifacts.deletedRepositories).toEqual([]);
+  });
+
+  it("preserves current files when a working copy adds files", async () => {
+    const { workspace } = createWorkspace({ repo: { "/README.md": bytes("readme") } });
+
+    const created = await workspace.copies.create({ label: "add-note" });
+    if (Result.isError(created)) throw new Error("copy failed");
+    await created.value.files.write("/notes/summary.md", bytes("summary"));
+    const apply = await created.value.apply();
+    const readme = await workspace.files.read("/README.md");
+    const note = await workspace.files.read("/notes/summary.md");
+
+    expect(Result.isOk(apply)).toBe(true);
+    expect(Result.isOk(readme)).toBe(true);
+    expect(Result.isOk(note)).toBe(true);
+    if (Result.isOk(readme)) expect(text(readme.value)).toBe("readme");
+    if (Result.isOk(note)) expect(text(note.value)).toBe("summary");
+  });
+
+  it("writes and applies working copies from empty repositories", async () => {
+    const { workspace } = createWorkspace({ repo: {} });
+
+    const created = await workspace.copies.create({ label: "empty-base-edit" });
+    if (Result.isError(created)) throw new Error("copy failed");
+    await created.value.files.write("/note.txt", bytes("draft"));
+    const draft = await created.value.files.read("/note.txt");
+    const apply = await created.value.apply();
+    const current = await workspace.files.read("/note.txt");
+
+    expect(Result.isOk(draft)).toBe(true);
+    if (Result.isOk(draft)) expect(text(draft.value)).toBe("draft");
+    expect(Result.isOk(apply)).toBe(true);
+    expect(Result.isOk(current)).toBe(true);
+    if (Result.isOk(current)) expect(text(current.value)).toBe("draft");
+  });
+
+  it("applies untouched working copies from empty repositories", async () => {
+    const { workspace, object } = createWorkspace({ repo: {} });
+
+    const created = await workspace.copies.create({ label: "empty-base-noop" });
+    if (Result.isError(created)) throw new Error("copy failed");
+    const apply = await created.value.apply();
+
+    expect(Result.isOk(apply)).toBe(true);
+    if (Result.isOk(apply)) expect(apply.value.revisionId).toBe("empty-repository");
+    await expect(object.repositoryAccess(created.value.id)).resolves.toBeUndefined();
+  });
+
+  it("discards working copy metadata when the hidden ref is already gone", async () => {
+    const { workspace, driver, object } = createWorkspace({ repo: {} });
+
+    const created = await workspace.copies.create({ label: "orphaned-ref" });
+    if (Result.isError(created)) throw new Error("copy failed");
+    driver.deleteWorkingCopyRef(created.value.id);
+    const discard = await created.value.discard();
+
+    expect(Result.isOk(discard)).toBe(true);
+    await expect(object.repositoryAccess(created.value.id)).resolves.toBeUndefined();
+  });
+
+  it("keeps untouched empty-base copies readable after current files change", async () => {
+    const { workspace } = createWorkspace({ repo: {} });
+    const copy = await workspace.copies.create({ label: "empty-base" });
+    if (Result.isError(copy)) throw new Error("copy failed");
+    await workspace.files.write("/README.md", bytes("current"));
+
+    const read = await copy.value.files.read("/README.md");
+    await copy.value.files.write("/draft.txt", bytes("draft"));
+    const apply = await copy.value.apply();
+
+    expect(Result.isError(read)).toBe(true);
+    if (Result.isError(read)) expect(read.error).toMatchObject({ tag: "PathNotFoundError" });
+    expect(Result.isError(apply)).toBe(true);
+    if (Result.isError(apply)) expect(apply.error).toMatchObject({ tag: "WorkspaceCopyStaleError" });
+  });
+
   it("writes async file trees into isolated copies before apply", async () => {
     const { workspace, driver } = createWorkspace({ repo: {} });
     const copy = await workspace.copies.create({ label: "import-tree" });
@@ -211,6 +301,23 @@ describe("Workspace", () => {
       expect(writeTree.error).toMatchObject({ tag: "IsDirectoryError", path: "/imports/README.md" });
     }
     expect(driver.writeBatches).toEqual([]);
+  });
+
+  it("validates writeTree paths against existing working copy files", async () => {
+    const { workspace, driver } = createWorkspace({ repo: {} });
+    const copy = await workspace.copies.create({ label: "conflicting-copy" });
+    if (Result.isError(copy)) throw new Error("copy failed");
+    await copy.value.files.write("/notes", bytes("file"));
+
+    const writeTree = await copy.value.files.writeTree("/", [
+      { path: "notes/edit.md", contents: bytes("nested") },
+    ]);
+
+    expect(Result.isError(writeTree)).toBe(true);
+    if (Result.isError(writeTree)) {
+      expect(writeTree.error).toMatchObject({ tag: "NotDirectoryError", path: "/notes" });
+    }
+    expect(driver.writeBatches).toHaveLength(1);
   });
 
   it("does not change current files when copy writeTree has an invalid relative path", async () => {
@@ -283,7 +390,7 @@ describe("Workspace", () => {
     expect(Result.isOk(other)).toBe(true);
     if (Result.isOk(note)) expect(text(note.value)).toBe("draft");
     if (Result.isOk(other)) expect(text(other.value)).toBe("other");
-    expect(artifacts.deletedRepositories).toEqual([copy.value.id]);
+    expect(artifacts.deletedRepositories).toEqual([]);
 
     const discardCopy = await workspace.copies.create({ label: "discard-note" });
     if (Result.isError(discardCopy)) throw new Error("copy failed");
@@ -296,6 +403,31 @@ describe("Workspace", () => {
     if (Result.isOk(current)) expect(text(current.value)).toBe("draft");
   });
 
+  it("rejects applying stale working copies", async () => {
+    const { workspace } = createWorkspace({ repo: { "/note.txt": bytes("current") } });
+    const first = await workspace.copies.create({ label: "first" });
+    const second = await workspace.copies.create({ label: "second" });
+    if (Result.isError(first)) throw new Error("copy failed");
+    if (Result.isError(second)) throw new Error("copy failed");
+
+    await first.value.files.write("/note.txt", bytes("first"));
+    await second.value.files.write("/note.txt", bytes("second"));
+    const firstApply = await first.value.apply();
+    const secondApply = await second.value.apply();
+    const current = await workspace.files.read("/note.txt");
+
+    expect(Result.isOk(firstApply)).toBe(true);
+    expect(Result.isError(secondApply)).toBe(true);
+    if (Result.isError(secondApply)) {
+      expect(secondApply.error).toMatchObject({
+        tag: "WorkspaceCopyStaleError",
+        copyId: second.value.id,
+      });
+    }
+    expect(Result.isOk(current)).toBe(true);
+    if (Result.isOk(current)) expect(text(current.value)).toBe("first");
+  });
+
   it("records working copy repository access in WorkspaceObject", async () => {
     const { workspace, object } = createWorkspace({ repo: { "/note.txt": bytes("current") } });
 
@@ -304,20 +436,18 @@ describe("Workspace", () => {
 
     await expect(object.repositoryAccess(copy.value.id)).resolves.toEqual({
       repository: copy.value.id,
-      remote: `https://git.example/${copy.value.id}.git`,
+      remote: "https://git.example/repo.git",
       defaultBranch: "main",
       baseRepository: "repo",
+      baseRevisionId: "revision-repo-0",
     });
   });
 
-  it("records working copy metadata when Artifacts fork omits default branch", async () => {
-    const { workspace, artifacts, driver, object } = createWorkspace({ repo: { "/note.txt": bytes("current") } });
+  it("records working copy metadata when Artifacts get omits default branch", async () => {
+    const { workspace, artifacts, object } = createWorkspace({ repo: { "/note.txt": bytes("current") } });
     artifacts.get = async () => ({
       name: "repo",
-      fork: async (name: string) => {
-        driver.forkRepository("repo", name);
-        return { name, remote: `https://git.example/${name}.git` };
-      },
+      remote: "https://git.example/repo.git",
     });
 
     const copy = await workspace.copies.create({ label: "metadata" });
@@ -325,9 +455,10 @@ describe("Workspace", () => {
 
     await expect(object.repositoryAccess(copy.value.id)).resolves.toEqual({
       repository: copy.value.id,
-      remote: `https://git.example/${copy.value.id}.git`,
+      remote: "https://git.example/repo.git",
       defaultBranch: "main",
       baseRepository: "repo",
+      baseRevisionId: "revision-repo-0",
     });
   });
 
@@ -418,3 +549,20 @@ class FakeMountHost {
     ];
   }
 }
+
+describe("Workspace bug check", () => {
+  it("allows writing to working copy created from empty base repo after base repo gets commits", async () => {
+    const { workspace } = createWorkspace({ repo: {} });
+
+    // Create working copy from empty base repo
+    const copy = await workspace.copies.create({ label: "test-copy" });
+    if (Result.isError(copy)) throw new Error("copy failed");
+
+    // Commit to base repo
+    await workspace.files.write("/base.txt", bytes("1"));
+
+    // Try to write to working copy
+    const writeResult = await copy.value.files.write("/copy.txt", bytes("2"));
+    expect(Result.isOk(writeResult)).toBe(true);
+  });
+});

@@ -92,15 +92,15 @@ long-term Sandbox filesystem implementation.
 
 The Sandbox adapter should move toward
 [`artifact-fs`](https://github.com/cloudflare/artifact-fs) over the
-Artifacts-backed working-copy repository.
+Artifacts-backed working-copy ref.
 
 Target flow:
 
 ```text
-Workspace working copy Artifacts repo
+Workspace working-copy ref
   -> artifact-fs FUSE mount at /workspace
   -> command runs against a normal Git working tree
-  -> adapter captures dirty worktree state into the working-copy repo
+  -> adapter captures dirty worktree state into the working-copy ref
   -> copy.apply() or copy.discard() remains a product decision
 ```
 
@@ -116,7 +116,7 @@ the container. The first version should keep that handler narrow: one working
 copy, one Artifacts Git host, HTTPS only, and no general egress policy system.
 
 Capture is not publication. A command may commit and push changes to the
-working-copy Artifacts repo; current files still do not change until trusted
+working-copy Artifacts ref; current files still do not change until trusted
 product code calls `copy.apply()`.
 
 ## Runtime-local state

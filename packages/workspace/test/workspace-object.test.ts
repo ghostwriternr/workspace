@@ -31,15 +31,17 @@ describe("WorkspaceObject", () => {
     await object.recordCopy({
       copyId: "copy-repo-copy-1",
       baseRepository: "copy-repo",
-      remote: "https://git.example/copy-repo-copy-1.git",
+      remote: "https://git.example/copy-repo.git",
       defaultBranch: "main",
+      baseRevisionId: "revision-copy-repo-0",
     });
 
     await expect(object.repositoryAccess("copy-repo-copy-1")).resolves.toEqual({
       repository: "copy-repo-copy-1",
-      remote: "https://git.example/copy-repo-copy-1.git",
+      remote: "https://git.example/copy-repo.git",
       defaultBranch: "main",
       baseRepository: "copy-repo",
+      baseRevisionId: "revision-copy-repo-0",
     });
 
     await object.deleteCopy("copy-repo-copy-1");

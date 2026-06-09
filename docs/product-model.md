@@ -35,7 +35,7 @@ current files -> working copy -> runtime work -> apply or discard
 
 ## Artifacts is the file authority
 
-Artifacts owns durable versioned file state: file trees, commits, forks, bytes,
+Artifacts owns durable versioned file state: file trees, commits, refs, bytes,
 and Git-compatible repository mechanics. Workspace does not try to recreate
 that storage layer.
 

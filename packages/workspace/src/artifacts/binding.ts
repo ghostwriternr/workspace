@@ -14,5 +14,4 @@ export type ArtifactsBindingClient = {
 
 export type ArtifactsRepoClient = {
   name: string;
-  fork(name: string, opts?: { description?: string; readOnly?: boolean; defaultBranchOnly?: boolean }): Promise<ArtifactsRepositoryResult>;
 };

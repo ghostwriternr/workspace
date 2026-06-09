@@ -17,7 +17,7 @@ Coordination
   WorkspaceObject Durable Object, one object per Workspace name
 
 File authority
-  Artifacts repositories, commits, forks, and tokens
+  Artifacts repositories, commits, refs, and tokens
 ```
 
 Artifacts is the durable/versioned file authority. WorkspaceObject coordinates
@@ -76,18 +76,18 @@ Tokens are minted on demand from Artifacts.
 
 ## Artifacts authority
 
-Artifacts owns file trees, commits, forks, repository lifecycle, and Git
-remotes. Workspace should lean on those capabilities rather than rebuilding a
-custom file store.
+Artifacts owns file trees, commits, refs, repository lifecycle, and Git remotes.
+Workspace should lean on those capabilities rather than rebuilding a custom file
+store.
 
 The Artifacts authority currently maps Workspace semantics as follows:
 
 | Workspace concept | Current Artifacts implementation |
 | ----------------- | -------------------------------- |
 | Current files     | Artifacts repository/ref          |
-| Working copy      | Artifacts fork                    |
-| Discard           | Delete the fork                   |
-| Apply             | Publish the fork state to current |
+| Working copy      | Hidden Artifacts Git ref          |
+| Discard           | Delete the hidden ref             |
+| Apply             | Promote the hidden ref to current |
 | Revision          | Artifacts commit/history          |
 
 The exact mechanics can change as Artifacts grows direct file APIs. The product
@@ -105,8 +105,9 @@ examples, agent prompts, or runtime adapters. It should be removed when
 Artifacts exposes first-class file write/commit/apply primitives.
 
 The driver can be memory-heavy for large repositories because writes and apply
-paths may require enough Git objects to push successfully. That is an
-implementation limitation, not a Workspace product promise.
+paths may require enough Git objects to push successfully. Hidden refs keep
+working copies cheaper than Artifacts repository forks, but the temporary Git
+bridge is still not the desired long-term file mutation primitive.
 
 ## Runtime adapters
 

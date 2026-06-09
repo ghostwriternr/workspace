@@ -59,7 +59,6 @@ describe("PhotoDraftController", () => {
         unchanged: 1,
       },
     });
-    expect(dependencies.driver.forks).toHaveLength(1);
     expect(dependencies.driver.file(dependencies.draftEditId!, "/photos/current")).toEqual(draftPng);
     expect(dependencies.commandRunner.calls).toEqual([
       {
@@ -83,7 +82,6 @@ describe("PhotoDraftController", () => {
       command: "convert /workspace/photos/current -resize 512x512^ /workspace/photos/current",
     });
 
-    expect(dependencies.driver.forks).toHaveLength(0);
     expect(dependencies.commandRunner.calls).toEqual([
       {
         command: "convert /workspace/photos/current -resize 512x512^ /workspace/photos/current",
@@ -111,7 +109,6 @@ describe("PhotoDraftController", () => {
       summary: "Dynamic Worker finished.",
       result: { wrote: "/notes/edit-summary.md" },
     });
-    expect(dependencies.driver.forks).toHaveLength(0);
     expect(dependencies.dynamicWorkerRunner.calls).toEqual([
       {
         code: "export default async function(env) { const write = await env.WORKSPACE.writeFile('/notes/edit-summary.md', new TextEncoder().encode('cropped square')); if (write.status === 'error') return write; }",
@@ -223,12 +220,10 @@ type TestDependencies = ConstructorParameters<typeof PhotoDraftController>[0] & 
 };
 
 function createDependencies(options: CreateDependenciesOptions): TestDependencies {
-  const repositories: Record<string, Record<string, Uint8Array>> = { demo: options.head };
+  const { artifacts, driver, object } = createFakeArtifactsWorkspace({ demo: options.head });
   if (options.draftEditId) {
-    repositories[options.draftEditId] = options.copy ?? {};
+    driver.seedWorkingCopy("demo", options.draftEditId, options.copy ?? {});
   }
-
-  const { artifacts, driver, object } = createFakeArtifactsWorkspace(repositories);
   void object.recordCurrentRepository({
     repository: "demo",
     remote: "https://git.example/demo.git",
@@ -238,8 +233,9 @@ function createDependencies(options: CreateDependenciesOptions): TestDependencie
     void object.recordCopy({
       copyId: options.draftEditId,
       baseRepository: "demo",
-      remote: `https://git.example/${options.draftEditId}.git`,
+      remote: "https://git.example/demo.git",
       defaultBranch: "main",
+      baseRevisionId: "revision-demo-0",
     });
   }
   const workspace = Workspace.bind({ artifacts, objects: { getByName: () => object } }).get("demo");

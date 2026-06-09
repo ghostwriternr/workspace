@@ -24,7 +24,7 @@ surface.
 Source adapter         Workspace                 Artifacts
 -------------          ---------                 ---------
 resolve source  --->   work-surface API   --->   durable/versioned files
-export result   <---   working-copy state <---   commits/forks/refs
+export result   <---   working-copy state <---   commits/refs
 ```
 
 ## What a source adapter does
@@ -111,7 +111,7 @@ but it should not push Workspace toward managing path-level overlay entries,
 tombstones, or fallback reads itself.
 
 While Artifacts is the durable file authority, Workspace should lean on
-Artifacts repositories, forks, commits, and future direct file APIs. If a future
+Artifacts repositories, commits, refs, and future direct file APIs. If a future
 lazy source-view feature is needed, it should be designed around Artifacts and
 source-adapter capabilities, not by rebuilding Git/tree semantics inside
 WorkspaceObject.

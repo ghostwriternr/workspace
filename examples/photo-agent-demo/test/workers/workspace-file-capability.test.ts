@@ -1,3 +1,4 @@
+import { env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it } from "vitest";
 import { FakeArtifactsWorkspaceDriver, resetFakeArtifactsWorkspace } from "../fake-artifacts-workspace";
@@ -10,11 +11,22 @@ describe("WorkspaceFileCapability", () => {
   it("adapts an Artifacts-backed photo draft into a scoped WorkerEntrypoint binding", async () => {
     const workspaceName = `photo-workspace-file-capability-${crypto.randomUUID()}`;
     const draftEditId = `${workspaceName}-copy`;
-    new FakeArtifactsWorkspaceDriver({
-      [draftEditId]: {
-        "/photos/current": photoBytes,
-      },
-    }).install();
+    new FakeArtifactsWorkspaceDriver({ [workspaceName]: {} })
+      .install()
+      .seedWorkingCopy(workspaceName, draftEditId, { "/photos/current": photoBytes });
+    const object = env.WORKSPACE_OBJECTS.getByName(workspaceName);
+    await object.recordCurrentRepository({
+      repository: workspaceName,
+      remote: `https://git.example/${workspaceName}.git`,
+      defaultBranch: "main",
+    });
+    await object.recordCopy({
+      copyId: draftEditId,
+      baseRepository: workspaceName,
+      remote: `https://git.example/${workspaceName}.git`,
+      defaultBranch: "main",
+      baseRevisionId: `revision-${workspaceName}-0`,
+    });
 
     const capability = exports.WorkspaceFileCapability({
       props: { workspaceName, draftEditId },

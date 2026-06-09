@@ -21,15 +21,6 @@ successfully. Large repositories can be slow or memory-heavy.
 This is an implementation limitation of the temporary Git bridge, not a
 Workspace API promise.
 
-## Apply conflict semantics need hardening
-
-A working copy should record the current/base revision it was created from.
-`apply()` should fail with a stale-base/conflict error if current files changed
-before the copy is applied.
-
-The current Artifacts-backed apply path still needs this default safety before
-Workspace is suitable for concurrent product use.
-
 ## Empty directories are not durable entries
 
 Artifacts/Git does not preserve empty directories. Workspace can infer
@@ -84,8 +75,9 @@ Workspace trees.
 
 ## No working-copy cleanup
 
-Working copies left open indefinitely remain as Artifacts forks. Callers must
-explicitly apply or discard them; there is no sweep, TTL, or orphan recovery.
+Working copies left open indefinitely remain as hidden Artifacts refs. Callers
+must explicitly apply or discard them; there is no sweep, TTL, or orphan
+recovery.
 
 ## No revision retention policy
 
