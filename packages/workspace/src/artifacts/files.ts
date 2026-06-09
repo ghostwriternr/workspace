@@ -1,11 +1,5 @@
 import { Result, type Result as BetterResult } from "better-result";
 import {
-  DirectoryNotEmptyError,
-  InvalidPathError,
-  IsDirectoryError,
-  NotDirectoryError,
-  PathAlreadyExistsError,
-  PathNotFoundError,
   WorkspaceCopyNotFoundError,
   type ErrorDtoFor,
   type WorkspaceCopyFileError as WorkspaceCopyFileDomainError,
@@ -21,7 +15,6 @@ import type { WorkspaceTreeEntry } from "../model/write-tree";
 import {
   parseRelativeWorkspacePath,
   parseWorkspacePath,
-  parentPath,
   workspacePathFromSegments,
 } from "../model/path";
 import type { WorkspaceAuthorityFiles } from "../authority";
@@ -31,7 +24,17 @@ import {
   workingCopyFileTarget,
   type ArtifactsFileTarget,
 } from "./file-target";
-import { isArtifactsNotFound, isMissingWorkingCopyRef } from "./errors";
+import { isMissingWorkingCopyRef } from "./errors";
+import {
+  deleteFromTarget,
+  dtoToResult,
+  listTarget,
+  mkdirInFileTarget,
+  readFileFromTarget,
+  statTarget,
+  validateWriteTreeFileInTarget,
+  writeFileInTarget,
+} from "./file-operations";
 
 export type ArtifactsCurrentFileError = ErrorDtoFor<
   | WorkspaceMkdirError
@@ -253,200 +256,12 @@ class ArtifactsCopyFiles implements WorkspaceAuthorityFiles<ArtifactsCopyFileErr
   }
 }
 
-async function readFileFromTarget(target: ArtifactsFileTarget, path: string) {
-  const parsed = parseWorkspacePath(path, { allowRoot: false });
-  if (Result.isError(parsed)) {
-    return toWorkspaceErrorDto(parsed.error);
-  }
-
-  const stat = await statOrMissing(target, path);
-  if (!stat) {
-    return toWorkspaceErrorDto(new PathNotFoundError({ path }));
-  }
-  if (stat.type === "directory") {
-    return toWorkspaceErrorDto(new IsDirectoryError({ path }));
-  }
-
-  const contents = await target.readFile(path);
-  if (!contents) {
-    return toWorkspaceErrorDto(new PathNotFoundError({ path }));
-  }
-  return { status: "ok", value: contents } as const;
-}
-
-async function listTarget(target: ArtifactsFileTarget, path: string) {
-  const parsed = parseWorkspacePath(path, { allowRoot: true });
-  if (Result.isError(parsed)) {
-    return toWorkspaceErrorDto(parsed.error);
-  }
-
-  const stat = await statOrMissing(target, path);
-  if (!stat) {
-    return toWorkspaceErrorDto(new PathNotFoundError({ path }));
-  }
-  if (stat.type !== "directory") {
-    return toWorkspaceErrorDto(new NotDirectoryError({ path }));
-  }
-
-  return { status: "ok", value: await target.list(path) } as const;
-}
-
-async function statTarget(target: ArtifactsFileTarget, path: string) {
-  const parsed = parseWorkspacePath(path, { allowRoot: true });
-  if (Result.isError(parsed)) {
-    return toWorkspaceErrorDto(parsed.error);
-  }
-
-  const stat = await statOrMissing(target, path);
-  if (!stat) {
-    return toWorkspaceErrorDto(new PathNotFoundError({ path }));
-  }
-  return { status: "ok", value: stat } as const;
-}
-
-async function mkdirInFileTarget(target: ArtifactsFileTarget, path: string) {
-  const parsed = parseWorkspacePath(path, { allowRoot: false });
-  if (Result.isError(parsed)) {
-    return toWorkspaceErrorDto(parsed.error);
-  }
-
-  const existing = await statOrMissing(target, path);
-  if (existing) {
-    return toWorkspaceErrorDto(new PathAlreadyExistsError({ path }));
-  }
-
-  const parent = await statOrMissing(target, parentPath(path));
-  if (!parent) {
-    return toWorkspaceErrorDto(
-      new PathNotFoundError({ path: parentPath(path) }),
-    );
-  }
-  if (parent.type !== "directory") {
-    return toWorkspaceErrorDto(
-      new NotDirectoryError({ path: parentPath(path) }),
-    );
-  }
-
-  return { status: "ok" } as const;
-}
-
-async function writeFileInTarget(
-  target: ArtifactsFileTarget,
-  path: string,
-  contents: Uint8Array,
-) {
-  const parsed = parseWorkspacePath(path, { allowRoot: false });
-  if (Result.isError(parsed)) {
-    return toWorkspaceErrorDto(parsed.error);
-  }
-
-  const existing = await statOrMissing(target, path);
-  if (existing?.type === "directory") {
-    return toWorkspaceErrorDto(new IsDirectoryError({ path }));
-  }
-
-  const parent = await statOrMissing(target, parentPath(path));
-  if (parent && parent.type !== "directory") {
-    return toWorkspaceErrorDto(
-      new NotDirectoryError({ path: parentPath(path) }),
-    );
-  }
-
-  try {
-    await target.writeFile(path, contents);
-  } catch (error) {
-    if (isArtifactsNotFound(error)) {
-      return toWorkspaceErrorDto(new PathNotFoundError({ path }));
-    }
-    throw error;
-  }
-  return { status: "ok" } as const;
-}
-
-async function validateWriteTreeFileInTarget(
-  target: ArtifactsFileTarget,
-  path: string,
-  ancestors: string[],
-  files: ReadonlyMap<string, Uint8Array>,
-  directories: ReadonlySet<string>,
-) {
-  const parsed = parseWorkspacePath(path, { allowRoot: false });
-  if (Result.isError(parsed)) {
-    return toWorkspaceErrorDto(parsed.error);
-  }
-
-  if (directories.has(path)) {
-    return toWorkspaceErrorDto(new IsDirectoryError({ path }));
-  }
-
-  const existing = await statOrMissing(target, path);
-  if (existing?.type === "directory") {
-    return toWorkspaceErrorDto(new IsDirectoryError({ path }));
-  }
-
-  for (const ancestor of ancestors) {
-    if (files.has(ancestor)) {
-      return toWorkspaceErrorDto(new NotDirectoryError({ path: ancestor }));
-    }
-
-    const parent = await statOrMissing(target, ancestor);
-    if (parent?.type === "file") {
-      return toWorkspaceErrorDto(new NotDirectoryError({ path: ancestor }));
-    }
-  }
-
-  return { status: "ok" } as const;
-}
-
 function ancestorPaths(segments: string[]): string[] {
   const ancestors: string[] = [];
   for (let length = 1; length < segments.length; length += 1) {
     ancestors.push(workspacePathFromSegments(segments.slice(0, length)));
   }
   return ancestors;
-}
-
-async function deleteFromTarget(target: ArtifactsFileTarget, path: string) {
-  const parsed = parseWorkspacePath(path, { allowRoot: false });
-  if (Result.isError(parsed)) {
-    return toWorkspaceErrorDto(parsed.error);
-  }
-
-  const stat = await statOrMissing(target, path);
-  if (!stat) {
-    return toWorkspaceErrorDto(new PathNotFoundError({ path }));
-  }
-  if (stat.type === "directory") {
-    const entries = await target.list(path);
-    if (entries.length > 0) {
-      return toWorkspaceErrorDto(new DirectoryNotEmptyError({ path }));
-    }
-    return { status: "ok" } as const;
-  }
-
-  try {
-    await target.deleteFile(path);
-  } catch (error) {
-    if (isArtifactsNotFound(error)) {
-      return toWorkspaceErrorDto(new PathNotFoundError({ path }));
-    }
-    throw error;
-  }
-  return { status: "ok" } as const;
-}
-
-async function statOrMissing(
-  target: ArtifactsFileTarget,
-  path: string,
-): Promise<WorkspaceStat | null> {
-  try {
-    return await target.stat(path);
-  } catch (error) {
-    if (isArtifactsNotFound(error)) {
-      return null;
-    }
-    throw error;
-  }
 }
 
 function widenFileResult<T>(
@@ -457,18 +272,6 @@ function widenFileResult<T>(
   }
 
   return Result.ok(result.value);
-}
-
-type DtoResult<T, E> =
-  | { status: "ok"; value?: T }
-  | { status: "error"; error: E };
-
-function dtoToResult<T, E>(result: DtoResult<T, E>): BetterResult<T, E> {
-  if (result.status === "error") {
-    return Result.err(result.error);
-  }
-
-  return Result.ok(result.value as T);
 }
 
 export function copyNotFoundFileError(copyId: string): ArtifactsCopyFileError {
