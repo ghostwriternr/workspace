@@ -12,12 +12,11 @@ describe("WorkspaceObject", () => {
       defaultBranch: "main",
     });
 
-    await expect(object.repositoryAccess("repo")).resolves.toEqual({
+    await expect(object.currentRepository()).resolves.toEqual({
       repository: "repo",
       remote: "https://git.example/repo.git",
       defaultBranch: "main",
     });
-    await expect(object.repositoryAccess("missing")).resolves.toBeUndefined();
   });
 
   it("stores and clears working copy repository access metadata", async () => {
@@ -30,21 +29,25 @@ describe("WorkspaceObject", () => {
     });
     await object.recordCopy({
       copyId: "copy-repo-copy-1",
+      label: "copy label",
+      createdAt: 100,
       baseRepository: "copy-repo",
       remote: "https://git.example/copy-repo.git",
       defaultBranch: "main",
       baseRevisionId: "revision-copy-repo-0",
     });
 
-    await expect(object.repositoryAccess("copy-repo-copy-1")).resolves.toEqual({
-      repository: "copy-repo-copy-1",
+    await expect(object.copy("copy-repo-copy-1")).resolves.toEqual({
+      copyId: "copy-repo-copy-1",
+      label: "copy label",
+      createdAt: 100,
+      baseRepository: "copy-repo",
       remote: "https://git.example/copy-repo.git",
       defaultBranch: "main",
-      baseRepository: "copy-repo",
       baseRevisionId: "revision-copy-repo-0",
     });
 
     await object.deleteCopy("copy-repo-copy-1");
-    await expect(object.repositoryAccess("copy-repo-copy-1")).resolves.toBeUndefined();
+    await expect(object.copy("copy-repo-copy-1")).resolves.toBeUndefined();
   });
 });

@@ -7,10 +7,9 @@ import {
 import type { ArtifactsBindingClient, ArtifactsRepoClient } from "../src/artifacts/binding";
 import type { WorkspaceRevision } from "../src/model/entries";
 import type {
-  WorkspaceCopyRepositoryRecord,
+  WorkspaceCopyRecord,
   WorkspaceCurrentRepositoryRecord,
   WorkspaceObjectClient,
-  WorkspaceRepositoryAccess,
 } from "../src/workspace-object";
 
 export type Tree = Record<string, Uint8Array>;
@@ -34,28 +33,28 @@ export function resetFakeArtifacts(): void {
 }
 
 export class FakeWorkspaceObject implements WorkspaceObjectClient {
-  private readonly accessByRepository = new Map<string, WorkspaceRepositoryAccess>();
+  private current?: WorkspaceCurrentRepositoryRecord;
+  private readonly copies = new Map<string, WorkspaceCopyRecord>();
 
   async recordCurrentRepository(record: WorkspaceCurrentRepositoryRecord): Promise<void> {
-    this.accessByRepository.set(record.repository, { ...record });
+    this.current = { ...record };
   }
 
-  async recordCopy(record: WorkspaceCopyRepositoryRecord): Promise<void> {
-    this.accessByRepository.set(record.copyId, {
-      repository: record.copyId,
-      remote: record.remote,
-      defaultBranch: record.defaultBranch,
-      baseRepository: record.baseRepository,
-      ...(record.baseRevisionId ? { baseRevisionId: record.baseRevisionId } : {}),
-    });
+  async currentRepository(): Promise<WorkspaceCurrentRepositoryRecord | undefined> {
+    return this.current ? { ...this.current } : undefined;
   }
 
-  async repositoryAccess(repository: string): Promise<WorkspaceRepositoryAccess | undefined> {
-    return this.accessByRepository.get(repository);
+  async recordCopy(record: WorkspaceCopyRecord): Promise<void> {
+    this.copies.set(record.copyId, { ...record });
+  }
+
+  async copy(copyId: string): Promise<WorkspaceCopyRecord | undefined> {
+    const copy = this.copies.get(copyId);
+    return copy ? { ...copy } : undefined;
   }
 
   async deleteCopy(copyId: string): Promise<void> {
-    this.accessByRepository.delete(copyId);
+    this.copies.delete(copyId);
   }
 }
 

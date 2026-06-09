@@ -3,8 +3,10 @@ import http from "isomorphic-git/http/web";
 import { Volume, createFsFromVolume } from "memfs";
 import type { WorkspaceEntry, WorkspaceRevision, WorkspaceStat } from "../model/entries";
 import type { WorkspaceObjectClient } from "../workspace-object";
-import type { ArtifactsWorkspaceDriver, ArtifactsWorkspaceFileWrite } from "./authority";
+import type { ArtifactsWorkspaceDriver } from "./driver";
+import type { ArtifactsWorkspaceFileWrite } from "./file-target";
 import type { ArtifactsBindingClient, ArtifactsRepoClient } from "./binding";
+import { ArtifactsWorkingCopyRefNotFoundError } from "./errors";
 
 const textEncoder = new TextEncoder();
 const EMPTY_REPOSITORY_REVISION_ID = "empty-repository";
@@ -254,8 +256,8 @@ class IsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver 
   }
 
   private async cloneWorkingCopy(baseRepository: string, copyId: string, scope: "read" | "write"): Promise<Checkout> {
-    const copyAccess = await this.workspaceObject.repositoryAccess(copyId);
-    const emptyBaseCopy = copyAccess?.baseRevisionId === undefined;
+    const copy = await this.workspaceObject.copy(copyId);
+    const emptyBaseCopy = copy?.baseRevisionId === undefined;
     const access = await this.repoAccess(baseRepository, scope);
     const fs = createFsFromVolume(new Volume());
     const dir = "/repo";
@@ -280,13 +282,13 @@ class IsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver 
       if (emptyBaseCopy) {
         return { fs, dir, branch, remoteRef, access };
       }
-      throw error;
+      throw new ArtifactsWorkingCopyRefNotFoundError(remoteRef, { cause: error });
     }
     if (!fetched.fetchHead) {
       if (emptyBaseCopy) {
         return { fs, dir, branch, remoteRef, access };
       }
-      throw new Error(`Could not fetch Workspace working copy ref: ${remoteRef}`);
+      throw new ArtifactsWorkingCopyRefNotFoundError(remoteRef);
     }
     await git.branch({ fs, dir, ref: branch, object: fetched.fetchHead, checkout: true, force: true });
     await git.checkout({ fs, dir, ref: branch, force: true });
@@ -307,7 +309,8 @@ class IsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver 
 
   private async repoAccess(repository: string, scope: "read" | "write"): Promise<RepoAccess> {
     const repo = await this.artifacts.get(repository);
-    const recorded = await this.workspaceObject.repositoryAccess(repository);
+    const current = await this.workspaceObject.currentRepository();
+    const recorded = current?.repository === repository ? current : undefined;
     const remote = recorded?.remote ?? repoStringField(repo, "remote");
     const defaultBranch = recorded?.defaultBranch ?? repoStringField(repo, "defaultBranch");
     const name = repoStringField(repo, "name") ?? recorded?.repository ?? repository;

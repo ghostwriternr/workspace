@@ -1,5 +1,5 @@
 import { Result } from "better-result";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Workspace } from "../src";
 import { createFakeArtifacts, FakeArtifactsBinding, FakeArtifactsWorkspaceDriver, resetFakeArtifacts } from "./fake-artifacts";
 
@@ -39,7 +39,10 @@ function closeableFailingAsyncEntries() {
 }
 
 describe("Workspace", () => {
-  afterEach(() => resetFakeArtifacts());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    resetFakeArtifacts();
+  });
 
   it("constructs with the default internal Git driver", () => {
     const artifacts = new FakeArtifactsBinding(new FakeArtifactsWorkspaceDriver({}));
@@ -82,7 +85,7 @@ describe("Workspace", () => {
     });
 
     expect(Result.isOk(adopted)).toBe(true);
-    await expect(object.repositoryAccess("repo")).resolves.toEqual({
+    await expect(object.currentRepository()).resolves.toEqual({
       repository: "repo",
       remote: "https://git.example/repo.git",
       defaultBranch: "trunk",
@@ -110,16 +113,40 @@ describe("Workspace", () => {
   it("returns Result errors when the Artifacts repository is missing", async () => {
     const { workspace } = createWorkspace({});
 
+    const copy = await workspace.copies.create({ label: "missing" });
     const read = await workspace.files.read("/missing.txt");
     const list = await workspace.files.list("/");
     const stat = await workspace.files.stat("/");
+    const mkdir = await workspace.files.mkdir("/notes");
+    const write = await workspace.files.write("/missing.txt", bytes("missing"));
+    const deleted = await workspace.files.delete("/missing.txt");
 
+    expect(Result.isError(copy)).toBe(true);
     expect(Result.isError(read)).toBe(true);
     expect(Result.isError(list)).toBe(true);
     expect(Result.isError(stat)).toBe(true);
+    expect(Result.isError(mkdir)).toBe(true);
+    expect(Result.isError(write)).toBe(true);
+    expect(Result.isError(deleted)).toBe(true);
+    if (Result.isError(copy)) expect(copy.error).toMatchObject({ tag: "WorkspaceCopyNotFoundError" });
     if (Result.isError(read)) expect(read.error).toMatchObject({ tag: "PathNotFoundError" });
     if (Result.isError(list)) expect(list.error).toMatchObject({ tag: "PathNotFoundError" });
     if (Result.isError(stat)) expect(stat.error).toMatchObject({ tag: "PathNotFoundError" });
+    if (Result.isError(mkdir)) expect(mkdir.error).toMatchObject({ tag: "PathNotFoundError" });
+    if (Result.isError(write)) expect(write.error).toMatchObject({ tag: "PathNotFoundError" });
+    if (Result.isError(deleted)) expect(deleted.error).toMatchObject({ tag: "PathNotFoundError" });
+  });
+
+  it("does not hide unexpected Artifacts failures as missing copies", async () => {
+    const { workspace, artifacts } = createWorkspace({ repo: { "/README.md": bytes("hello") } });
+    artifacts.get = async () => {
+      throw Object.assign(new Error("Artifacts unavailable"), {
+        name: "ArtifactsError",
+        code: "INTERNAL_ERROR",
+      });
+    };
+
+    await expect(workspace.copies.create({ label: "agent-edit" })).rejects.toThrow("Artifacts unavailable");
   });
 
   it("works with current files through Result values", async () => {
@@ -135,6 +162,7 @@ describe("Workspace", () => {
 
   it("creates and recovers working copies from the copies API", async () => {
     const { workspace } = createWorkspace({ repo: { "/note.txt": bytes("current") } });
+    vi.spyOn(Date, "now").mockReturnValueOnce(100).mockReturnValueOnce(200);
 
     const created = await workspace.copies.create({ label: "agent-edit" });
     if (Result.isError(created)) throw new Error("copy failed");
@@ -143,6 +171,9 @@ describe("Workspace", () => {
     if (Result.isError(recovered)) throw new Error("recover failed");
     const read = await recovered.value.files.read("/note.txt");
 
+    expect(created.value.label).toBe("agent-edit");
+    expect(recovered.value.label).toBe("agent-edit");
+    expect(recovered.value.createdAt).toBe(created.value.createdAt);
     expect(Result.isOk(read)).toBe(true);
     if (Result.isOk(read)) expect(text(read.value)).toBe("draft");
   });
@@ -206,7 +237,7 @@ describe("Workspace", () => {
 
     expect(Result.isOk(apply)).toBe(true);
     if (Result.isOk(apply)) expect(apply.value.revisionId).toBe("empty-repository");
-    await expect(object.repositoryAccess(created.value.id)).resolves.toBeUndefined();
+    await expect(object.copy(created.value.id)).resolves.toBeUndefined();
   });
 
   it("discards working copy metadata when the hidden ref is already gone", async () => {
@@ -218,7 +249,24 @@ describe("Workspace", () => {
     const discard = await created.value.discard();
 
     expect(Result.isOk(discard)).toBe(true);
-    await expect(object.repositoryAccess(created.value.id)).resolves.toBeUndefined();
+    await expect(object.copy(created.value.id)).resolves.toBeUndefined();
+  });
+
+  it("returns copy errors when hidden working copy refs disappear", async () => {
+    const { workspace, driver } = createWorkspace({ repo: { "/note.txt": bytes("current") } });
+
+    const created = await workspace.copies.create({ label: "orphaned-ref" });
+    if (Result.isError(created)) throw new Error("copy failed");
+    driver.deleteWorkingCopyRef(created.value.id);
+    const read = await created.value.files.read("/note.txt");
+
+    expect(Result.isError(read)).toBe(true);
+    if (Result.isError(read)) {
+      expect(read.error).toMatchObject({
+        tag: "WorkspaceCopyNotFoundError",
+        copyId: created.value.id,
+      });
+    }
   });
 
   it("keeps untouched empty-base copies readable after current files change", async () => {
@@ -434,11 +482,13 @@ describe("Workspace", () => {
     const copy = await workspace.copies.create({ label: "metadata" });
     if (Result.isError(copy)) throw new Error("copy failed");
 
-    await expect(object.repositoryAccess(copy.value.id)).resolves.toEqual({
-      repository: copy.value.id,
+    await expect(object.copy(copy.value.id)).resolves.toEqual({
+      copyId: copy.value.id,
+      label: "metadata",
+      createdAt: copy.value.createdAt,
+      baseRepository: "repo",
       remote: "https://git.example/repo.git",
       defaultBranch: "main",
-      baseRepository: "repo",
       baseRevisionId: "revision-repo-0",
     });
   });
@@ -453,11 +503,13 @@ describe("Workspace", () => {
     const copy = await workspace.copies.create({ label: "metadata" });
     if (Result.isError(copy)) throw new Error("copy failed");
 
-    await expect(object.repositoryAccess(copy.value.id)).resolves.toEqual({
-      repository: copy.value.id,
+    await expect(object.copy(copy.value.id)).resolves.toEqual({
+      copyId: copy.value.id,
+      label: "metadata",
+      createdAt: copy.value.createdAt,
+      baseRepository: "repo",
       remote: "https://git.example/repo.git",
       defaultBranch: "main",
-      baseRepository: "repo",
       baseRevisionId: "revision-repo-0",
     });
   });

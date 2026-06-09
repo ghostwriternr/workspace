@@ -77,7 +77,7 @@ describe("photo upload HTTP route", () => {
     );
 
     expect(response?.status).toBe(201);
-    await expect(object.repositoryAccess("demo")).resolves.toEqual({
+    await expect(object.currentRepository()).resolves.toEqual({
       repository: "demo",
       remote: "https://git.example/demo.git",
       defaultBranch: "main",

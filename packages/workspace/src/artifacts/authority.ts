@@ -1,38 +1,16 @@
 import { Result, type Result as BetterResult } from "better-result";
-import {
-  DirectoryNotEmptyError,
-  InvalidPathError,
-  IsDirectoryError,
-  NotDirectoryError,
-  PathAlreadyExistsError,
-  PathNotFoundError,
-  WorkspaceCopyNotFoundError,
-  WorkspaceCopyStaleError,
-  type ErrorDtoFor,
-  type WorkspaceApplyError as WorkspaceApplyDomainError,
-  type WorkspaceCopyError as WorkspaceCopyDomainError,
-  type WorkspaceCopyFileError as WorkspaceCopyFileDomainError,
-  type WorkspaceDeleteError,
-  type WorkspaceDiscardError as WorkspaceDiscardDomainError,
-  type WorkspaceListError,
-  type WorkspaceMkdirError,
-  type WorkspaceReadError,
-  type WorkspaceStatError,
-  type WorkspaceWriteError,
+import type {
+  ErrorDtoFor,
+  WorkspaceApplyError as WorkspaceApplyDomainError,
+  WorkspaceCopyError as WorkspaceCopyDomainError,
+  WorkspaceDiscardError as WorkspaceDiscardDomainError,
 } from "../model/errors";
 import {
-  parseRelativeWorkspacePath,
-  parseWorkspacePath,
-  parentPath,
-  workspacePathFromSegments,
-} from "../model/path";
-import type {
-  WorkspaceEntry,
-  WorkspaceRevision,
-  WorkspaceStat,
-} from "../model/entries";
+  WorkspaceCopyNotFoundError,
+  WorkspaceCopyStaleError,
+} from "../model/errors";
+import type { WorkspaceRevision } from "../model/entries";
 import { toWorkspaceErrorDto } from "../projections/dto";
-import type { WorkspaceTreeEntry } from "../model/write-tree";
 import type {
   WorkspaceAuthority,
   WorkspaceAuthorityCopy,
@@ -40,65 +18,29 @@ import type {
 } from "../authority";
 import type { WorkspaceObjectClient } from "../workspace-object";
 import type { ArtifactsBindingClient } from "./binding";
+import {
+  createLazyIsomorphicGitArtifactsWorkspaceDriver,
+  type ArtifactsWorkspaceDriver,
+  type ArtifactsWorkspaceDriverFactory,
+} from "./driver";
+import {
+  createArtifactsCopyFiles,
+  createArtifactsCurrentFiles,
+  copyNotFoundFileError,
+  type ArtifactsCopyFileError,
+  type ArtifactsCurrentFileError,
+} from "./files";
+import { currentFileTarget } from "./file-target";
+import { isArtifactsNotFound, isGitPushRejected, isMissingWorkingCopyRef } from "./errors";
+
 export type { ArtifactsBindingClient, ArtifactsRepoClient } from "./binding";
+export type { ArtifactsWorkspaceDriver, ArtifactsWorkspaceDriverFactory } from "./driver";
+export type { ArtifactsWorkspaceFileWrite } from "./file-target";
 
-export type ArtifactsWorkspaceFileWrite = {
-  path: string;
-  contents: Uint8Array;
-};
-
-export type ArtifactsWorkspaceDriver = {
-  repositoryExists(repository: string): Promise<boolean>;
-  readFile(repository: string, path: string): Promise<Uint8Array | null>;
-  list(repository: string, path: string): Promise<WorkspaceEntry[]>;
-  stat(repository: string, path: string): Promise<WorkspaceStat | null>;
-  writeFile(
-    repository: string,
-    path: string,
-    contents: Uint8Array,
-  ): Promise<void>;
-  writeFiles(
-    repository: string,
-    files: ArtifactsWorkspaceFileWrite[],
-  ): Promise<void>;
-  deleteFile(repository: string, path: string): Promise<void>;
-  currentRevision(repository: string): Promise<string | undefined>;
-  createWorkingCopy(baseRepository: string, copyId: string): Promise<string | undefined>;
-  readWorkingCopyFile(baseRepository: string, copyId: string, path: string): Promise<Uint8Array | null>;
-  listWorkingCopy(baseRepository: string, copyId: string, path: string): Promise<WorkspaceEntry[]>;
-  statWorkingCopy(baseRepository: string, copyId: string, path: string): Promise<WorkspaceStat | null>;
-  writeWorkingCopyFile(baseRepository: string, copyId: string, path: string, contents: Uint8Array): Promise<void>;
-  writeWorkingCopyFiles(baseRepository: string, copyId: string, files: ArtifactsWorkspaceFileWrite[]): Promise<void>;
-  deleteWorkingCopyFile(baseRepository: string, copyId: string, path: string): Promise<void>;
-  applyWorkingCopy(
-    baseRepository: string,
-    copyId: string,
-  ): Promise<WorkspaceRevision>;
-  discardWorkingCopy(baseRepository: string, copyId: string): Promise<void>;
-};
-
-type ArtifactsRepositoryFileDriver = Pick<
-  ArtifactsWorkspaceDriver,
-  "readFile" | "list" | "stat" | "writeFile" | "writeFiles" | "deleteFile"
->;
-
-type ArtifactsWorkspaceDriverFactory = (
-  artifacts: ArtifactsBindingClient,
-  workspaceObject: WorkspaceObjectClient,
-) => ArtifactsWorkspaceDriver;
-
-type ArtifactsCurrentFileError = ErrorDtoFor<
-  | WorkspaceMkdirError
-  | WorkspaceWriteError
-  | WorkspaceReadError
-  | WorkspaceListError
-  | WorkspaceStatError
-  | WorkspaceDeleteError
->;
 type ArtifactsCopyError = ErrorDtoFor<WorkspaceCopyDomainError>;
-type ArtifactsCopyFileError = ErrorDtoFor<WorkspaceCopyFileDomainError>;
 type ArtifactsApplyError = ErrorDtoFor<WorkspaceApplyDomainError>;
 type ArtifactsDiscardError = ErrorDtoFor<WorkspaceDiscardDomainError>;
+
 type ArtifactsWorkspaceAuthorityContract = WorkspaceAuthority<
   ArtifactsCurrentFileError,
   ArtifactsCopyError,
@@ -107,6 +49,7 @@ type ArtifactsWorkspaceAuthorityContract = WorkspaceAuthority<
   ArtifactsApplyError,
   ArtifactsDiscardError
 >;
+
 type ArtifactsWorkspaceAuthorityCopy = WorkspaceAuthorityCopy<
   ArtifactsCopyFileError,
   ArtifactsApplyError,
@@ -152,32 +95,41 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
     readonly repositoryName: string,
     private readonly driver: ArtifactsWorkspaceDriver,
   ) {
-    this.files = new ArtifactsRepositoryFiles(driver, repositoryName);
+    this.files = createArtifactsCurrentFiles(
+      currentFileTarget(driver, repositoryName),
+    );
   }
 
   async createCopy(
-    _name?: string,
+    label?: string,
   ): Promise<
     BetterResult<ArtifactsWorkspaceAuthorityCopy, ArtifactsCopyError>
   > {
     try {
       const repo = await this.artifacts.get(this.repositoryName);
       const repoAccess = artifactsRepositoryAccessFrom(repo);
-      const baseAccess = await this.workspaceObject.repositoryAccess(this.repositoryName);
-      const remote = baseAccess?.remote ?? repoAccess?.remote;
+      const current = await this.workspaceObject.currentRepository();
+      const remote = current?.remote ?? repoAccess?.remote;
       if (!remote) {
         return Result.err(copyNotFoundError(this.repositoryName));
       }
+
       const copyId = `${this.repositoryName}-copy-${crypto.randomUUID()}`;
-      const baseRevisionId = await this.driver.createWorkingCopy(this.repositoryName, copyId);
+      const createdAt = Date.now();
+      const baseRevisionId = await this.driver.createWorkingCopy(
+        this.repositoryName,
+        copyId,
+      );
       await this.workspaceObject.recordCopy({
         copyId,
+        ...(label ? { label } : {}),
+        createdAt,
         baseRepository: this.repositoryName,
         remote,
-        defaultBranch: baseAccess?.defaultBranch ?? repoAccess?.defaultBranch ?? "main",
+        defaultBranch: current?.defaultBranch ?? repoAccess?.defaultBranch ?? "main",
         ...(baseRevisionId ? { baseRevisionId } : {}),
       });
-      return Result.ok(new ArtifactsWorkspaceCopy(this, copyId, Date.now()));
+      return Result.ok(new ArtifactsWorkspaceCopy(this, copyId, label, createdAt));
     } catch (error) {
       return copyNotFoundFromArtifacts(this.repositoryName, error);
     }
@@ -193,21 +145,8 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
       return Result.err(exists.error);
     }
 
-    return Result.ok(new ArtifactsWorkspaceCopy(this, id, Date.now()));
-  }
-
-  async copyExists(
-    id: string,
-  ): Promise<BetterResult<void, ArtifactsCopyError>> {
-    try {
-      const access = await this.workspaceObject.repositoryAccess(id);
-      if (access?.baseRepository !== this.repositoryName) {
-        return Result.err(copyNotFoundError(id));
-      }
-      return Result.ok(undefined);
-    } catch (error) {
-      return copyNotFoundFromArtifacts(id, error);
-    }
+    const copy = await this.workspaceObject.copy(id);
+    return Result.ok(new ArtifactsWorkspaceCopy(this, id, copy?.label, copy!.createdAt));
   }
 
   async applyCopy(
@@ -218,11 +157,13 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
       return Result.err(exists.error);
     }
 
-    const access = await this.workspaceObject.repositoryAccess(id);
+    const copy = await this.workspaceObject.copy(id);
     try {
-      const currentRevisionId = await this.driver.currentRevision(this.repositoryName);
-      if (access?.baseRevisionId !== currentRevisionId) {
-        return staleCopyError(id, access?.baseRevisionId, currentRevisionId);
+      const currentRevisionId = await this.driver.currentRevision(
+        this.repositoryName,
+      );
+      if (copy?.baseRevisionId !== currentRevisionId) {
+        return staleCopyError(id, copy?.baseRevisionId, currentRevisionId);
       }
 
       const revision = await this.driver.applyWorkingCopy(
@@ -240,7 +181,11 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
       return Result.ok(revision);
     } catch (error) {
       if (isGitPushRejected(error)) {
-        return staleCopyError(id, access?.baseRevisionId, await this.driver.currentRevision(this.repositoryName));
+        return staleCopyError(
+          id,
+          copy?.baseRevisionId,
+          await this.driver.currentRevision(this.repositoryName),
+        );
       }
       return copyNotFoundFromArtifacts(id, error);
     }
@@ -265,6 +210,28 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
     return Result.ok(undefined);
   }
 
+  async copyExists(id: string): Promise<BetterResult<void, ArtifactsCopyError>> {
+    try {
+      const copy = await this.workspaceObject.copy(id);
+      if (copy?.baseRepository !== this.repositoryName) {
+        return Result.err(copyNotFoundError(id));
+      }
+      return Result.ok(undefined);
+    } catch (error) {
+      return copyNotFoundFromArtifacts(id, error);
+    }
+  }
+
+  async copyFileTargetExists(
+    id: string,
+  ): Promise<BetterResult<void, ArtifactsCopyFileError>> {
+    const exists = await this.copyExists(id);
+    if (Result.isError(exists)) {
+      return Result.err(copyNotFoundFileError(id));
+    }
+    return Result.ok(undefined);
+  }
+
   workspaceDriver(): ArtifactsWorkspaceDriver {
     return this.driver;
   }
@@ -276,11 +243,15 @@ class ArtifactsWorkspaceCopy implements ArtifactsWorkspaceAuthorityCopy {
   constructor(
     private readonly authority: ArtifactsWorkspaceAuthority,
     readonly id: string,
+    readonly label: string | undefined,
     readonly createdAt: number,
   ) {
-    this.files = new ArtifactsCopyFiles(authority.workspaceDriver(), authority.repositoryName, id, () =>
-      authority.copyExists(id),
-    );
+    this.files = createArtifactsCopyFiles({
+      driver: authority.workspaceDriver(),
+      repository: authority.repositoryName,
+      copyId: id,
+      ensureCopyExists: () => authority.copyFileTargetExists(id),
+    });
   }
 
   apply(): Promise<BetterResult<WorkspaceRevision, ArtifactsApplyError>> {
@@ -292,425 +263,6 @@ class ArtifactsWorkspaceCopy implements ArtifactsWorkspaceAuthorityCopy {
   }
 }
 
-class ArtifactsRepositoryFiles implements WorkspaceAuthorityFiles<ArtifactsCurrentFileError> {
-  constructor(
-    private readonly driver: ArtifactsRepositoryFileDriver,
-    private readonly repository: string,
-  ) {}
-
-  async mkdir(
-    path: string,
-  ): Promise<BetterResult<void, ArtifactsCurrentFileError>> {
-    return dtoToResult<void, ArtifactsCurrentFileError>(
-      await mkdirInRepository(this.driver, this.repository, path),
-    );
-  }
-
-  async write(
-    path: string,
-    contents: Uint8Array,
-  ): Promise<BetterResult<void, ArtifactsCurrentFileError>> {
-    return dtoToResult<void, ArtifactsCurrentFileError>(
-      await writeFileInRepository(this.driver, this.repository, path, contents),
-    );
-  }
-
-  async read(
-    path: string,
-  ): Promise<BetterResult<Uint8Array, ArtifactsCurrentFileError>> {
-    return dtoToResult<Uint8Array, ArtifactsCurrentFileError>(
-      await readFileFromRepository(this.driver, this.repository, path),
-    );
-  }
-
-  async list(
-    path: string,
-  ): Promise<BetterResult<WorkspaceEntry[], ArtifactsCurrentFileError>> {
-    return dtoToResult<WorkspaceEntry[], ArtifactsCurrentFileError>(
-      await listRepository(this.driver, this.repository, path),
-    );
-  }
-
-  async stat(
-    path: string,
-  ): Promise<BetterResult<WorkspaceStat, ArtifactsCurrentFileError>> {
-    return dtoToResult<WorkspaceStat, ArtifactsCurrentFileError>(
-      await statRepository(this.driver, this.repository, path),
-    );
-  }
-
-  async delete(
-    path: string,
-  ): Promise<BetterResult<void, ArtifactsCurrentFileError>> {
-    return dtoToResult<void, ArtifactsCurrentFileError>(
-      await deleteFromRepository(this.driver, this.repository, path),
-    );
-  }
-}
-
-class WorkingCopyRepositoryDriver implements ArtifactsRepositoryFileDriver {
-  constructor(
-    private readonly driver: ArtifactsWorkspaceDriver,
-    private readonly repository: string,
-    private readonly copyId: string,
-  ) {}
-
-  readFile(_repository: string, path: string): Promise<Uint8Array | null> {
-    return this.driver.readWorkingCopyFile(this.repository, this.copyId, path);
-  }
-
-  list(_repository: string, path: string): Promise<WorkspaceEntry[]> {
-    return this.driver.listWorkingCopy(this.repository, this.copyId, path);
-  }
-
-  stat(_repository: string, path: string): Promise<WorkspaceStat | null> {
-    return this.driver.statWorkingCopy(this.repository, this.copyId, path);
-  }
-
-  writeFile(_repository: string, path: string, contents: Uint8Array): Promise<void> {
-    return this.driver.writeWorkingCopyFile(this.repository, this.copyId, path, contents);
-  }
-
-  writeFiles(_repository: string, files: ArtifactsWorkspaceFileWrite[]): Promise<void> {
-    return this.driver.writeWorkingCopyFiles(this.repository, this.copyId, files);
-  }
-
-  deleteFile(_repository: string, path: string): Promise<void> {
-    return this.driver.deleteWorkingCopyFile(this.repository, this.copyId, path);
-  }
-}
-
-class ArtifactsCopyFiles implements WorkspaceAuthorityFiles<ArtifactsCopyFileError> {
-  constructor(
-    private readonly driver: ArtifactsWorkspaceDriver,
-    private readonly repository: string,
-    private readonly copyId: string,
-    private readonly ensureCopyExists: () => Promise<
-      BetterResult<void, ArtifactsCopyError>
-    >,
-  ) {}
-
-  async mkdir(
-    path: string,
-  ): Promise<BetterResult<void, ArtifactsCopyFileError>> {
-    const exists = await this.ensureCopyExists();
-    if (Result.isError(exists)) return Result.err(exists.error);
-    return widenFileResult(await this.repositoryFiles().mkdir(path));
-  }
-
-  async write(
-    path: string,
-    contents: Uint8Array,
-  ): Promise<BetterResult<void, ArtifactsCopyFileError>> {
-    const exists = await this.ensureCopyExists();
-    if (Result.isError(exists)) return Result.err(exists.error);
-    return widenFileResult(await this.repositoryFiles().write(path, contents));
-  }
-
-  async writeTreeBatch(
-    root: string,
-    entries: WorkspaceTreeEntry[],
-  ): Promise<BetterResult<void, ArtifactsCopyFileError>> {
-    const exists = await this.ensureCopyExists();
-    if (Result.isError(exists)) return Result.err(exists.error);
-
-    const rootSegments = parseWorkspacePath(root, { allowRoot: true });
-    if (Result.isError(rootSegments)) {
-      return Result.err(toWorkspaceErrorDto(rootSegments.error).error);
-    }
-
-    const files = new Map<string, Uint8Array>();
-    const directories = new Set<string>();
-    const validationDriver = this.repositoryDriver();
-    for (const entry of entries) {
-      const relative = parseRelativeWorkspacePath(entry.path);
-      if (Result.isError(relative)) {
-        return Result.err(toWorkspaceErrorDto(relative.error).error);
-      }
-
-      const segments = [...rootSegments.value, ...relative.value];
-      const path = workspacePathFromSegments(segments);
-      const ancestors = ancestorPaths(segments);
-      const validated = await validateWriteTreeFileInRepository(
-        validationDriver,
-        this.copyId,
-        path,
-        ancestors,
-        files,
-        directories,
-      );
-      if (validated.status === "error") {
-        return Result.err(validated.error);
-      }
-
-      files.set(path, entry.contents);
-      for (const ancestor of ancestors) {
-        directories.add(ancestor);
-      }
-    }
-
-    await this.driver.writeWorkingCopyFiles(
-      this.repository,
-      this.copyId,
-      [...files].map(([path, contents]) => ({ path, contents })),
-    );
-    return Result.ok(undefined);
-  }
-
-  async read(
-    path: string,
-  ): Promise<BetterResult<Uint8Array, ArtifactsCopyFileError>> {
-    const exists = await this.ensureCopyExists();
-    if (Result.isError(exists)) return Result.err(exists.error);
-    return widenFileResult(await this.repositoryFiles().read(path));
-  }
-
-  async list(
-    path: string,
-  ): Promise<BetterResult<WorkspaceEntry[], ArtifactsCopyFileError>> {
-    const exists = await this.ensureCopyExists();
-    if (Result.isError(exists)) return Result.err(exists.error);
-    return widenFileResult(await this.repositoryFiles().list(path));
-  }
-
-  async stat(
-    path: string,
-  ): Promise<BetterResult<WorkspaceStat, ArtifactsCopyFileError>> {
-    const exists = await this.ensureCopyExists();
-    if (Result.isError(exists)) return Result.err(exists.error);
-    return widenFileResult(await this.repositoryFiles().stat(path));
-  }
-
-  async delete(
-    path: string,
-  ): Promise<BetterResult<void, ArtifactsCopyFileError>> {
-    const exists = await this.ensureCopyExists();
-    if (Result.isError(exists)) return Result.err(exists.error);
-    return widenFileResult(await this.repositoryFiles().delete(path));
-  }
-
-  private repositoryFiles(): ArtifactsRepositoryFiles {
-    return new ArtifactsRepositoryFiles(this.repositoryDriver(), this.copyId);
-  }
-
-  private repositoryDriver(): ArtifactsRepositoryFileDriver {
-    return new WorkingCopyRepositoryDriver(this.driver, this.repository, this.copyId);
-  }
-}
-
-async function readFileFromRepository(
-  driver: ArtifactsRepositoryFileDriver,
-  repository: string,
-  path: string,
-) {
-  const parsed = parseWorkspacePath(path, { allowRoot: false });
-  if (Result.isError(parsed)) {
-    return toWorkspaceErrorDto(parsed.error);
-  }
-
-  const stat = await statOrMissing(driver, repository, path);
-  if (!stat) {
-    return toWorkspaceErrorDto(new PathNotFoundError({ path }));
-  }
-  if (stat.type === "directory") {
-    return toWorkspaceErrorDto(new IsDirectoryError({ path }));
-  }
-
-  const contents = await driver.readFile(repository, path);
-  if (!contents) {
-    return toWorkspaceErrorDto(new PathNotFoundError({ path }));
-  }
-  return { status: "ok", value: contents } as const;
-}
-
-async function listRepository(
-  driver: ArtifactsRepositoryFileDriver,
-  repository: string,
-  path: string,
-) {
-  const parsed = parseWorkspacePath(path, { allowRoot: true });
-  if (Result.isError(parsed)) {
-    return toWorkspaceErrorDto(parsed.error);
-  }
-
-  const stat = await statOrMissing(driver, repository, path);
-  if (!stat) {
-    return toWorkspaceErrorDto(new PathNotFoundError({ path }));
-  }
-  if (stat.type !== "directory") {
-    return toWorkspaceErrorDto(new NotDirectoryError({ path }));
-  }
-
-  return { status: "ok", value: await driver.list(repository, path) } as const;
-}
-
-async function statRepository(
-  driver: ArtifactsRepositoryFileDriver,
-  repository: string,
-  path: string,
-) {
-  const parsed = parseWorkspacePath(path, { allowRoot: true });
-  if (Result.isError(parsed)) {
-    return toWorkspaceErrorDto(parsed.error);
-  }
-
-  const stat = await statOrMissing(driver, repository, path);
-  if (!stat) {
-    return toWorkspaceErrorDto(new PathNotFoundError({ path }));
-  }
-  return { status: "ok", value: stat } as const;
-}
-
-async function mkdirInRepository(
-  driver: ArtifactsRepositoryFileDriver,
-  repository: string,
-  path: string,
-) {
-  const parsed = parseWorkspacePath(path, { allowRoot: false });
-  if (Result.isError(parsed)) {
-    return toWorkspaceErrorDto(parsed.error);
-  }
-
-  const existing = await statOrMissing(driver, repository, path);
-  if (existing) {
-    return toWorkspaceErrorDto(new PathAlreadyExistsError({ path }));
-  }
-
-  const parent = await statOrMissing(driver, repository, parentPath(path));
-  if (!parent) {
-    return toWorkspaceErrorDto(
-      new PathNotFoundError({ path: parentPath(path) }),
-    );
-  }
-  if (parent.type !== "directory") {
-    return toWorkspaceErrorDto(
-      new NotDirectoryError({ path: parentPath(path) }),
-    );
-  }
-
-  return { status: "ok" } as const;
-}
-
-async function writeFileInRepository(
-  driver: ArtifactsRepositoryFileDriver,
-  repository: string,
-  path: string,
-  contents: Uint8Array,
-) {
-  const parsed = parseWorkspacePath(path, { allowRoot: false });
-  if (Result.isError(parsed)) {
-    return toWorkspaceErrorDto(parsed.error);
-  }
-
-  const existing = await statOrMissing(driver, repository, path);
-  if (existing?.type === "directory") {
-    return toWorkspaceErrorDto(new IsDirectoryError({ path }));
-  }
-
-  const parent = await statOrMissing(driver, repository, parentPath(path));
-  if (parent && parent.type !== "directory") {
-    return toWorkspaceErrorDto(
-      new NotDirectoryError({ path: parentPath(path) }),
-    );
-  }
-
-  await driver.writeFile(repository, path, contents);
-  return { status: "ok" } as const;
-}
-
-async function validateWriteTreeFileInRepository(
-  driver: ArtifactsRepositoryFileDriver,
-  repository: string,
-  path: string,
-  ancestors: string[],
-  files: ReadonlyMap<string, Uint8Array>,
-  directories: ReadonlySet<string>,
-) {
-  const parsed = parseWorkspacePath(path, { allowRoot: false });
-  if (Result.isError(parsed)) {
-    return toWorkspaceErrorDto(parsed.error);
-  }
-
-  if (directories.has(path)) {
-    return toWorkspaceErrorDto(new IsDirectoryError({ path }));
-  }
-
-  const existing = await statOrMissing(driver, repository, path);
-  if (existing?.type === "directory") {
-    return toWorkspaceErrorDto(new IsDirectoryError({ path }));
-  }
-
-  for (const ancestor of ancestors) {
-    if (files.has(ancestor)) {
-      return toWorkspaceErrorDto(new NotDirectoryError({ path: ancestor }));
-    }
-
-    const parent = await statOrMissing(driver, repository, ancestor);
-    if (parent?.type === "file") {
-      return toWorkspaceErrorDto(new NotDirectoryError({ path: ancestor }));
-    }
-  }
-
-  return { status: "ok" } as const;
-}
-
-function ancestorPaths(segments: string[]): string[] {
-  const ancestors: string[] = [];
-  for (let length = 1; length < segments.length; length += 1) {
-    ancestors.push(workspacePathFromSegments(segments.slice(0, length)));
-  }
-  return ancestors;
-}
-
-async function deleteFromRepository(
-  driver: ArtifactsRepositoryFileDriver,
-  repository: string,
-  path: string,
-) {
-  const parsed = parseWorkspacePath(path, { allowRoot: false });
-  if (Result.isError(parsed)) {
-    return toWorkspaceErrorDto(parsed.error);
-  }
-
-  const stat = await statOrMissing(driver, repository, path);
-  if (!stat) {
-    return toWorkspaceErrorDto(new PathNotFoundError({ path }));
-  }
-  if (stat.type === "directory") {
-    const entries = await driver.list(repository, path);
-    if (entries.length > 0) {
-      return toWorkspaceErrorDto(new DirectoryNotEmptyError({ path }));
-    }
-    return { status: "ok" } as const;
-  }
-
-  await driver.deleteFile(repository, path);
-  return { status: "ok" } as const;
-}
-
-async function statOrMissing(
-  driver: ArtifactsRepositoryFileDriver,
-  repository: string,
-  path: string,
-): Promise<WorkspaceStat | null> {
-  try {
-    return await driver.stat(repository, path);
-  } catch (error) {
-    if (isArtifactsNotFound(error)) {
-      return null;
-    }
-    throw error;
-  }
-}
-
-function isArtifactsNotFound(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    (error as { name?: unknown; code?: unknown }).name === "ArtifactsError" &&
-    (error as { code?: unknown }).code === "NOT_FOUND"
-  );
-}
-
 function copyNotFoundError(id: string): ArtifactsCopyError {
   return toWorkspaceErrorDto(new WorkspaceCopyNotFoundError({ copyId: id }))
     .error;
@@ -718,9 +270,12 @@ function copyNotFoundError(id: string): ArtifactsCopyError {
 
 function copyNotFoundFromArtifacts<T, E extends ArtifactsCopyError>(
   id: string,
-  _error: unknown,
+  error: unknown,
 ): BetterResult<T, E> {
-  return Result.err(copyNotFoundError(id) as E);
+  if (isArtifactsNotFound(error) || isMissingWorkingCopyRef(error)) {
+    return Result.err(copyNotFoundError(id) as E);
+  }
+  throw error;
 }
 
 function staleCopyError(
@@ -735,158 +290,9 @@ function staleCopyError(
   })).error as ArtifactsApplyError);
 }
 
-function isGitPushRejected(error: unknown): boolean {
-  return error instanceof Error && error.name === "PushRejectedError";
-}
-
-function isMissingWorkingCopyRef(error: unknown): boolean {
-  return isArtifactsNotFound(error) || (
-    error instanceof Error &&
-    /could not find|not found|does not exist|unable to delete/i.test(error.message)
-  );
-}
-
-function widenFileResult<T>(
-  result: BetterResult<T, ArtifactsCurrentFileError>,
-): BetterResult<T, ArtifactsCopyFileError> {
-  if (Result.isError(result)) {
-    return Result.err(result.error);
-  }
-
-  return Result.ok(result.value);
-}
-
-type DtoResult<T, E> =
-  | { status: "ok"; value?: T }
-  | { status: "error"; error: E };
-
-function dtoToResult<T, E>(result: DtoResult<T, E>): BetterResult<T, E> {
-  if (result.status === "error") {
-    return Result.err(result.error);
-  }
-
-  return Result.ok(result.value as T);
-}
-
-function createLazyIsomorphicGitArtifactsWorkspaceDriver(
-  artifacts: ArtifactsBindingClient,
-  workspaceObject: WorkspaceObjectClient,
-): ArtifactsWorkspaceDriver {
-  return new LazyIsomorphicGitArtifactsWorkspaceDriver(artifacts, workspaceObject);
-}
-
-class LazyIsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
-  private driver?: Promise<ArtifactsWorkspaceDriver>;
-
-  constructor(
-    private readonly artifacts: ArtifactsBindingClient,
-    private readonly workspaceObject: WorkspaceObjectClient,
-  ) {}
-
-  async repositoryExists(repository: string): Promise<boolean> {
-    const driver = await this.load();
-    return await driver.repositoryExists(repository);
-  }
-
-  async readFile(repository: string, path: string): Promise<Uint8Array | null> {
-    const driver = await this.load();
-    return await driver.readFile(repository, path);
-  }
-
-  async list(repository: string, path: string): Promise<WorkspaceEntry[]> {
-    const driver = await this.load();
-    return await driver.list(repository, path);
-  }
-
-  async stat(repository: string, path: string): Promise<WorkspaceStat | null> {
-    const driver = await this.load();
-    return await driver.stat(repository, path);
-  }
-
-  async writeFile(
-    repository: string,
-    path: string,
-    contents: Uint8Array,
-  ): Promise<void> {
-    const driver = await this.load();
-    return await driver.writeFile(repository, path, contents);
-  }
-
-  async writeFiles(
-    repository: string,
-    files: ArtifactsWorkspaceFileWrite[],
-  ): Promise<void> {
-    const driver = await this.load();
-    return await driver.writeFiles(repository, files);
-  }
-
-  async deleteFile(repository: string, path: string): Promise<void> {
-    const driver = await this.load();
-    return await driver.deleteFile(repository, path);
-  }
-
-  async currentRevision(repository: string): Promise<string | undefined> {
-    const driver = await this.load();
-    return await driver.currentRevision(repository);
-  }
-
-  async createWorkingCopy(baseRepository: string, copyId: string): Promise<string | undefined> {
-    const driver = await this.load();
-    return await driver.createWorkingCopy(baseRepository, copyId);
-  }
-
-  async readWorkingCopyFile(baseRepository: string, copyId: string, path: string): Promise<Uint8Array | null> {
-    const driver = await this.load();
-    return await driver.readWorkingCopyFile(baseRepository, copyId, path);
-  }
-
-  async listWorkingCopy(baseRepository: string, copyId: string, path: string): Promise<WorkspaceEntry[]> {
-    const driver = await this.load();
-    return await driver.listWorkingCopy(baseRepository, copyId, path);
-  }
-
-  async statWorkingCopy(baseRepository: string, copyId: string, path: string): Promise<WorkspaceStat | null> {
-    const driver = await this.load();
-    return await driver.statWorkingCopy(baseRepository, copyId, path);
-  }
-
-  async writeWorkingCopyFile(baseRepository: string, copyId: string, path: string, contents: Uint8Array): Promise<void> {
-    const driver = await this.load();
-    return await driver.writeWorkingCopyFile(baseRepository, copyId, path, contents);
-  }
-
-  async writeWorkingCopyFiles(baseRepository: string, copyId: string, files: ArtifactsWorkspaceFileWrite[]): Promise<void> {
-    const driver = await this.load();
-    return await driver.writeWorkingCopyFiles(baseRepository, copyId, files);
-  }
-
-  async deleteWorkingCopyFile(baseRepository: string, copyId: string, path: string): Promise<void> {
-    const driver = await this.load();
-    return await driver.deleteWorkingCopyFile(baseRepository, copyId, path);
-  }
-
-  async applyWorkingCopy(
-    baseRepository: string,
-    copyId: string,
-  ): Promise<WorkspaceRevision> {
-    const driver = await this.load();
-    return await driver.applyWorkingCopy(baseRepository, copyId);
-  }
-
-  async discardWorkingCopy(baseRepository: string, copyId: string): Promise<void> {
-    const driver = await this.load();
-    return await driver.discardWorkingCopy(baseRepository, copyId);
-  }
-
-  private load(): Promise<ArtifactsWorkspaceDriver> {
-    this.driver ??= import("./git-driver").then((module) =>
-      module.createIsomorphicGitArtifactsWorkspaceDriver(this.artifacts, this.workspaceObject),
-    );
-    return this.driver;
-  }
-}
-
-function artifactsRepositoryAccessFrom(value: unknown): { remote: string; defaultBranch?: string } | undefined {
+function artifactsRepositoryAccessFrom(
+  value: unknown,
+): { remote: string; defaultBranch?: string } | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const remote = (value as { remote?: unknown }).remote;
   const defaultBranch = (value as { defaultBranch?: unknown }).defaultBranch;

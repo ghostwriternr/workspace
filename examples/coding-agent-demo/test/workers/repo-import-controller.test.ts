@@ -61,7 +61,7 @@ describe("RepoImportController", () => {
         revisionId: "repo_123",
         createdAt: expect.any(Number),
       });
-      await expect(workspaceObject.repositoryAccess("workspace-one")).resolves.toEqual({
+      await expect(workspaceObject.currentRepository()).resolves.toEqual({
         repository: "workspace-one",
         remote: "https://git.example/workspace-one.git",
         defaultBranch: "main",
@@ -91,7 +91,7 @@ describe("RepoImportController", () => {
 
     expect(Result.isOk(result)).toBe(true);
     if (Result.isOk(result)) {
-      await expect(workspaceObject.repositoryAccess("workspace-master")).resolves.toEqual({
+      await expect(workspaceObject.currentRepository()).resolves.toEqual({
         repository: "workspace-master",
         remote: "https://git.example/workspace-master.git",
         defaultBranch: "master",

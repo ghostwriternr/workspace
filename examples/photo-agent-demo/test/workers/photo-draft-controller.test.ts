@@ -232,6 +232,7 @@ function createDependencies(options: CreateDependenciesOptions): TestDependencie
   if (options.draftEditId) {
     void object.recordCopy({
       copyId: options.draftEditId,
+      createdAt: 100,
       baseRepository: "demo",
       remote: "https://git.example/demo.git",
       defaultBranch: "main",

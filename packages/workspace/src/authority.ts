@@ -14,6 +14,7 @@ export type WorkspaceAuthorityFiles<FileError> = {
 
 export type WorkspaceAuthorityCopy<CopyFileError, ApplyError, DiscardError> = {
   id: string;
+  label?: string;
   createdAt: number;
   files: WorkspaceAuthorityFiles<CopyFileError>;
   apply(): Promise<BetterResult<WorkspaceRevision, ApplyError>>;

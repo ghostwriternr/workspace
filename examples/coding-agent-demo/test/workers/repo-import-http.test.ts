@@ -53,7 +53,7 @@ describe("repo import HTTP", () => {
         repositoryId: "repo_456",
       },
     });
-    await expect(workspaceObject.repositoryAccess(workspaceName)).resolves.toMatchObject({
+    await expect(workspaceObject.currentRepository()).resolves.toMatchObject({
       repository: workspaceName,
       remote: "https://artifacts.example/repo.git",
       defaultBranch: "main",

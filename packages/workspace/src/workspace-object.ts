@@ -1,21 +1,15 @@
 import { DurableObject } from "cloudflare:workers";
 
-export type WorkspaceRepositoryAccess = {
-  repository: string;
-  remote: string;
-  defaultBranch: string;
-  baseRepository?: string;
-  baseRevisionId?: string;
-};
-
 export type WorkspaceCurrentRepositoryRecord = {
   repository: string;
   remote: string;
   defaultBranch: string;
 };
 
-export type WorkspaceCopyRepositoryRecord = {
+export type WorkspaceCopyRecord = {
   copyId: string;
+  label?: string;
+  createdAt: number;
   baseRepository: string;
   remote: string;
   defaultBranch: string;
@@ -24,8 +18,9 @@ export type WorkspaceCopyRepositoryRecord = {
 
 export type WorkspaceObjectClient = {
   recordCurrentRepository(record: WorkspaceCurrentRepositoryRecord): Promise<void>;
-  recordCopy(record: WorkspaceCopyRepositoryRecord): Promise<void>;
-  repositoryAccess(repository: string): Promise<WorkspaceRepositoryAccess | undefined>;
+  currentRepository(): Promise<WorkspaceCurrentRepositoryRecord | undefined>;
+  recordCopy(record: WorkspaceCopyRecord): Promise<void>;
+  copy(copyId: string): Promise<WorkspaceCopyRecord | undefined>;
   deleteCopy(copyId: string): Promise<void>;
 };
 
@@ -36,61 +31,113 @@ export class WorkspaceObject extends DurableObject<Record<string, never>> {
   }
 
   recordCurrentRepository(record: WorkspaceCurrentRepositoryRecord): void {
-    this.upsertRepository({
-      repository: record.repository,
-      role: "current",
-      baseRepository: null,
-      remote: record.remote,
-      defaultBranch: record.defaultBranch,
-      baseRevisionId: null,
-    });
+    const now = Date.now();
+    this.ctx.storage.sql.exec(
+      `INSERT INTO current_repository (
+         id, repository, remote, default_branch, created_at, updated_at
+       ) VALUES (1, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         repository = excluded.repository,
+         remote = excluded.remote,
+         default_branch = excluded.default_branch,
+         updated_at = excluded.updated_at`,
+      record.repository,
+      record.remote,
+      record.defaultBranch,
+      now,
+      now,
+    );
   }
 
-  recordCopy(record: WorkspaceCopyRepositoryRecord): void {
-    this.upsertRepository({
-      repository: record.copyId,
-      role: "copy",
-      baseRepository: record.baseRepository,
-      remote: record.remote,
-      defaultBranch: record.defaultBranch,
-      baseRevisionId: record.baseRevisionId ?? null,
-    });
-  }
-
-  repositoryAccess(repository: string): WorkspaceRepositoryAccess | undefined {
-    const row = this.ctx.storage.sql.exec<RepositoryRow>(
-      `SELECT repository, base_repository, remote, default_branch, base_revision_id
-         FROM repositories
-        WHERE repository = ?`,
-      repository,
+  currentRepository(): WorkspaceCurrentRepositoryRecord | undefined {
+    const row = this.ctx.storage.sql.exec<CurrentRepositoryRow>(
+      `SELECT repository, remote, default_branch
+         FROM current_repository
+        WHERE id = 1`,
     ).toArray()[0];
 
-    if (!row) {
-      return undefined;
-    }
-
+    if (!row) return undefined;
     return {
       repository: row.repository,
       remote: row.remote,
       defaultBranch: row.default_branch,
-      ...(row.base_repository ? { baseRepository: row.base_repository } : {}),
+    };
+  }
+
+  recordCopy(record: WorkspaceCopyRecord): void {
+    const now = Date.now();
+    this.ctx.storage.sql.exec(
+      `INSERT INTO workspace_copies (
+         copy_id,
+         label,
+         base_repository,
+         remote,
+         default_branch,
+         created_at,
+         updated_at,
+         base_revision_id
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(copy_id) DO UPDATE SET
+         label = excluded.label,
+         base_repository = excluded.base_repository,
+         remote = excluded.remote,
+         default_branch = excluded.default_branch,
+         updated_at = excluded.updated_at,
+         base_revision_id = excluded.base_revision_id`,
+      record.copyId,
+      record.label ?? null,
+      record.baseRepository,
+      record.remote,
+      record.defaultBranch,
+      record.createdAt,
+      now,
+      record.baseRevisionId ?? null,
+    );
+  }
+
+  copy(copyId: string): WorkspaceCopyRecord | undefined {
+    const row = this.ctx.storage.sql.exec<CopyRow>(
+      `SELECT copy_id, label, created_at, base_repository, remote, default_branch, base_revision_id
+         FROM workspace_copies
+        WHERE copy_id = ?`,
+      copyId,
+    ).toArray()[0];
+
+    if (!row) return undefined;
+    return {
+      copyId: row.copy_id,
+      ...(row.label ? { label: row.label } : {}),
+      createdAt: row.created_at,
+      baseRepository: row.base_repository,
+      remote: row.remote,
+      defaultBranch: row.default_branch,
       ...(row.base_revision_id ? { baseRevisionId: row.base_revision_id } : {}),
     };
   }
 
   deleteCopy(copyId: string): void {
     this.ctx.storage.sql.exec(
-      `DELETE FROM repositories WHERE repository = ? AND role = 'copy'`,
+      `DELETE FROM workspace_copies WHERE copy_id = ?`,
       copyId,
     );
   }
 
   private migrate(): void {
     this.ctx.storage.sql.exec(`
-      CREATE TABLE IF NOT EXISTS repositories (
-        repository TEXT PRIMARY KEY,
-        role TEXT NOT NULL CHECK (role IN ('current', 'copy')),
-        base_repository TEXT,
+      CREATE TABLE IF NOT EXISTS current_repository (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        repository TEXT NOT NULL,
+        remote TEXT NOT NULL,
+        default_branch TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+    this.ctx.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS workspace_copies (
+        copy_id TEXT PRIMARY KEY,
+        label TEXT,
+        base_repository TEXT NOT NULL,
         remote TEXT NOT NULL,
         default_branch TEXT NOT NULL,
         created_at INTEGER NOT NULL,
@@ -98,48 +145,20 @@ export class WorkspaceObject extends DurableObject<Record<string, never>> {
         base_revision_id TEXT
       )
     `);
-    try {
-      this.ctx.storage.sql.exec(`ALTER TABLE repositories ADD COLUMN base_revision_id TEXT`);
-    } catch {
-      // Column already exists in objects created before this schema version.
-    }
-  }
-
-  private upsertRepository(record: {
-    repository: string;
-    role: "current" | "copy";
-    baseRepository: string | null;
-    remote: string;
-    defaultBranch: string;
-    baseRevisionId: string | null;
-  }): void {
-    const now = Date.now();
-    this.ctx.storage.sql.exec(
-      `INSERT INTO repositories (
-         repository, role, base_repository, remote, default_branch, created_at, updated_at, base_revision_id
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(repository) DO UPDATE SET
-         role = excluded.role,
-         base_repository = excluded.base_repository,
-         remote = excluded.remote,
-         default_branch = excluded.default_branch,
-         updated_at = excluded.updated_at,
-         base_revision_id = excluded.base_revision_id`,
-      record.repository,
-      record.role,
-      record.baseRepository,
-      record.remote,
-      record.defaultBranch,
-      now,
-      now,
-      record.baseRevisionId,
-    );
   }
 }
 
-type RepositoryRow = {
+type CurrentRepositoryRow = {
   repository: string;
-  base_repository: string | null;
+  remote: string;
+  default_branch: string;
+};
+
+type CopyRow = {
+  copy_id: string;
+  label: string | null;
+  created_at: number;
+  base_repository: string;
   remote: string;
   default_branch: string;
   base_revision_id: string | null;

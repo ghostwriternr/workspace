@@ -161,11 +161,13 @@ export class WorkspaceCopy {
 
   constructor(private readonly copy: WorkspaceAuthorityCopy<WorkspaceCopyFileError, WorkspaceApplyError, WorkspaceDiscardError>) {
     this.id = copy.id;
+    this.label = copy.label;
     this.createdAt = copy.createdAt;
     this.files = new WorkspaceCopyFilesView(copy.files);
   }
 
   readonly id: string;
+  readonly label?: string;
   readonly createdAt: number;
 
   async apply(): Promise<BetterResult<WorkspaceRevision, WorkspaceApplyError>> {

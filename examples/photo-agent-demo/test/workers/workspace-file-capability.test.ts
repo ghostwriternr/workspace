@@ -22,6 +22,7 @@ describe("WorkspaceFileCapability", () => {
     });
     await object.recordCopy({
       copyId: draftEditId,
+      createdAt: 100,
       baseRepository: workspaceName,
       remote: `https://git.example/${workspaceName}.git`,
       defaultBranch: "main",
