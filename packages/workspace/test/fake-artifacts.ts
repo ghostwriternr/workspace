@@ -1,4 +1,5 @@
 import type { WorkspaceEntry, WorkspaceStat } from "../src";
+import { ArtifactsWorkingCopyRefNotFoundError } from "../src/artifacts/errors";
 import {
   resetArtifactsWorkspaceDriverFactoryForTests,
   setArtifactsWorkspaceDriverFactoryForTests,
@@ -226,13 +227,13 @@ export class FakeArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver {
 
   async discardWorkingCopy(_baseRepository: string, copyId: string): Promise<void> {
     if (!this.workingCopies.delete(copyId)) {
-      throw artifactsError("NOT_FOUND", `Working copy not found: ${copyId}`);
+      throw new ArtifactsWorkingCopyRefNotFoundError(copyId);
     }
   }
 
   private workingCopyTree(copyId: string): Tree {
     const copy = this.workingCopies.get(copyId);
-    if (!copy) throw artifactsError("NOT_FOUND", `Working copy not found: ${copyId}`);
+    if (!copy) throw new ArtifactsWorkingCopyRefNotFoundError(copyId);
     return copy;
   }
 

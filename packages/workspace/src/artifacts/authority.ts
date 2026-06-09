@@ -206,7 +206,7 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
       await this.driver.discardWorkingCopy(this.repositoryName, id);
     } catch (error) {
       if (!isMissingWorkingCopyRef(error)) {
-        return copyNotFoundFromDiscard(id, error);
+        throw error;
       }
     }
     await this.workspaceObject.deleteCopy(id);
@@ -214,15 +214,11 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
   }
 
   async loadCopy(id: string): Promise<BetterResult<WorkspaceCopyRecord, ArtifactsCopyLookupError>> {
-    try {
-      const copy = await this.workspaceObject.copy(id);
-      if (!copy) {
-        return Result.err(copyNotFoundError(id));
-      }
-      return Result.ok(copy);
-    } catch (error) {
-      return copyNotFoundFromLookup(id, error);
+    const copy = await this.workspaceObject.copy(id);
+    if (!copy) {
+      return Result.err(copyNotFoundError(id));
     }
+    return Result.ok(copy);
   }
 
   async copyFileTargetExists(
@@ -285,16 +281,6 @@ function workspaceNotFoundFromArtifacts<T>(
   throw error;
 }
 
-function copyNotFoundFromLookup<T>(
-  id: string,
-  error: unknown,
-): BetterResult<T, ArtifactsCopyLookupError> {
-  if (isArtifactsNotFound(error) || isMissingWorkingCopyRef(error)) {
-    return Result.err(copyNotFoundError(id));
-  }
-  throw error;
-}
-
 function applyFailureFromArtifacts<T>(
   workspaceName: string,
   copyId: string,
@@ -305,16 +291,6 @@ function applyFailureFromArtifacts<T>(
   }
   if (isMissingWorkingCopyRef(error)) {
     return Result.err(copyNotFoundError(copyId));
-  }
-  throw error;
-}
-
-function copyNotFoundFromDiscard<T>(
-  id: string,
-  error: unknown,
-): BetterResult<T, ArtifactsDiscardError> {
-  if (isArtifactsNotFound(error) || isMissingWorkingCopyRef(error)) {
-    return Result.err(copyNotFoundError(id));
   }
   throw error;
 }

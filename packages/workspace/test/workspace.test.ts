@@ -252,6 +252,18 @@ describe("Workspace", () => {
     await expect(object.copy(created.value.id)).resolves.toBeUndefined();
   });
 
+  it("does not hide generic not-found driver failures as missing hidden refs", async () => {
+    const { workspace, driver, object } = createWorkspace({ repo: { "/note.txt": bytes("current") } });
+    const created = await workspace.copies.create({ label: "driver-failure" });
+    if (Result.isError(created)) throw new Error("copy failed");
+    driver.discardWorkingCopy = async () => {
+      throw new Error("Object not found in local packfile");
+    };
+
+    await expect(created.value.discard()).rejects.toThrow("Object not found in local packfile");
+    await expect(object.copy(created.value.id)).resolves.toBeDefined();
+  });
+
   it("returns copy errors when hidden working copy refs disappear", async () => {
     const { workspace, driver } = createWorkspace({ repo: { "/note.txt": bytes("current") } });
 

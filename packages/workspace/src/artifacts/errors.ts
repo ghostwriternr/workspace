@@ -20,9 +20,5 @@ export function isGitPushRejected(error: unknown): boolean {
 }
 
 export function isMissingWorkingCopyRef(error: unknown): boolean {
-  return error instanceof ArtifactsWorkingCopyRefNotFoundError ||
-    isArtifactsNotFound(error) || (
-      error instanceof Error &&
-      /could not find|not found|does not exist|unable to delete/i.test(error.message)
-    );
+  return error instanceof ArtifactsWorkingCopyRefNotFoundError;
 }

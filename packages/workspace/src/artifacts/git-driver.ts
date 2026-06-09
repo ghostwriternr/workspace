@@ -5,6 +5,7 @@ import type { WorkspaceObjectClient } from "../workspace-object";
 import type { ArtifactsWorkspaceDriver } from "./driver";
 import type { ArtifactsWorkspaceFileWrite } from "./file-target";
 import type { ArtifactsBindingClient } from "./binding";
+import { ArtifactsWorkingCopyRefNotFoundError } from "./errors";
 import { auth } from "./git-access";
 import { GitCheckoutManager, type Checkout, type Fs } from "./git-checkout";
 import { dirname, relativeGitPath, workingCopyRef } from "./git-path";
@@ -28,15 +29,6 @@ class IsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver 
     workspaceObject: WorkspaceObjectClient,
   ) {
     this.checkouts = new GitCheckoutManager(artifacts, workspaceObject);
-  }
-
-  async repositoryExists(repository: string): Promise<boolean> {
-    try {
-      await this.checkouts.repoAccess(repository, "read");
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   async readFile(repository: string, path: string): Promise<Uint8Array | null> {
@@ -207,16 +199,24 @@ class IsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDriver 
     copyId: string,
   ): Promise<void> {
     const checkout = await this.checkouts.cloneForRemote(baseRepository, "write");
-    await git.push({
-      fs: checkout.fs,
-      http,
-      dir: checkout.dir,
-      url: checkout.access.remote,
-      ref: checkout.branch,
-      remoteRef: workingCopyRef(copyId),
-      delete: true,
-      onAuth: () => auth(checkout.access),
-    });
+    const remoteRef = workingCopyRef(copyId);
+    try {
+      await git.push({
+        fs: checkout.fs,
+        http,
+        dir: checkout.dir,
+        url: checkout.access.remote,
+        ref: checkout.branch,
+        remoteRef,
+        delete: true,
+        onAuth: () => auth(checkout.access),
+      });
+    } catch (error) {
+      if (isDeleteMissingRefError(error)) {
+        throw new ArtifactsWorkingCopyRefNotFoundError(remoteRef, { cause: error });
+      }
+      throw error;
+    }
   }
 
   private async listFiles(repository: string): Promise<string[]> {
@@ -303,6 +303,11 @@ async function headRevision(checkout: Checkout): Promise<string | undefined> {
 function updateMessage(files: ArtifactsWorkspaceFileWrite[]): string {
   const [first] = files;
   return `Update ${first ? relativeGitPath(first.path) : `${files.length} files`}`;
+}
+
+function isDeleteMissingRefError(error: unknown): boolean {
+  return error instanceof Error &&
+    /could not find|not found|does not exist|unable to delete/i.test(error.message);
 }
 
 async function mkdirp(fs: Fs, path: string): Promise<void> {

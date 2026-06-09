@@ -192,10 +192,11 @@ class WorkspaceCopyFilesView implements WorkspaceCopyFiles {
   }
 
   async writeTree(root: string, entries: WorkspaceTreeEntries): Promise<BetterResult<void, WorkspaceFileWriteTreeError>> {
-    if (!this.files.writeTreeBatch) {
+    const writeTreeBatch = this.files.writeTreeBatch;
+    if (!writeTreeBatch) {
       throw new Error("Workspace authority does not support writeTreeBatch");
     }
-    return writeTreeEntries(entries, (batch) => this.files.writeTreeBatch!(root, batch));
+    return writeTreeEntries(entries, (batch) => writeTreeBatch.call(this.files, root, batch));
   }
 
   async read(path: string): Promise<BetterResult<Uint8Array, WorkspaceCopyFileError>> {

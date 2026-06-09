@@ -4,7 +4,6 @@ import type { ArtifactsBindingClient } from "./binding";
 import type { ArtifactsWorkspaceFileWrite } from "./file-target";
 
 export type ArtifactsWorkspaceDriver = {
-  repositoryExists(repository: string): Promise<boolean>;
   readFile(repository: string, path: string): Promise<Uint8Array | null>;
   list(repository: string, path: string): Promise<WorkspaceEntry[]>;
   stat(repository: string, path: string): Promise<WorkspaceStat | null>;
@@ -80,10 +79,6 @@ class LazyIsomorphicGitArtifactsWorkspaceDriver implements ArtifactsWorkspaceDri
     private readonly artifacts: ArtifactsBindingClient,
     private readonly workspaceObject: WorkspaceObjectClient,
   ) {}
-
-  async repositoryExists(repository: string): Promise<boolean> {
-    return (await this.load()).repositoryExists(repository);
-  }
 
   async readFile(repository: string, path: string): Promise<Uint8Array | null> {
     return (await this.load()).readFile(repository, path);

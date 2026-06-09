@@ -62,10 +62,9 @@ mutate the Artifacts authority.
 
 WorkspaceObject may store coarse metadata:
 
-- current repository/ref metadata;
-- working-copy repository/ref metadata;
-- working-copy labels and creation timestamps;
-- base revisions for conflict checks;
+- current repository/ref metadata, stored once per Workspace;
+- working-copy identifiers, labels, and creation timestamps;
+- working-copy base revisions for conflict checks;
 - cleanup/retention metadata.
 
 WorkspaceObject must not store file bytes, Git objects, path-level overlays,
