@@ -63,6 +63,15 @@ export class DirectoryNotEmptyError extends TaggedError("DirectoryNotEmptyError"
   }
 }
 
+export class WorkspaceNotFoundError extends TaggedError("WorkspaceNotFoundError")<{
+  workspaceName: string;
+  message: string;
+}>() {
+  constructor(args: { workspaceName: string }) {
+    super({ ...args, message: `Workspace not found: ${args.workspaceName}` });
+  }
+}
+
 export class WorkspaceCopyNotFoundError extends TaggedError("WorkspaceCopyNotFoundError")<{
   copyId: string;
   message: string;
@@ -90,6 +99,7 @@ export type WorkspaceError =
   | NotDirectoryError
   | PathAlreadyExistsError
   | PathNotFoundError
+  | WorkspaceNotFoundError
   | WorkspaceCopyNotFoundError
   | WorkspaceCopyStaleError;
 
@@ -100,7 +110,8 @@ export type WorkspaceReadError = InvalidPathError | IsDirectoryError | PathNotFo
 export type WorkspaceListError = InvalidPathError | NotDirectoryError | PathNotFoundError;
 export type WorkspaceDeleteError = InvalidPathError | DirectoryNotEmptyError | PathNotFoundError;
 export type WorkspaceStatError = InvalidPathError | PathNotFoundError;
-export type WorkspaceCopyError = WorkspaceCopyNotFoundError;
+export type WorkspaceCopyCreateError = WorkspaceNotFoundError;
+export type WorkspaceCopyLookupError = WorkspaceCopyNotFoundError;
 export type WorkspaceCopyFileError =
   | WorkspaceMkdirError
   | WorkspaceWriteError
@@ -110,7 +121,7 @@ export type WorkspaceCopyFileError =
   | WorkspaceDeleteError
   | WorkspaceStatError
   | WorkspaceCopyNotFoundError;
-export type WorkspaceApplyError = WorkspaceCopyNotFoundError | WorkspaceCopyStaleError;
+export type WorkspaceApplyError = WorkspaceCopyNotFoundError | WorkspaceCopyStaleError | WorkspaceNotFoundError;
 export type WorkspaceDiscardError = WorkspaceCopyNotFoundError;
 
 export type InvalidPathErrorDto = {
@@ -150,6 +161,12 @@ export type DirectoryNotEmptyErrorDto = {
   message: string;
 };
 
+export type WorkspaceNotFoundErrorDto = {
+  tag: "WorkspaceNotFoundError";
+  workspaceName: string;
+  message: string;
+};
+
 export type WorkspaceCopyNotFoundErrorDto = {
   tag: "WorkspaceCopyNotFoundError";
   copyId: string;
@@ -171,6 +188,7 @@ export type WorkspaceErrorDto =
   | NotDirectoryErrorDto
   | PathAlreadyExistsErrorDto
   | PathNotFoundErrorDto
+  | WorkspaceNotFoundErrorDto
   | WorkspaceCopyNotFoundErrorDto
   | WorkspaceCopyStaleErrorDto;
 
@@ -186,11 +204,13 @@ export type ErrorDtoFor<E extends WorkspaceError> = E extends DirectoryNotEmptyE
           ? PathAlreadyExistsErrorDto
           : E extends PathNotFoundError
             ? PathNotFoundErrorDto
-            : E extends WorkspaceCopyNotFoundError
-              ? WorkspaceCopyNotFoundErrorDto
-              : E extends WorkspaceCopyStaleError
-                ? WorkspaceCopyStaleErrorDto
-                : never;
+            : E extends WorkspaceNotFoundError
+              ? WorkspaceNotFoundErrorDto
+              : E extends WorkspaceCopyNotFoundError
+                ? WorkspaceCopyNotFoundErrorDto
+                : E extends WorkspaceCopyStaleError
+                  ? WorkspaceCopyStaleErrorDto
+                  : never;
 
 export function workspaceErrorToDto<E extends WorkspaceError>(error: E): ErrorDtoFor<E> {
   if (DirectoryNotEmptyError.is(error)) {
@@ -210,6 +230,9 @@ export function workspaceErrorToDto<E extends WorkspaceError>(error: E): ErrorDt
   }
   if (PathNotFoundError.is(error)) {
     return { tag: "PathNotFoundError", path: error.path, message: error.message } as ErrorDtoFor<E>;
+  }
+  if (WorkspaceNotFoundError.is(error)) {
+    return { tag: "WorkspaceNotFoundError", workspaceName: error.workspaceName, message: error.message } as ErrorDtoFor<E>;
   }
   if (WorkspaceCopyNotFoundError.is(error)) {
     return { tag: "WorkspaceCopyNotFoundError", copyId: error.copyId, message: error.message } as ErrorDtoFor<E>;

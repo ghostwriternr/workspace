@@ -128,7 +128,7 @@ describe("Workspace", () => {
     expect(Result.isError(mkdir)).toBe(true);
     expect(Result.isError(write)).toBe(true);
     expect(Result.isError(deleted)).toBe(true);
-    if (Result.isError(copy)) expect(copy.error).toMatchObject({ tag: "WorkspaceCopyNotFoundError" });
+    if (Result.isError(copy)) expect(copy.error).toMatchObject({ tag: "WorkspaceNotFoundError", workspaceName: "repo" });
     if (Result.isError(read)) expect(read.error).toMatchObject({ tag: "PathNotFoundError" });
     if (Result.isError(list)) expect(list.error).toMatchObject({ tag: "PathNotFoundError" });
     if (Result.isError(stat)) expect(stat.error).toMatchObject({ tag: "PathNotFoundError" });
@@ -265,6 +265,24 @@ describe("Workspace", () => {
       expect(read.error).toMatchObject({
         tag: "WorkspaceCopyNotFoundError",
         copyId: created.value.id,
+      });
+    }
+  });
+
+  it("returns WorkspaceNotFound when applying after the current repository disappears", async () => {
+    const { workspace, driver } = createWorkspace({ repo: { "/note.txt": bytes("current") } });
+
+    const copy = await workspace.copies.create({ label: "orphaned-workspace" });
+    if (Result.isError(copy)) throw new Error("copy failed");
+    await copy.value.files.write("/note.txt", bytes("draft"));
+    driver.deleteRepository("repo");
+    const applied = await copy.value.apply();
+
+    expect(Result.isError(applied)).toBe(true);
+    if (Result.isError(applied)) {
+      expect(applied.error).toMatchObject({
+        tag: "WorkspaceNotFoundError",
+        workspaceName: "repo",
       });
     }
   });

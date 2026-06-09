@@ -21,8 +21,9 @@ import type { WorkspaceObjectClient } from "./workspace-object";
 import type { ErrorDtoFor } from "./model/errors";
 import type {
   WorkspaceApplyError as WorkspaceApplyDomainError,
-  WorkspaceCopyError as WorkspaceCopyDomainError,
+  WorkspaceCopyCreateError as WorkspaceCopyCreateDomainError,
   WorkspaceCopyFileError as WorkspaceCopyFileDomainError,
+  WorkspaceCopyLookupError as WorkspaceCopyLookupDomainError,
   WorkspaceDeleteError,
   WorkspaceDiscardError as WorkspaceDiscardDomainError,
   WorkspaceListError,
@@ -41,7 +42,7 @@ export type WorkspaceCopyCreateOptions = {
 };
 
 export type WorkspaceCopies = {
-  create(options?: WorkspaceCopyCreateOptions): Promise<BetterResult<WorkspaceCopy, WorkspaceCopyError>>;
+  create(options?: WorkspaceCopyCreateOptions): Promise<BetterResult<WorkspaceCopy, WorkspaceCopyCreateError>>;
   get(id: string): Promise<BetterResult<WorkspaceCopy, WorkspaceCopyLookupError>>;
 };
 
@@ -77,8 +78,8 @@ export type WorkspaceCurrentFileError = ErrorDtoFor<
 >;
 
 export type WorkspaceCopyFileError = ErrorDtoFor<WorkspaceCopyFileDomainError>;
-export type WorkspaceCopyError = ErrorDtoFor<WorkspaceCopyDomainError>;
-export type WorkspaceCopyLookupError = ErrorDtoFor<WorkspaceCopyDomainError>;
+export type WorkspaceCopyCreateError = ErrorDtoFor<WorkspaceCopyCreateDomainError>;
+export type WorkspaceCopyLookupError = ErrorDtoFor<WorkspaceCopyLookupDomainError>;
 export type WorkspaceApplyError = ErrorDtoFor<WorkspaceApplyDomainError>;
 export type WorkspaceDiscardError = ErrorDtoFor<WorkspaceDiscardDomainError>;
 
@@ -150,7 +151,7 @@ export class Workspace {
   readonly files: WorkspaceCurrentFiles;
   readonly copies: WorkspaceCopies;
 
-  private constructor(private readonly authority: WorkspaceAuthority<WorkspaceCurrentFileError, WorkspaceCopyError, WorkspaceCopyLookupError, WorkspaceCopyFileError, WorkspaceApplyError, WorkspaceDiscardError>) {
+  private constructor(private readonly authority: WorkspaceAuthority<WorkspaceCurrentFileError, WorkspaceCopyCreateError, WorkspaceCopyLookupError, WorkspaceCopyFileError, WorkspaceApplyError, WorkspaceDiscardError>) {
     this.files = new WorkspaceFiles(authority.files);
     this.copies = new WorkspaceCopiesApi(authority);
   }
@@ -228,9 +229,9 @@ class WorkspaceCopyFilesView implements WorkspaceCopyFiles {
 }
 
 class WorkspaceCopiesApi implements WorkspaceCopies {
-  constructor(private readonly authority: WorkspaceAuthority<WorkspaceCurrentFileError, WorkspaceCopyError, WorkspaceCopyLookupError, WorkspaceCopyFileError, WorkspaceApplyError, WorkspaceDiscardError>) {}
+  constructor(private readonly authority: WorkspaceAuthority<WorkspaceCurrentFileError, WorkspaceCopyCreateError, WorkspaceCopyLookupError, WorkspaceCopyFileError, WorkspaceApplyError, WorkspaceDiscardError>) {}
 
-  async create(options: WorkspaceCopyCreateOptions = {}): Promise<BetterResult<WorkspaceCopy, WorkspaceCopyError>> {
+  async create(options: WorkspaceCopyCreateOptions = {}): Promise<BetterResult<WorkspaceCopy, WorkspaceCopyCreateError>> {
     const copy = await this.authority.createCopy(options.label);
     if (Result.isError(copy)) {
       return Result.err(copy.error);

@@ -2,8 +2,9 @@ import { Result, type Result as BetterResult } from "better-result";
 import {
   Workspace,
   type WorkspaceApplyError,
-  type WorkspaceCopyError,
+  type WorkspaceCopyCreateError,
   type WorkspaceCopyFileError,
+  type WorkspaceCopyLookupError,
   type WorkspaceCurrentFileError,
   type WorkspaceDiscardError,
   type WorkspaceEntry,
@@ -110,13 +111,13 @@ type ReadOffsetOutOfRangeError = {
   totalLines: number;
 };
 
-export type RepoReadError = ReadOffsetOutOfRangeError | WorkspaceCurrentFileError | WorkspaceCopyError | WorkspaceCopyFileError;
-export type RepoWriteError = WorkspaceCopyError | WorkspaceFileWriteTreeError;
-export type RepoExactEditError = TextNotFoundError | AmbiguousTextEditError | WorkspaceCopyError | WorkspaceCopyFileError | WorkspaceFileWriteTreeError;
-export type RepoRunError = WorkspaceCopyError | WorkspaceDynamicWorkerExecutionError;
-export type RepoShellError = WorkspaceCopyError | WorkspaceSandboxCommandError;
-export type RepoApplyWorkingCopyError = NoActiveWorkingCopyError | WorkspaceCopyError | WorkspaceApplyError;
-export type RepoDiscardWorkingCopyError = NoActiveWorkingCopyError | WorkspaceCopyError | WorkspaceDiscardError;
+export type RepoReadError = ReadOffsetOutOfRangeError | WorkspaceCurrentFileError | WorkspaceCopyLookupError | WorkspaceCopyFileError;
+export type RepoWriteError = WorkspaceCopyCreateError | WorkspaceFileWriteTreeError;
+export type RepoExactEditError = TextNotFoundError | AmbiguousTextEditError | WorkspaceCopyCreateError | WorkspaceCopyFileError | WorkspaceFileWriteTreeError;
+export type RepoRunError = WorkspaceCopyCreateError | WorkspaceDynamicWorkerExecutionError;
+export type RepoShellError = WorkspaceCopyCreateError | WorkspaceSandboxCommandError;
+export type RepoApplyWorkingCopyError = NoActiveWorkingCopyError | WorkspaceCopyLookupError | WorkspaceApplyError;
+export type RepoDiscardWorkingCopyError = NoActiveWorkingCopyError | WorkspaceCopyLookupError | WorkspaceDiscardError;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -290,7 +291,7 @@ export class RepoWorkingCopyController {
     });
   }
 
-  private async filesForRead(): Promise<BetterResult<RepoReadableFiles, WorkspaceCopyError>> {
+  private async filesForRead(): Promise<BetterResult<RepoReadableFiles, WorkspaceCopyLookupError>> {
     const workspace = this.dependencies.workspace;
     const workingCopyId = this.dependencies.getWorkingCopyId();
     if (!workingCopyId) {
@@ -305,7 +306,7 @@ export class RepoWorkingCopyController {
     return Result.ok(copy.value.files);
   }
 
-  private async workingCopy(): Promise<BetterResult<WorkspaceCopy, WorkspaceCopyError>> {
+  private async workingCopy(): Promise<BetterResult<WorkspaceCopy, WorkspaceCopyCreateError>> {
     const workspace = this.dependencies.workspace;
     const existing = this.dependencies.getWorkingCopyId();
     if (existing) {
@@ -324,7 +325,7 @@ export class RepoWorkingCopyController {
     return Result.ok(copy.value);
   }
 
-  private async activeWorkingCopy(action: "apply" | "discard"): Promise<BetterResult<WorkspaceCopy, NoActiveWorkingCopyError | WorkspaceCopyError>> {
+  private async activeWorkingCopy(action: "apply" | "discard"): Promise<BetterResult<WorkspaceCopy, NoActiveWorkingCopyError | WorkspaceCopyLookupError>> {
     const workingCopyId = this.dependencies.getWorkingCopyId();
     if (!workingCopyId) {
       return Result.err({

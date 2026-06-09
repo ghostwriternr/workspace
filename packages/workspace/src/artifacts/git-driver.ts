@@ -301,7 +301,8 @@ async function headRevision(checkout: Checkout): Promise<string | undefined> {
 }
 
 function updateMessage(files: ArtifactsWorkspaceFileWrite[]): string {
-  return `Update ${files.length === 1 ? relativeGitPath(files[0]!.path) : `${files.length} files`}`;
+  const [first] = files;
+  return `Update ${first ? relativeGitPath(first.path) : `${files.length} files`}`;
 }
 
 async function mkdirp(fs: Fs, path: string): Promise<void> {

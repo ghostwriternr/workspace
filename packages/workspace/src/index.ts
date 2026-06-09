@@ -10,7 +10,7 @@ export {
   type WorkspaceBinding,
   type WorkspaceCopies,
   type WorkspaceCopyCreateOptions,
-  type WorkspaceCopyError,
+  type WorkspaceCopyCreateError,
   type WorkspaceCopyFileError,
   type WorkspaceBindingOptions,
   type WorkspaceCopyLookupError,

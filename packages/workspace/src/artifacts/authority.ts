@@ -2,12 +2,14 @@ import { Result, type Result as BetterResult } from "better-result";
 import type {
   ErrorDtoFor,
   WorkspaceApplyError as WorkspaceApplyDomainError,
-  WorkspaceCopyError as WorkspaceCopyDomainError,
+  WorkspaceCopyCreateError as WorkspaceCopyCreateDomainError,
+  WorkspaceCopyLookupError as WorkspaceCopyLookupDomainError,
   WorkspaceDiscardError as WorkspaceDiscardDomainError,
 } from "../model/errors";
 import {
   WorkspaceCopyNotFoundError,
   WorkspaceCopyStaleError,
+  WorkspaceNotFoundError,
 } from "../model/errors";
 import type { WorkspaceRevision } from "../model/entries";
 import { toWorkspaceErrorDto } from "../projections/dto";
@@ -16,7 +18,7 @@ import type {
   WorkspaceAuthorityCopy,
   WorkspaceAuthorityFiles,
 } from "../authority";
-import type { WorkspaceObjectClient } from "../workspace-object";
+import type { WorkspaceCopyRecord, WorkspaceObjectClient } from "../workspace-object";
 import type { ArtifactsBindingClient } from "./binding";
 import {
   createLazyIsomorphicGitArtifactsWorkspaceDriver,
@@ -37,14 +39,15 @@ export type { ArtifactsBindingClient, ArtifactsRepoClient } from "./binding";
 export type { ArtifactsWorkspaceDriver, ArtifactsWorkspaceDriverFactory } from "./driver";
 export type { ArtifactsWorkspaceFileWrite } from "./file-target";
 
-type ArtifactsCopyError = ErrorDtoFor<WorkspaceCopyDomainError>;
+type ArtifactsCopyCreateError = ErrorDtoFor<WorkspaceCopyCreateDomainError>;
+type ArtifactsCopyLookupError = ErrorDtoFor<WorkspaceCopyLookupDomainError>;
 type ArtifactsApplyError = ErrorDtoFor<WorkspaceApplyDomainError>;
 type ArtifactsDiscardError = ErrorDtoFor<WorkspaceDiscardDomainError>;
 
 type ArtifactsWorkspaceAuthorityContract = WorkspaceAuthority<
   ArtifactsCurrentFileError,
-  ArtifactsCopyError,
-  ArtifactsCopyError,
+  ArtifactsCopyCreateError,
+  ArtifactsCopyLookupError,
   ArtifactsCopyFileError,
   ArtifactsApplyError,
   ArtifactsDiscardError
@@ -103,7 +106,7 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
   async createCopy(
     label?: string,
   ): Promise<
-    BetterResult<ArtifactsWorkspaceAuthorityCopy, ArtifactsCopyError>
+    BetterResult<ArtifactsWorkspaceAuthorityCopy, ArtifactsCopyCreateError>
   > {
     try {
       const repo = await this.artifacts.get(this.repositoryName);
@@ -111,7 +114,7 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
       const current = await this.workspaceObject.currentRepository();
       const remote = current?.remote ?? repoAccess?.remote;
       if (!remote) {
-        return Result.err(copyNotFoundError(this.repositoryName));
+        return Result.err(workspaceNotFoundError(this.repositoryName));
       }
 
       const copyId = `${this.repositoryName}-copy-${crypto.randomUUID()}`;
@@ -128,39 +131,42 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
       });
       return Result.ok(new ArtifactsWorkspaceCopy(this, copyId, label, createdAt));
     } catch (error) {
-      return copyNotFoundFromArtifacts(this.repositoryName, error);
+      return workspaceNotFoundFromArtifacts(this.repositoryName, error);
     }
   }
 
   async getCopy(
     id: string,
   ): Promise<
-    BetterResult<ArtifactsWorkspaceAuthorityCopy, ArtifactsCopyError>
+    BetterResult<ArtifactsWorkspaceAuthorityCopy, ArtifactsCopyLookupError>
   > {
-    const exists = await this.copyExists(id);
-    if (Result.isError(exists)) {
-      return Result.err(exists.error);
+    const copy = await this.loadCopy(id);
+    if (Result.isError(copy)) {
+      return Result.err(copy.error);
     }
 
-    const copy = await this.workspaceObject.copy(id);
-    return Result.ok(new ArtifactsWorkspaceCopy(this, id, copy?.label, copy!.createdAt));
+    return Result.ok(new ArtifactsWorkspaceCopy(
+      this,
+      id,
+      copy.value.label,
+      copy.value.createdAt,
+    ));
   }
 
   async applyCopy(
     id: string,
   ): Promise<BetterResult<WorkspaceRevision, ArtifactsApplyError>> {
-    const exists = await this.copyExists(id);
-    if (Result.isError(exists)) {
-      return Result.err(exists.error);
+    const copy = await this.loadCopy(id);
+    if (Result.isError(copy)) {
+      return Result.err(copy.error);
     }
 
-    const copy = await this.workspaceObject.copy(id);
     try {
       const currentRevisionId = await this.driver.currentRevision(
         this.repositoryName,
       );
-      if (copy?.baseRevisionId !== currentRevisionId) {
-        return staleCopyError(id, copy?.baseRevisionId, currentRevisionId);
+      if (copy.value.baseRevisionId !== currentRevisionId) {
+        return staleCopyError(id, copy.value.baseRevisionId, currentRevisionId);
       }
 
       const revision = await this.driver.applyWorkingCopy(
@@ -180,50 +186,50 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
       if (isGitPushRejected(error)) {
         return staleCopyError(
           id,
-          copy?.baseRevisionId,
+          copy.value.baseRevisionId,
           await this.driver.currentRevision(this.repositoryName),
         );
       }
-      return copyNotFoundFromArtifacts(id, error);
+      return applyFailureFromArtifacts(this.repositoryName, id, error);
     }
   }
 
   async discardCopy(
     id: string,
   ): Promise<BetterResult<void, ArtifactsDiscardError>> {
-    const exists = await this.copyExists(id);
-    if (Result.isError(exists)) {
-      return Result.err(exists.error);
+    const copy = await this.loadCopy(id);
+    if (Result.isError(copy)) {
+      return Result.err(copy.error);
     }
 
     try {
       await this.driver.discardWorkingCopy(this.repositoryName, id);
     } catch (error) {
       if (!isMissingWorkingCopyRef(error)) {
-        return copyNotFoundFromArtifacts(id, error);
+        return copyNotFoundFromDiscard(id, error);
       }
     }
     await this.workspaceObject.deleteCopy(id);
     return Result.ok(undefined);
   }
 
-  async copyExists(id: string): Promise<BetterResult<void, ArtifactsCopyError>> {
+  async loadCopy(id: string): Promise<BetterResult<WorkspaceCopyRecord, ArtifactsCopyLookupError>> {
     try {
       const copy = await this.workspaceObject.copy(id);
       if (!copy) {
         return Result.err(copyNotFoundError(id));
       }
-      return Result.ok(undefined);
+      return Result.ok(copy);
     } catch (error) {
-      return copyNotFoundFromArtifacts(id, error);
+      return copyNotFoundFromLookup(id, error);
     }
   }
 
   async copyFileTargetExists(
     id: string,
   ): Promise<BetterResult<void, ArtifactsCopyFileError>> {
-    const exists = await this.copyExists(id);
-    if (Result.isError(exists)) {
+    const copy = await this.loadCopy(id);
+    if (Result.isError(copy)) {
       return Result.err(copyNotFoundFileError(id));
     }
     return Result.ok(undefined);
@@ -260,17 +266,55 @@ class ArtifactsWorkspaceCopy implements ArtifactsWorkspaceAuthorityCopy {
   }
 }
 
-function copyNotFoundError(id: string): ArtifactsCopyError {
+function workspaceNotFoundError(workspaceName: string): ArtifactsCopyCreateError {
+  return toWorkspaceErrorDto(new WorkspaceNotFoundError({ workspaceName })).error;
+}
+
+function copyNotFoundError(id: string): ArtifactsCopyLookupError {
   return toWorkspaceErrorDto(new WorkspaceCopyNotFoundError({ copyId: id }))
     .error;
 }
 
-function copyNotFoundFromArtifacts<T, E extends ArtifactsCopyError>(
+function workspaceNotFoundFromArtifacts<T>(
+  name: string,
+  error: unknown,
+): BetterResult<T, ArtifactsCopyCreateError> {
+  if (isArtifactsNotFound(error)) {
+    return Result.err(workspaceNotFoundError(name));
+  }
+  throw error;
+}
+
+function copyNotFoundFromLookup<T>(
   id: string,
   error: unknown,
-): BetterResult<T, E> {
+): BetterResult<T, ArtifactsCopyLookupError> {
   if (isArtifactsNotFound(error) || isMissingWorkingCopyRef(error)) {
-    return Result.err(copyNotFoundError(id) as E);
+    return Result.err(copyNotFoundError(id));
+  }
+  throw error;
+}
+
+function applyFailureFromArtifacts<T>(
+  workspaceName: string,
+  copyId: string,
+  error: unknown,
+): BetterResult<T, ArtifactsApplyError> {
+  if (isArtifactsNotFound(error)) {
+    return Result.err(workspaceNotFoundError(workspaceName));
+  }
+  if (isMissingWorkingCopyRef(error)) {
+    return Result.err(copyNotFoundError(copyId));
+  }
+  throw error;
+}
+
+function copyNotFoundFromDiscard<T>(
+  id: string,
+  error: unknown,
+): BetterResult<T, ArtifactsDiscardError> {
+  if (isArtifactsNotFound(error) || isMissingWorkingCopyRef(error)) {
+    return Result.err(copyNotFoundError(id));
   }
   throw error;
 }
@@ -284,7 +328,7 @@ function staleCopyError(
     copyId,
     ...(baseRevisionId ? { baseRevisionId } : {}),
     ...(currentRevisionId ? { currentRevisionId } : {}),
-  })).error as ArtifactsApplyError);
+  })).error);
 }
 
 function artifactsRepositoryAccessFrom(
