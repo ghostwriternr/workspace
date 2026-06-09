@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { WorkspaceObjectClient } from "@cloudflare/workspace";
+import type { FakeWorkspaceObject } from "@cloudflare/workspace/testing";
 import { handlePhotoUploadRequest } from "../src/http/photo-upload";
 import { createFakeArtifactsWorkspace, resetFakeArtifactsWorkspace } from "./fake-artifacts-workspace";
 
@@ -163,7 +163,7 @@ describe("photo upload HTTP route", () => {
   });
 });
 
-function workspaceObjects(object: WorkspaceObjectClient) {
+function workspaceObjects(object: FakeWorkspaceObject) {
   return { getByName: () => object };
 }
 

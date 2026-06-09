@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { Workspace } from "@cloudflare/workspace";
 import { FakeWorkspaceObject } from "@cloudflare/workspace/testing";
 import { handleRepoImportRequest } from "../../src/http/repo-import";
 
@@ -23,7 +24,7 @@ describe("repo import HTTP", () => {
         body: JSON.stringify({ owner: "cloudflare", repo: "example", ref: "main" }),
         headers: { "content-type": "application/json" },
       }),
-      { artifacts: { import: importRepo }, workspaceObjects: workspaceObjects(workspaceObject) },
+      runtimeFor({ import: importRepo }, workspaceObject),
     );
 
     expect(importRepo).toHaveBeenCalledWith({
@@ -66,7 +67,7 @@ describe("repo import HTTP", () => {
         body: "null",
         headers: { "content-type": "application/json" },
       }),
-      { artifacts: { import: async () => artifactImport("unused") }, workspaceObjects: workspaceObjects(new FakeWorkspaceObject()) },
+      runtimeFor({ import: async () => artifactImport("unused") }, new FakeWorkspaceObject()),
     );
 
     expect(response).toBeDefined();
@@ -85,7 +86,7 @@ describe("repo import HTTP", () => {
         body: JSON.stringify({ owner: "cloudflare", repo: "example" }),
         headers: { "content-type": "application/json" },
       }),
-      { artifacts: { import: async () => artifactImport("repo_789") }, workspaceObjects: workspaceObjects(new FakeWorkspaceObject()) },
+      runtimeFor({ import: async () => artifactImport("repo_789") }, new FakeWorkspaceObject()),
       {
         agents: { getByName: () => ({ refreshRepoState }) },
       },
@@ -105,18 +106,15 @@ describe("repo import HTTP", () => {
         body: JSON.stringify({ owner: "cloudflare", repo: "example" }),
         headers: { "content-type": "application/json" },
       }),
-      {
-        artifacts: {
-          import: async () => {
-            throw Object.assign(new Error("upstream unavailable"), {
-              name: "ArtifactsError",
-              code: "UPSTREAM_UNAVAILABLE",
-              numericCode: 1009,
-            });
-          },
+      runtimeFor({
+        import: async () => {
+          throw Object.assign(new Error("upstream unavailable"), {
+            name: "ArtifactsError",
+            code: "UPSTREAM_UNAVAILABLE",
+            numericCode: 1009,
+          });
         },
-        workspaceObjects: workspaceObjects(new FakeWorkspaceObject()),
-      },
+      }, new FakeWorkspaceObject()),
     );
 
     expect(response?.status).toBe(502);
@@ -134,14 +132,23 @@ describe("repo import HTTP", () => {
     await expect(
       handleRepoImportRequest(
         new Request("http://example.com/api/other", { method: "POST" }),
-        { artifacts: { import: async () => artifactImport("unused") }, workspaceObjects: workspaceObjects(new FakeWorkspaceObject()) },
+        runtimeFor({ import: async () => artifactImport("unused") }, new FakeWorkspaceObject()),
       ),
     ).resolves.toBeUndefined();
   });
 });
 
-function workspaceObjects(object: FakeWorkspaceObject) {
-  return { getByName: () => object };
+function runtimeFor(artifacts: { import(params: unknown): Promise<{ id: string; remote?: string; defaultBranch?: string }> }, object: FakeWorkspaceObject) {
+  return {
+    artifacts,
+    workspaces: Workspace.bind({
+      artifacts: {
+        get: async () => { throw new Error("not used"); },
+        delete: async () => false,
+      },
+      objects: { getByName: () => object },
+    }),
+  };
 }
 
 function artifactImport(id: string) {

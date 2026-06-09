@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import type { WorkspaceObject } from "../src";
+import type { WorkspaceObject } from "../src/workers";
 
 describe("WorkspaceObject", () => {
   it("stores current repository access metadata", async () => {

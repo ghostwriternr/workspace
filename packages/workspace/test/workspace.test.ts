@@ -43,11 +43,69 @@ describe("Workspace", () => {
 
   it("constructs with the default internal Git driver", () => {
     const artifacts = new FakeArtifactsBinding(new FakeArtifactsWorkspaceDriver({}));
-    const workspace = Workspace.fromArtifacts({ artifacts, object: createFakeArtifacts().object, name: "repo" });
+    const workspace = Workspace.bind({
+      artifacts,
+      objects: { getByName: () => createFakeArtifacts().object },
+    }).get("repo");
 
     expect(workspace.files).toBeDefined();
   });
 
+  it("binds Artifacts and WorkspaceObjects once for named workspaces", async () => {
+    const { artifacts, object } = createFakeArtifacts({ repo: { "/README.md": bytes("hello") } });
+    const requestedNames: string[] = [];
+    const workspaces = Workspace.bind({
+      artifacts,
+      objects: {
+        getByName(name: string) {
+          requestedNames.push(name);
+          return object;
+        },
+      },
+    });
+
+    const workspace = workspaces.get("repo");
+    const read = await workspace.files.read("/README.md");
+
+    expect(requestedNames).toEqual(["repo"]);
+    expect(Result.isOk(read)).toBe(true);
+    if (Result.isOk(read)) expect(text(read.value)).toBe("hello");
+  });
+
+  it("adopts Artifacts repository access through the binding", async () => {
+    const { artifacts, object } = createFakeArtifacts({ repo: { "/README.md": bytes("hello") } });
+    const workspaces = Workspace.bind({ artifacts, objects: { getByName: () => object } });
+
+    const adopted = await workspaces.adoptArtifactsRepository({
+      name: "repo",
+      repository: { remote: "https://git.example/repo.git", defaultBranch: "trunk" },
+    });
+
+    expect(Result.isOk(adopted)).toBe(true);
+    await expect(object.repositoryAccess("repo")).resolves.toEqual({
+      repository: "repo",
+      remote: "https://git.example/repo.git",
+      defaultBranch: "trunk",
+    });
+  });
+
+  it("returns Result errors when adopting Artifacts repository access metadata is incomplete", async () => {
+    const { artifacts, object } = createFakeArtifacts({ repo: {} });
+    const workspaces = Workspace.bind({ artifacts, objects: { getByName: () => object } });
+
+    const adopted = await workspaces.adoptArtifactsRepository({
+      name: "repo",
+      repository: { defaultBranch: "main" },
+    });
+
+    expect(Result.isError(adopted)).toBe(true);
+    if (Result.isError(adopted)) {
+      expect(adopted.error).toEqual({
+        tag: "WorkspaceArtifactsRepositoryAccessError",
+        message: "Artifacts repository access metadata must include a remote URL.",
+      });
+    }
+  });
 
   it("returns Result errors when the Artifacts repository is missing", async () => {
     const { workspace } = createWorkspace({});
@@ -75,9 +133,23 @@ describe("Workspace", () => {
     if (Result.isOk(read)) expect(text(read.value)).toBe("hello");
   });
 
+  it("creates and recovers working copies from the copies API", async () => {
+    const { workspace } = createWorkspace({ repo: { "/note.txt": bytes("current") } });
+
+    const created = await workspace.copies.create({ label: "agent-edit" });
+    if (Result.isError(created)) throw new Error("copy failed");
+    await created.value.files.write("/note.txt", bytes("draft"));
+    const recovered = await workspace.copies.get(created.value.id);
+    if (Result.isError(recovered)) throw new Error("recover failed");
+    const read = await recovered.value.files.read("/note.txt");
+
+    expect(Result.isOk(read)).toBe(true);
+    if (Result.isOk(read)) expect(text(read.value)).toBe("draft");
+  });
+
   it("writes async file trees into isolated copies before apply", async () => {
     const { workspace, driver } = createWorkspace({ repo: {} });
-    const copy = await workspace.files.copy("import-tree");
+    const copy = await workspace.copies.create({ label: "import-tree" });
     if (Result.isError(copy)) throw new Error("copy failed");
 
     const writeTree = await copy.value.files.writeTree("/imports/repo", asyncEntries([
@@ -109,7 +181,7 @@ describe("Workspace", () => {
 
   it("lets later writeTree entries overwrite earlier entries", async () => {
     const { workspace } = createWorkspace({ repo: {} });
-    const copy = await workspace.files.copy("duplicate-import");
+    const copy = await workspace.copies.create({ label: "duplicate-import" });
     if (Result.isError(copy)) throw new Error("copy failed");
 
     const writeTree = await copy.value.files.writeTree("/imports", [
@@ -126,7 +198,7 @@ describe("Workspace", () => {
 
   it("returns domain errors for file and directory collisions within a writeTree batch", async () => {
     const { workspace, driver } = createWorkspace({ repo: {} });
-    const copy = await workspace.files.copy("conflicting-import");
+    const copy = await workspace.copies.create({ label: "conflicting-import" });
     if (Result.isError(copy)) throw new Error("copy failed");
 
     const writeTree = await copy.value.files.writeTree("/imports", [
@@ -143,7 +215,7 @@ describe("Workspace", () => {
 
   it("does not change current files when copy writeTree has an invalid relative path", async () => {
     const { workspace } = createWorkspace({ repo: {} });
-    const copy = await workspace.files.copy("invalid-import");
+    const copy = await workspace.copies.create({ label: "invalid-import" });
     if (Result.isError(copy)) throw new Error("copy failed");
 
     const writeTree = await copy.value.files.writeTree("/imports/repo", [
@@ -161,7 +233,7 @@ describe("Workspace", () => {
 
   it("returns Result errors and closes the source when a source iterable fails", async () => {
     const { workspace } = createWorkspace({ repo: {} });
-    const copy = await workspace.files.copy("source-error-import");
+    const copy = await workspace.copies.create({ label: "source-error-import" });
     if (Result.isError(copy)) throw new Error("copy failed");
     const source = closeableFailingAsyncEntries();
 
@@ -178,7 +250,7 @@ describe("Workspace", () => {
 
   it("returns Result errors when a single writeTree entry exceeds the batch byte limit", async () => {
     const { workspace, driver } = createWorkspace({ repo: {} });
-    const copy = await workspace.files.copy("oversized-import");
+    const copy = await workspace.copies.create({ label: "oversized-import" });
     if (Result.isError(copy)) throw new Error("copy failed");
 
     const writeTree = await copy.value.files.writeTree("/imports", [
@@ -194,11 +266,11 @@ describe("Workspace", () => {
 
   it("applies, recovers, and discards isolated file copies", async () => {
     const { workspace, artifacts } = createWorkspace({ repo: { "/note.txt": bytes("current") } });
-    const copy = await workspace.files.copy("edit-note");
+    const copy = await workspace.copies.create({ label: "edit-note" });
     if (Result.isError(copy)) throw new Error("copy failed");
 
     await copy.value.files.write("/note.txt", bytes("draft"));
-    const recovered = await workspace.files.getCopy(copy.value.id);
+    const recovered = await workspace.copies.get(copy.value.id);
     if (Result.isError(recovered)) throw new Error("recover failed");
     await recovered.value.files.write("/other.txt", bytes("other"));
     const apply = await recovered.value.apply();
@@ -213,7 +285,7 @@ describe("Workspace", () => {
     if (Result.isOk(other)) expect(text(other.value)).toBe("other");
     expect(artifacts.deletedRepositories).toEqual([copy.value.id]);
 
-    const discardCopy = await workspace.files.copy("discard-note");
+    const discardCopy = await workspace.copies.create({ label: "discard-note" });
     if (Result.isError(discardCopy)) throw new Error("copy failed");
     await discardCopy.value.files.write("/note.txt", bytes("discarded"));
     const discard = await discardCopy.value.discard();
@@ -227,7 +299,7 @@ describe("Workspace", () => {
   it("records working copy repository access in WorkspaceObject", async () => {
     const { workspace, object } = createWorkspace({ repo: { "/note.txt": bytes("current") } });
 
-    const copy = await workspace.files.copy("metadata");
+    const copy = await workspace.copies.create({ label: "metadata" });
     if (Result.isError(copy)) throw new Error("copy failed");
 
     await expect(object.repositoryAccess(copy.value.id)).resolves.toEqual({
@@ -248,7 +320,7 @@ describe("Workspace", () => {
       },
     });
 
-    const copy = await workspace.files.copy("metadata");
+    const copy = await workspace.copies.create({ label: "metadata" });
     if (Result.isError(copy)) throw new Error("copy failed");
 
     await expect(object.repositoryAccess(copy.value.id)).resolves.toEqual({
@@ -259,10 +331,10 @@ describe("Workspace", () => {
     });
   });
 
-  it("attaches a file copy to a filesystem host and reconciles changed files", async () => {
+  it("attaches a working copy to a filesystem host and reconciles changed files", async () => {
     const { workspace } = createWorkspace({ repo: { "/photos/original.txt": bytes("original") } });
     const host = new FakeMountHost();
-    const copy = await workspace.files.copy("edit-photo");
+    const copy = await workspace.copies.create({ label: "edit-photo" });
     if (Result.isError(copy)) throw new Error("copy failed");
 
     const mount = await copy.value.files.attach(host, "/workspace");
@@ -284,7 +356,7 @@ describe("Workspace", () => {
 
   it("creates scoped file capabilities from file copies", async () => {
     const { workspace } = createWorkspace({ repo: { "/photos/current": bytes("photo") } });
-    const copy = await workspace.files.copy("dynamic-worker");
+    const copy = await workspace.copies.create({ label: "dynamic-worker" });
     if (Result.isError(copy)) throw new Error("copy failed");
 
     const capability = copy.value.files.scoped({ read: "/photos/**", write: "/notes/**" });
@@ -307,7 +379,7 @@ function createWorkspace(initial: Record<string, Record<string, Uint8Array>>) {
     remote: "https://git.example/repo.git",
     defaultBranch: "main",
   });
-  return { workspace: Workspace.fromArtifacts({ artifacts, object, name: "repo" }), artifacts, driver, object };
+  return { workspace: Workspace.bind({ artifacts, objects: { getByName: () => object } }).get("repo"), artifacts, driver, object };
 }
 
 class FakeMountHost {

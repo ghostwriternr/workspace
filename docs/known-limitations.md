@@ -3,23 +3,6 @@
 Accepted gaps in the current prototype. Remove entries when they stop being
 true.
 
-## Target API is not fully implemented
-
-The docs describe the target API shape:
-
-```ts
-const workspaces = Workspace.bind({ artifacts, objects });
-const workspace = workspaces.get(name);
-const copy = await workspace.copies.create({ label: "agent-edit" });
-```
-
-The current code still exposes transitional surfaces such as
-`Workspace.fromArtifacts({ artifacts, object, name })` and
-`workspace.files.copy(...)`. Example import/create flows also still perform some
-manual WorkspaceObject metadata registration.
-
-Those names are implementation debt, not product direction.
-
 ## File mutation uses temporary internal Git plumbing
 
 Workspace is backed by Artifacts, but Artifacts does not yet expose direct file

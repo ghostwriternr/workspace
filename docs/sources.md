@@ -55,18 +55,12 @@ await github.importRepository({
 });
 ```
 
-not like:
+not like product logic that parses repository remotes, default branches, or
+Git credentials itself.
 
-```ts
-const imported = await env.ARTIFACTS.import(...);
-await object.recordCurrentRepository({
-  repository: imported.name,
-  remote: imported.remote,
-  defaultBranch: imported.defaultBranch,
-});
-```
-
-The second shape is transitional implementation plumbing.
+An adapter may use a Workspace adoption seam internally after it creates or
+imports an Artifacts repository, but ordinary callers should not see that
+plumbing.
 
 ## Artifacts changes the import center
 

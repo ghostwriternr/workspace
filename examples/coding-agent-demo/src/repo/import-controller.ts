@@ -1,5 +1,5 @@
 import { Result, type Result as BetterResult } from "better-result";
-import type { WorkspaceObjectClient } from "@cloudflare/workspace";
+import type { WorkspaceBinding } from "@cloudflare/workspace";
 
 export type RepoImportRequest = {
   workspaceName: string;
@@ -42,7 +42,7 @@ export type ArtifactsImportBinding = {
 
 export type RepoImportControllerDependencies = {
   artifacts: ArtifactsImportBinding;
-  workspaceObjectForName(name: string): WorkspaceObjectClient;
+  workspaces: WorkspaceBinding;
 };
 
 export class RepoImportController {
@@ -65,18 +65,17 @@ export class RepoImportController {
         },
       });
 
-      const access = workspaceAccessFrom(imported, request.ref);
-      if (!access) {
+      const adopted = await this.dependencies.workspaces.adoptArtifactsRepository({
+        name: request.workspaceName,
+        repository: imported,
+        defaultBranch: request.ref,
+      });
+      if (Result.isError(adopted)) {
         return Result.err({
           tag: "ArtifactsImportError",
-          message: "Artifacts import response did not include repository access metadata.",
+          message: adopted.error.message,
         });
       }
-
-      await this.dependencies.workspaceObjectForName(request.workspaceName).recordCurrentRepository({
-        repository: request.workspaceName,
-        ...access,
-      });
 
       return Result.ok({
         workspaceName: request.workspaceName,
@@ -95,17 +94,6 @@ export class RepoImportController {
       return Result.err(artifactsImportError(error));
     }
   }
-}
-
-function workspaceAccessFrom(imported: { remote?: string; defaultBranch?: string }, ref?: string): { remote: string; defaultBranch: string } | undefined {
-  if (!imported.remote) {
-    return undefined;
-  }
-  const defaultBranch = ref ?? imported.defaultBranch;
-  if (!defaultBranch) {
-    return undefined;
-  }
-  return { remote: imported.remote, defaultBranch };
 }
 
 function artifactsImportError(error: unknown): ArtifactsImportError {

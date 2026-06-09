@@ -7,7 +7,7 @@ import {
   type WorkspaceCurrentFileError,
   type WorkspaceDiscardError,
   type WorkspaceEntry,
-  type WorkspaceFileCopy,
+  type WorkspaceCopy,
   type WorkspaceFileWriteTreeError,
   type WorkspaceStat,
 } from "@cloudflare/workspace";
@@ -297,7 +297,7 @@ export class RepoWorkingCopyController {
       return Result.ok(workspace.files);
     }
 
-    const copy = await workspace.files.getCopy(workingCopyId);
+    const copy = await workspace.copies.get(workingCopyId);
     if (Result.isError(copy)) {
       this.dependencies.setWorkingCopyId(undefined);
       return Result.err(copy.error);
@@ -305,18 +305,18 @@ export class RepoWorkingCopyController {
     return Result.ok(copy.value.files);
   }
 
-  private async workingCopy(): Promise<BetterResult<WorkspaceFileCopy, WorkspaceCopyError>> {
+  private async workingCopy(): Promise<BetterResult<WorkspaceCopy, WorkspaceCopyError>> {
     const workspace = this.dependencies.workspace;
     const existing = this.dependencies.getWorkingCopyId();
     if (existing) {
-      const copy = await workspace.files.getCopy(existing);
+      const copy = await workspace.copies.get(existing);
       if (!Result.isError(copy)) {
         return Result.ok(copy.value);
       }
       this.dependencies.setWorkingCopyId(undefined);
     }
 
-    const copy = await workspace.files.copy("coding-working-copy");
+    const copy = await workspace.copies.create({ label: "coding-working-copy" });
     if (Result.isError(copy)) {
       return Result.err(copy.error);
     }
@@ -324,7 +324,7 @@ export class RepoWorkingCopyController {
     return Result.ok(copy.value);
   }
 
-  private async activeWorkingCopy(action: "apply" | "discard"): Promise<BetterResult<WorkspaceFileCopy, NoActiveWorkingCopyError | WorkspaceCopyError>> {
+  private async activeWorkingCopy(action: "apply" | "discard"): Promise<BetterResult<WorkspaceCopy, NoActiveWorkingCopyError | WorkspaceCopyError>> {
     const workingCopyId = this.dependencies.getWorkingCopyId();
     if (!workingCopyId) {
       return Result.err({
@@ -334,7 +334,7 @@ export class RepoWorkingCopyController {
     }
 
     const workspace = this.dependencies.workspace;
-    const copy = await workspace.files.getCopy(workingCopyId);
+    const copy = await workspace.copies.get(workingCopyId);
     if (Result.isError(copy)) {
       this.dependencies.setWorkingCopyId(undefined);
       return Result.err(copy.error);

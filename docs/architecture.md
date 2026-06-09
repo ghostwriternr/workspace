@@ -147,11 +147,6 @@ See [`sources.md`](./sources.md).
 
 The current implementation still has migration-era surfaces:
 
-- `Workspace.fromArtifacts({ artifacts, object, name })` asks callers to shard
-  the Durable Object manually;
-- working copies are currently created with `workspace.files.copy(...)`;
-- some example import/create flows still manually record Artifacts metadata in
-  WorkspaceObject;
 - `apply()` needs stronger stale-base conflict semantics.
 
 These are not target architecture. They are cleanup targets documented in

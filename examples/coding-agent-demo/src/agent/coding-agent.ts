@@ -151,11 +151,10 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
   }
 
   private workspaceSurface(): Workspace {
-    return Workspace.fromArtifacts({
+    return Workspace.bind({
       artifacts: this.env.ARTIFACTS,
-      object: this.env.WORKSPACE_OBJECTS.getByName(this.name),
-      name: this.name,
-    });
+      objects: this.env.WORKSPACE_OBJECTS,
+    }).get(this.name);
   }
 }
 

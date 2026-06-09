@@ -1,7 +1,7 @@
 import { Result, type Result as BetterResult } from "better-result";
-import { Workspace, type WorkspaceCurrentFileError, type WorkspaceObjectClient } from "@cloudflare/workspace";
+import { Workspace, type WorkspaceBindingOptions, type WorkspaceCurrentFileError } from "@cloudflare/workspace";
 
-type PhotoArtifactsBinding = Parameters<typeof Workspace.fromArtifacts>[0]["artifacts"] & {
+type PhotoArtifactsBinding = WorkspaceBindingOptions["artifacts"] & {
   create(name: string, opts?: { description?: string; setDefaultBranch?: string }): Promise<unknown>;
 };
 
@@ -19,7 +19,7 @@ export type OriginalPhotoUpload = {
 
 export type UploadOriginalPhotoOptions = {
   artifacts: PhotoArtifactsBinding;
-  workspaceObject: WorkspaceObjectClient;
+  workspaces: ReturnType<typeof Workspace.bind>;
   workspaceName: string;
   contents: Uint8Array;
   contentType: string;
@@ -27,14 +27,14 @@ export type UploadOriginalPhotoOptions = {
 
 export async function uploadOriginalPhoto({
   artifacts,
-  workspaceObject,
+  workspaces,
   workspaceName,
   contents,
   contentType,
 }: UploadOriginalPhotoOptions): Promise<OriginalPhotoUpload> {
   const path = photoPathForContentType(contentType);
-  await ensurePhotoRepository(artifacts, workspaceObject, workspaceName);
-  const workspace = Workspace.fromArtifacts({ artifacts, object: workspaceObject, name: workspaceName });
+  await ensurePhotoRepository(artifacts, workspaces, workspaceName);
+  const workspace = workspaces.get(workspaceName);
 
   await ensurePhotosDirectory(workspace.files);
   await expectOk(workspace.files.write(path, contents), "write uploaded original photo");
@@ -65,7 +65,7 @@ function normalizedContentType(contentType: string): string {
   return contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
 }
 
-async function ensurePhotoRepository(artifacts: PhotoArtifactsBinding, workspaceObject: WorkspaceObjectClient, workspaceName: string): Promise<void> {
+async function ensurePhotoRepository(artifacts: PhotoArtifactsBinding, workspaces: ReturnType<typeof Workspace.bind>, workspaceName: string): Promise<void> {
   try {
     await artifacts.get(workspaceName);
     return;
@@ -78,22 +78,24 @@ async function ensurePhotoRepository(artifacts: PhotoArtifactsBinding, workspace
       description: `Photo Workspace ${workspaceName}`,
       setDefaultBranch: "main",
     });
-    const access = workspaceAccessFrom(created, "main");
-    if (!access) {
-      throw new Error("Artifacts create response did not include repository access metadata.");
+    const adopted = await workspaces.adoptArtifactsRepository({
+      name: workspaceName,
+      repository: artifactsRepositoryFrom(created),
+      defaultBranch: "main",
+    });
+    if (Result.isError(adopted)) {
+      throw new Error(adopted.error.message);
     }
-    await workspaceObject.recordCurrentRepository({ repository: workspaceName, ...access });
   }
 }
 
-function workspaceAccessFrom(value: unknown, fallbackDefaultBranch: string): { remote: string; defaultBranch: string } | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
+function artifactsRepositoryFrom(value: unknown): { remote?: string; defaultBranch?: string } {
+  if (typeof value !== "object" || value === null) return {};
   const remote = (value as { remote?: unknown }).remote;
   const defaultBranch = (value as { defaultBranch?: unknown }).defaultBranch;
-  if (typeof remote !== "string") return undefined;
   return {
-    remote,
-    defaultBranch: typeof defaultBranch === "string" ? defaultBranch : fallbackDefaultBranch,
+    ...(typeof remote === "string" ? { remote } : {}),
+    ...(typeof defaultBranch === "string" ? { defaultBranch } : {}),
   };
 }
 

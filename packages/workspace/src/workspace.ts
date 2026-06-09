@@ -34,9 +34,15 @@ import type {
 import type { WorkspaceEntry, WorkspaceRevision, WorkspaceStat } from "./model/entries";
 import { createWorkspaceFileCapability, type ScopedWorkspaceFileCapability } from "./projections/scoped-file-capability";
 
-export type WorkspaceCurrentFiles = WorkspaceCurrentFilesApi & {
-  copy(name?: string): Promise<BetterResult<WorkspaceFileCopy, WorkspaceCopyError>>;
-  getCopy(id: string): Promise<BetterResult<WorkspaceFileCopy, WorkspaceCopyLookupError>>;
+export type WorkspaceCurrentFiles = WorkspaceCurrentFilesApi;
+
+export type WorkspaceCopyCreateOptions = {
+  label?: string;
+};
+
+export type WorkspaceCopies = {
+  create(options?: WorkspaceCopyCreateOptions): Promise<BetterResult<WorkspaceCopy, WorkspaceCopyError>>;
+  get(id: string): Promise<BetterResult<WorkspaceCopy, WorkspaceCopyLookupError>>;
 };
 
 export type { WorkspaceTreeEntries, WorkspaceTreeEntryTooLargeError, WorkspaceTreeSourceError };
@@ -60,7 +66,7 @@ export type WorkspaceFileScope = {
   write: string | string[];
 };
 
-export type WorkspaceFileCopyFiles = WorkspaceCopyFilesApi & {
+export type WorkspaceCopyFiles = WorkspaceCopyFilesApi & {
   writeTree(root: string, entries: WorkspaceTreeEntries): Promise<BetterResult<void, WorkspaceFileWriteTreeError>>;
   attach(host: WorkspaceFileMountHost, path: string): Promise<BetterResult<WorkspaceFileMount, WorkspaceFileMountError>>;
   scoped(options: WorkspaceFileScope): ScopedWorkspaceFileCapability;
@@ -76,31 +82,87 @@ export type WorkspaceCopyLookupError = ErrorDtoFor<WorkspaceCopyDomainError>;
 export type WorkspaceApplyError = ErrorDtoFor<WorkspaceApplyDomainError>;
 export type WorkspaceDiscardError = ErrorDtoFor<WorkspaceDiscardDomainError>;
 
-export type WorkspaceArtifactsOptions = {
+export type WorkspaceObjectNamespace = {
+  getByName(name: string): WorkspaceObjectClient;
+};
+
+export type WorkspaceBindingOptions = {
   artifacts: ArtifactsBindingClient;
-  object: WorkspaceObjectClient;
+  objects: WorkspaceObjectNamespace;
+};
+
+export type WorkspaceArtifactsRepository = {
+  remote?: string;
+  defaultBranch?: string;
+};
+
+export type WorkspaceAdoptArtifactsRepositoryOptions = {
   name: string;
+  repository: WorkspaceArtifactsRepository;
+  defaultBranch?: string;
+};
+
+export type WorkspaceArtifactsRepositoryAccessError = {
+  tag: "WorkspaceArtifactsRepositoryAccessError";
+  message: string;
+};
+
+export type WorkspaceBinding = {
+  get(name: string): Workspace;
+  adoptArtifactsRepository(
+    options: WorkspaceAdoptArtifactsRepositoryOptions,
+  ): Promise<BetterResult<Workspace, WorkspaceArtifactsRepositoryAccessError>>;
 };
 
 export class Workspace {
-  static fromArtifacts(options: WorkspaceArtifactsOptions): Workspace {
-    return new Workspace(createArtifactsWorkspaceAuthority(options));
+  static bind(options: WorkspaceBindingOptions): WorkspaceBinding {
+    const get = (name: string) =>
+      new Workspace(
+        createArtifactsWorkspaceAuthority({
+          artifacts: options.artifacts,
+          object: options.objects.getByName(name),
+          name,
+        }),
+      );
+
+    return {
+      get,
+      async adoptArtifactsRepository(
+        adoption: WorkspaceAdoptArtifactsRepositoryOptions,
+      ): Promise<BetterResult<Workspace, WorkspaceArtifactsRepositoryAccessError>> {
+        const access = artifactsRepositoryAccessFrom(adoption.repository, adoption.defaultBranch);
+        if (!access) {
+          return Result.err({
+            tag: "WorkspaceArtifactsRepositoryAccessError",
+            message: "Artifacts repository access metadata must include a remote URL.",
+          });
+        }
+
+        await options.objects.getByName(adoption.name).recordCurrentRepository({
+          repository: adoption.name,
+          ...access,
+        });
+        return Result.ok(get(adoption.name));
+      },
+    };
   }
 
   readonly files: WorkspaceCurrentFiles;
+  readonly copies: WorkspaceCopies;
 
   private constructor(private readonly authority: WorkspaceAuthority<WorkspaceCurrentFileError, WorkspaceCopyError, WorkspaceCopyLookupError, WorkspaceCopyFileError, WorkspaceApplyError, WorkspaceDiscardError>) {
-    this.files = new WorkspaceFiles(authority);
+    this.files = new WorkspaceFiles(authority.files);
+    this.copies = new WorkspaceCopiesApi(authority);
   }
 }
 
-export class WorkspaceFileCopy {
-  readonly files: WorkspaceFileCopyFiles;
+export class WorkspaceCopy {
+  readonly files: WorkspaceCopyFiles;
 
   constructor(private readonly copy: WorkspaceAuthorityCopy<WorkspaceCopyFileError, WorkspaceApplyError, WorkspaceDiscardError>) {
     this.id = copy.id;
     this.createdAt = copy.createdAt;
-    this.files = new WorkspaceCopyFiles(copy.files);
+    this.files = new WorkspaceCopyFilesView(copy.files);
   }
 
   readonly id: string;
@@ -115,7 +177,7 @@ export class WorkspaceFileCopy {
   }
 }
 
-class WorkspaceCopyFiles implements WorkspaceFileCopyFiles {
+class WorkspaceCopyFilesView implements WorkspaceCopyFiles {
   constructor(private readonly files: WorkspaceAuthorityFiles<WorkspaceCopyFileError>) {}
 
   async mkdir(path: string): Promise<BetterResult<void, WorkspaceCopyFileError>> {
@@ -163,52 +225,75 @@ class WorkspaceCopyFiles implements WorkspaceFileCopyFiles {
   }
 }
 
-class WorkspaceFiles implements WorkspaceCurrentFiles {
+class WorkspaceCopiesApi implements WorkspaceCopies {
   constructor(private readonly authority: WorkspaceAuthority<WorkspaceCurrentFileError, WorkspaceCopyError, WorkspaceCopyLookupError, WorkspaceCopyFileError, WorkspaceApplyError, WorkspaceDiscardError>) {}
 
-  async copy(name?: string): Promise<BetterResult<WorkspaceFileCopy, WorkspaceCopyError>> {
-    const copy = await this.authority.createCopy(name);
+  async create(options: WorkspaceCopyCreateOptions = {}): Promise<BetterResult<WorkspaceCopy, WorkspaceCopyError>> {
+    const copy = await this.authority.createCopy(options.label);
     if (Result.isError(copy)) {
       return Result.err(copy.error);
     }
 
-    return Result.ok(new WorkspaceFileCopy(copy.value));
+    return Result.ok(new WorkspaceCopy(copy.value));
   }
 
-  async getCopy(id: string): Promise<BetterResult<WorkspaceFileCopy, WorkspaceCopyLookupError>> {
+  async get(id: string): Promise<BetterResult<WorkspaceCopy, WorkspaceCopyLookupError>> {
     const copy = await this.authority.getCopy(id);
     if (Result.isError(copy)) {
       return Result.err(copy.error);
     }
 
-    return Result.ok(new WorkspaceFileCopy(copy.value));
+    return Result.ok(new WorkspaceCopy(copy.value));
   }
+}
+
+class WorkspaceFiles implements WorkspaceCurrentFiles {
+  constructor(private readonly files: WorkspaceAuthorityFiles<WorkspaceCurrentFileError>) {}
 
   async mkdir(path: string): Promise<BetterResult<void, WorkspaceCurrentFileError>> {
-    return this.authority.files.mkdir(path);
+    return this.files.mkdir(path);
   }
 
   async write(path: string, contents: Uint8Array): Promise<BetterResult<void, WorkspaceCurrentFileError>> {
-    return this.authority.files.write(path, contents);
+    return this.files.write(path, contents);
   }
 
   async read(path: string): Promise<BetterResult<Uint8Array, WorkspaceCurrentFileError>> {
-    return this.authority.files.read(path);
+    return this.files.read(path);
   }
 
   async list(path: string): Promise<BetterResult<WorkspaceEntry[], WorkspaceCurrentFileError>> {
-    return this.authority.files.list(path);
+    return this.files.list(path);
   }
 
   async stat(path: string): Promise<BetterResult<WorkspaceStat, WorkspaceCurrentFileError>> {
-    return this.authority.files.stat(path);
+    return this.files.stat(path);
   }
 
   async delete(path: string): Promise<BetterResult<void, WorkspaceCurrentFileError>> {
-    return this.authority.files.delete(path);
+    return this.files.delete(path);
   }
 }
 
 function arrayOf(value: string | string[]): string[] {
   return Array.isArray(value) ? value : [value];
+}
+
+function artifactsRepositoryAccessFrom(
+  repository: WorkspaceArtifactsRepository,
+  fallbackDefaultBranch: string | undefined,
+): { remote: string; defaultBranch: string } | undefined {
+  if (!repository.remote) {
+    return undefined;
+  }
+
+  const defaultBranch = fallbackDefaultBranch ?? repository.defaultBranch;
+  if (!defaultBranch) {
+    return undefined;
+  }
+
+  return {
+    remote: repository.remote,
+    defaultBranch,
+  };
 }

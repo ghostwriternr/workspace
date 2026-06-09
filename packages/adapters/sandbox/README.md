@@ -1,12 +1,12 @@
 # Workspace Sandbox adapter
 
-`@cloudflare/workspace-adapter-sandbox` runs shell commands with a Workspace file copy mounted at a runtime path such as `/workspace`.
+`@cloudflare/workspace-adapter-sandbox` runs shell commands with a Workspace working copy mounted at a runtime path such as `/workspace`.
 
-It is an execution adapter, not Workspace core. The adapter knows how to attach a file copy to a Sandbox-like filesystem, run a command, and reconcile Workspace-owned mounted files back into the copy after the command exits. Product code still decides which copy to expose and whether that copy is applied or discarded.
+It is an execution adapter, not Workspace core. The adapter knows how to attach a working copy to a Sandbox-like filesystem, run a command, and reconcile Workspace-owned mounted files back into the copy after the command exits. Product code still decides which copy to expose and whether that copy is applied or discarded.
 
 ## What it owns
 
-- Materializing a Workspace file copy into a Sandbox-compatible filesystem host.
+- Materializing a Workspace working copy into a Sandbox-compatible filesystem host.
 - Running a shell command with `cwd` set to the mounted root.
 - Reconciling mounted Workspace-owned files back into the copy after command completion.
 - Returning mount, command, and reconcile failures as `Result` values.
@@ -14,7 +14,7 @@ It is an execution adapter, not Workspace core. The adapter knows how to attach 
 ## What it does not own
 
 - Workspace identity or lookup.
-- File-copy creation or recovery.
+- Working-copy creation or recovery.
 - `apply()` or `discard()`.
 - Agent tools, prompts, UI state, approvals, or policy.
 - Runtime-local cache semantics such as `node_modules` preservation.

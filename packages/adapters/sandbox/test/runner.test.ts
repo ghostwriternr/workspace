@@ -1,7 +1,7 @@
 import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
-import type { WorkspaceFileCopyFiles, WorkspaceFileMount, WorkspaceFileMountError, WorkspaceFileMountHost } from "@cloudflare/workspace";
+import type { WorkspaceCopyFiles, WorkspaceFileMount, WorkspaceFileMountError, WorkspaceFileMountHost } from "@cloudflare/workspace";
 import { createWorkspaceSandboxCommandRunner, type WorkspaceSandboxClient } from "../src/runner";
 
 const reconcileSummary = {
@@ -128,7 +128,7 @@ describe("Workspace Sandbox command runner", () => {
   });
 });
 
-class FakeAttachableFiles implements Pick<WorkspaceFileCopyFiles, "attach"> {
+class FakeAttachableFiles implements Pick<WorkspaceCopyFiles, "attach"> {
   reconcileCount = 0;
 
   constructor(private readonly options: { attachError?: string; reconcileError?: string } = {}) {}

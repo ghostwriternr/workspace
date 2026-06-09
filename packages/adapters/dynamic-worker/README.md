@@ -41,7 +41,7 @@ The adapter defaults delegated workers to:
 
 ## Usage
 
-Product code creates or recovers a Workspace file copy, exposes a concrete loopback `WorkerEntrypoint` for the scoped file capability, then passes that entrypoint stub to the runner.
+Product code creates or recovers a Workspace working copy, exposes a concrete loopback `WorkerEntrypoint` for the scoped file capability, then passes that entrypoint stub to the runner.
 
 ```ts
 import { Result } from "better-result";

@@ -1,6 +1,6 @@
 import { Result, type Result as BetterResult } from "better-result";
 import type {
-  WorkspaceFileCopyFiles,
+  WorkspaceCopyFiles,
   WorkspaceFileMountError,
   WorkspaceFileMountHost,
   WorkspaceFileReconcileSummary,
@@ -28,7 +28,7 @@ export type WorkspaceSandboxCommandError =
     };
 
 export type WorkspaceSandboxRunCommandOptions = {
-  files: Pick<WorkspaceFileCopyFiles, "attach">;
+  files: Pick<WorkspaceCopyFiles, "attach">;
   sandboxId: string;
   command: string;
   root?: string;

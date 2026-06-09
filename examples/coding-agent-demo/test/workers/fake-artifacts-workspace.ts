@@ -24,7 +24,7 @@ export function createFakeArtifactsWorkspace(tree: Tree = {}): FakeArtifactsWork
     driver,
     object,
     workspaceName,
-    workspace: Workspace.fromArtifacts({ artifacts, object, name: workspaceName }),
+    workspace: Workspace.bind({ artifacts, objects: { getByName: () => object } }).get(workspaceName),
   };
 }
 

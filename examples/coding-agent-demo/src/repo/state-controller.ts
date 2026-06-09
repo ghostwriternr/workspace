@@ -52,7 +52,7 @@ export class RepoStateController {
       return Result.ok(workspace.files);
     }
 
-    const copy = await workspace.files.getCopy(this.dependencies.workingCopyId);
+    const copy = await workspace.copies.get(this.dependencies.workingCopyId);
     if (Result.isError(copy)) {
       return Result.err(copy.error);
     }

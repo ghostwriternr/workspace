@@ -1,6 +1,6 @@
 import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
-import { Workspace, type WorkspaceFileCopyFiles } from "@cloudflare/workspace";
+import { Workspace, type WorkspaceCopyFiles } from "@cloudflare/workspace";
 import type { WorkspaceDynamicWorkerFileCapability } from "@cloudflare/workspace-adapter-dynamic-worker";
 
 import { PhotoDraftController } from "../../src/photo/draft-controller";
@@ -165,7 +165,7 @@ describe("PhotoDraftController", () => {
     expect(dependencies.draftEditId).toBeUndefined();
   });
 
-  it("reads draft images through the active file copy", async () => {
+  it("reads draft images through the active working copy", async () => {
     const dependencies = createDependencies({
       head: { "/photos/original.png": originalPng },
       copy: { "/photos/current": draftPng },
@@ -242,7 +242,7 @@ function createDependencies(options: CreateDependenciesOptions): TestDependencie
       defaultBranch: "main",
     });
   }
-  const workspace = Workspace.fromArtifacts({ artifacts, object, name: "demo" });
+  const workspace = Workspace.bind({ artifacts, objects: { getByName: () => object } }).get("demo");
   let draftEditId = options.draftEditId;
 
   return {
@@ -262,9 +262,9 @@ function createDependencies(options: CreateDependenciesOptions): TestDependencie
   } satisfies TestDependencies;
 }
 
-async function draftFiles(workspace: Workspace, draftEditId: string | undefined): Promise<WorkspaceFileCopyFiles> {
+async function draftFiles(workspace: Workspace, draftEditId: string | undefined): Promise<WorkspaceCopyFiles> {
   if (!draftEditId) throw new Error("No draft edit exists.");
-  const copy = await workspace.files.getCopy(draftEditId);
+  const copy = await workspace.copies.get(draftEditId);
   if (Result.isError(copy)) throw new Error(`Draft edit not found: ${draftEditId}`);
   return copy.value.files;
 }
@@ -273,7 +273,7 @@ class FakeDynamicWorkerRunner {
   readonly calls: Array<{ code: string }> = [];
 
   constructor(
-    private readonly getFiles: () => Promise<WorkspaceFileCopyFiles>,
+    private readonly getFiles: () => Promise<WorkspaceCopyFiles>,
     private readonly error?: string,
   ) {}
 
@@ -298,7 +298,7 @@ class FakeWorkspaceCommandRunner {
     private readonly error?: string,
   ) {}
 
-  async runCommand(options: { files: WorkspaceFileCopyFiles; command: string; root?: string; sandboxId: string }) {
+  async runCommand(options: { files: WorkspaceCopyFiles; command: string; root?: string; sandboxId: string }) {
     this.calls.push({ command: options.command, root: options.root ?? "/workspace", sandboxId: options.sandboxId });
     if (this.error) {
       return Result.err({

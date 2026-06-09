@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { WorkspaceObjectClient } from "@cloudflare/workspace";
+import type { FakeWorkspaceObject } from "@cloudflare/workspace/testing";
 import { handlePhotoReadRequest } from "../src/http/photo-read";
 import { createFakeArtifactsWorkspace, resetFakeArtifactsWorkspace } from "./fake-artifacts-workspace";
 
@@ -99,7 +99,7 @@ function workspace(initial: Record<string, Record<string, Uint8Array>>, name: st
   return fake;
 }
 
-function workspaceObjects(object: WorkspaceObjectClient) {
+function workspaceObjects(object: FakeWorkspaceObject) {
   return { getByName: () => object };
 }
 

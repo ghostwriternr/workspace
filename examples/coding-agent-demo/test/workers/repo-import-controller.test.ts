@@ -1,6 +1,7 @@
 import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
+import { Workspace } from "@cloudflare/workspace";
 import { FakeWorkspaceObject } from "@cloudflare/workspace/testing";
 import { RepoImportController } from "../../src/repo/import-controller";
 
@@ -9,7 +10,7 @@ describe("RepoImportController", () => {
     const imports: unknown[] = [];
     const workspaceObject = new FakeWorkspaceObject();
     const controller = new RepoImportController({
-      workspaceObjectForName: () => workspaceObject,
+      workspaces: workspacesFor(workspaceObject),
       artifacts: {
         import: async (params: unknown) => {
           imports.push(params);
@@ -71,7 +72,7 @@ describe("RepoImportController", () => {
   it("uses an explicit import ref for Workspace git access", async () => {
     const workspaceObject = new FakeWorkspaceObject();
     const controller = new RepoImportController({
-      workspaceObjectForName: () => workspaceObject,
+      workspaces: workspacesFor(workspaceObject),
       artifacts: {
         import: async () => ({
           id: "repo_456",
@@ -100,7 +101,7 @@ describe("RepoImportController", () => {
 
   it("returns Artifacts import failures as Result errors", async () => {
     const controller = new RepoImportController({
-      workspaceObjectForName: () => new FakeWorkspaceObject(),
+      workspaces: workspacesFor(new FakeWorkspaceObject()),
       artifacts: {
         import: async () => {
           throw Object.assign(new Error("remote repository requires authentication"), {
@@ -128,3 +129,13 @@ describe("RepoImportController", () => {
     }
   });
 });
+
+function workspacesFor(workspaceObject: FakeWorkspaceObject) {
+  return Workspace.bind({
+    artifacts: {
+      get: async () => { throw new Error("not used"); },
+      delete: async () => false,
+    },
+    objects: { getByName: () => workspaceObject },
+  });
+}

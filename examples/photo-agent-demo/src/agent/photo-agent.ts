@@ -121,11 +121,10 @@ export class PhotoAgent extends Think<Env, PhotoAgentState> {
   private controller(): PhotoDraftController {
     return new PhotoDraftController({
       workspaceName: this.name,
-      workspace: Workspace.fromArtifacts({
+      workspace: Workspace.bind({
         artifacts: this.env.ARTIFACTS,
-        object: this.env.WORKSPACE_OBJECTS.getByName(this.name),
-        name: this.name,
-      }),
+        objects: this.env.WORKSPACE_OBJECTS,
+      }).get(this.name),
       commandRunner: createSandboxWorkspaceCommandRunner(this.env.Sandbox, this.name),
       dynamicWorkerRunner: createWorkspaceDynamicWorkerRunner(this.env.DYNAMIC_WORKERS),
       workspaceForDraft: (draftEditId) =>

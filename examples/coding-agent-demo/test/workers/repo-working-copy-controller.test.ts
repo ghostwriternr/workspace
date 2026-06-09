@@ -34,7 +34,7 @@ describe("RepoWorkingCopyController", () => {
 
   it("truncates large reads and supports offset and limit", async () => {
     const { controller, workspace } = await setupWorkingCopyController();
-    const large = unwrap(await workspace.files.copy("large"));
+    const large = unwrap(await workspace.copies.create({ label: "large" }));
     await large.files.writeTree("/", [
       { path: "large.md", contents: encoder.encode(numberedLines(2001)) },
     ]);
@@ -76,7 +76,7 @@ describe("RepoWorkingCopyController", () => {
 
   it("caps read output by bytes without splitting lines", async () => {
     const { controller, workspace } = await setupWorkingCopyController();
-    const large = unwrap(await workspace.files.copy("large-bytes"));
+    const large = unwrap(await workspace.copies.create({ label: "large-bytes" }));
     const lines = Array.from({ length: 200 }, () => "x".repeat(512)).join("\n");
     await large.files.writeTree("/", [
       { path: "wide.md", contents: encoder.encode(lines) },
@@ -123,7 +123,7 @@ describe("RepoWorkingCopyController", () => {
     });
 
     const current = await workspace.files.read("/notes/todo.md");
-    const copy = unwrap(await workspace.files.getCopy(getWorkingCopyId()!));
+    const copy = unwrap(await workspace.copies.get(getWorkingCopyId()!));
     const edited = unwrap(await copy.files.read("/notes/todo.md"));
 
     expect(Result.isError(current)).toBe(true);
@@ -136,7 +136,7 @@ describe("RepoWorkingCopyController", () => {
 
     await expectOk(controller.edit({ path: "/scripts/example.sh", oldText: "old", newText: "$HOME and $&" }));
 
-    const copy = unwrap(await workspace.files.getCopy(getWorkingCopyId()!));
+    const copy = unwrap(await workspace.copies.get(getWorkingCopyId()!));
     expect(decoder.decode(unwrap(await copy.files.read("/scripts/example.sh")))).toBe("echo $HOME and $&\n");
   });
 
@@ -165,7 +165,7 @@ describe("RepoWorkingCopyController", () => {
     expect(getWorkingCopyId()).toEqual(expect.any(String));
 
     const current = await workspace.files.read("/notes/edit.md");
-    const copy = unwrap(await workspace.files.getCopy(getWorkingCopyId()!));
+    const copy = unwrap(await workspace.copies.get(getWorkingCopyId()!));
     const edited = unwrap(await copy.files.read("/notes/edit.md"));
 
     expect(runner.calls).toEqual([{ code: "export default async function(env) {}" }]);
@@ -190,7 +190,7 @@ describe("RepoWorkingCopyController", () => {
     expect(getWorkingCopyId()).toEqual(expect.any(String));
 
     const current = await workspace.files.read("/notes/shell.md");
-    const copy = unwrap(await workspace.files.getCopy(getWorkingCopyId()!));
+    const copy = unwrap(await workspace.copies.get(getWorkingCopyId()!));
     const edited = unwrap(await copy.files.read("/notes/shell.md"));
 
     expect(shellRunner.calls).toEqual([{ command: "npm test", workingCopyId: getWorkingCopyId() }]);
@@ -237,7 +237,7 @@ async function setupWorkingCopyController() {
     calls: [] as Array<{ code: string }>,
     async run(options: { code: string }) {
       this.calls.push({ code: options.code });
-      const copy = unwrap(await workspace.files.getCopy(workingCopyId!));
+      const copy = unwrap(await workspace.copies.get(workingCopyId!));
       const readme = unwrap(await copy.files.read("/README.md"));
       await copy.files.writeTree("/", [
         { path: "notes/edit.md", contents: encoder.encode(`read ${decoder.decode(readme)}`) },
@@ -249,7 +249,7 @@ async function setupWorkingCopyController() {
     calls: [] as Array<{ command: string; workingCopyId: string | undefined }>,
     async runCommand(options: { command: string; sandboxId: string }) {
       this.calls.push({ command: options.command, workingCopyId: options.sandboxId });
-      const copy = unwrap(await workspace.files.getCopy(options.sandboxId));
+      const copy = unwrap(await workspace.copies.get(options.sandboxId));
       await copy.files.writeTree("/", [
         { path: "notes/shell.md", contents: encoder.encode("shell wrote this") },
       ]);

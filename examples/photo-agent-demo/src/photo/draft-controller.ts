@@ -1,7 +1,8 @@
 import { Result, type Result as BetterResult } from "better-result";
 import {
+  type WorkspaceCopies,
   type WorkspaceCurrentFiles,
-  type WorkspaceFileCopyFiles,
+  type WorkspaceCopyFiles,
 } from "@cloudflare/workspace";
 import type { WorkspaceFileReconcileSummary } from "@cloudflare/workspace";
 import type { WorkspaceSandboxCommandError, WorkspaceSandboxCommandRunner } from "@cloudflare/workspace-adapter-sandbox";
@@ -46,16 +47,14 @@ type WorkspaceOperationError = { tag: string };
 
 type PhotoFileCopy = {
   id: string;
-  files: WorkspaceFileCopyFiles;
+  files: WorkspaceCopyFiles;
   apply(): Promise<BetterResult<RevisionInfo, WorkspaceOperationError>>;
   discard(): Promise<BetterResult<void, WorkspaceOperationError>>;
 };
 
 type PhotoWorkspace = {
-  files: WorkspaceCurrentFiles & {
-    copy(name?: string): Promise<BetterResult<PhotoFileCopy, WorkspaceOperationError>>;
-    getCopy(id: string): Promise<BetterResult<PhotoFileCopy, WorkspaceOperationError>>;
-  };
+  files: WorkspaceCurrentFiles;
+  copies: WorkspaceCopies;
 };
 
 type WorkspaceReadableFiles = {
@@ -126,7 +125,7 @@ export class PhotoDraftController {
       };
     }
 
-    const copy = await expectOkResult(this.workspace().files.copy("photo-draft"), "start draft edit");
+    const copy = await expectOkResult(this.workspace().copies.create({ label: "photo-draft" }), "start draft edit");
     this.dependencies.setDraftEditId(copy.id);
 
     return {
@@ -219,7 +218,7 @@ export class PhotoDraftController {
       return { status: "error", error: { tag: "PathNotFoundError" } };
     }
 
-    const copy = await this.workspace().files.getCopy(draftEditId);
+    const copy = await this.workspace().copies.get(draftEditId);
     if (Result.isError(copy)) {
       this.dependencies.setDraftEditId(undefined);
       return { status: "error", error: { tag: "PathNotFoundError" } };
@@ -268,7 +267,7 @@ export class PhotoDraftController {
       return this.listWorkspaceRoots(this.workspace().files);
     }
 
-    const copy = await this.workspace().files.getCopy(draftEditId);
+    const copy = await this.workspace().copies.get(draftEditId);
     if (Result.isError(copy)) {
       this.dependencies.setDraftEditId(undefined);
       return this.listWorkspaceRoots(this.workspace().files);
@@ -300,7 +299,7 @@ export class PhotoDraftController {
 
   private async withDraftCopy<T>(useCopy: (copy: PhotoFileCopy, draftEditId: string) => Promise<T>): Promise<T> {
     const started = await this.startDraft();
-    const copy = await this.workspace().files.getCopy(started.draftEditId);
+    const copy = await this.workspace().copies.get(started.draftEditId);
     if (Result.isError(copy)) {
       this.dependencies.setDraftEditId(undefined);
       throw new Error(`draft edit not found: ${copy.error.tag}`);
@@ -349,7 +348,7 @@ export class PhotoDraftController {
       return { exists: false };
     }
 
-    const copy = await this.workspace().files.getCopy(draftEditId);
+    const copy = await this.workspace().copies.get(draftEditId);
     if (Result.isError(copy)) {
       this.dependencies.setDraftEditId(undefined);
       return { exists: false };

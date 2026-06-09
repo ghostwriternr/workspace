@@ -68,7 +68,7 @@ export class WorkspaceCopyNotFoundError extends TaggedError("WorkspaceCopyNotFou
   message: string;
 }>() {
   constructor(args: { copyId: string }) {
-    super({ ...args, message: `Workspace file copy not found: ${args.copyId}` });
+    super({ ...args, message: `Workspace copy not found: ${args.copyId}` });
   }
 }
 

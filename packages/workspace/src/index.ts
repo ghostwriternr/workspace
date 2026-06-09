@@ -2,32 +2,33 @@
 // ordinary app code to import runtime classes just to work with files.
 export {
   Workspace,
-  WorkspaceFileCopy,
+  WorkspaceCopy,
+  type WorkspaceAdoptArtifactsRepositoryOptions,
   type WorkspaceApplyError,
+  type WorkspaceArtifactsRepository,
+  type WorkspaceArtifactsRepositoryAccessError,
+  type WorkspaceBinding,
+  type WorkspaceCopies,
+  type WorkspaceCopyCreateOptions,
   type WorkspaceCopyError,
   type WorkspaceCopyFileError,
+  type WorkspaceBindingOptions,
   type WorkspaceCopyLookupError,
   type WorkspaceCopyFilesApi,
   type WorkspaceCurrentFileError,
   type WorkspaceCurrentFiles,
   type WorkspaceCurrentFilesApi,
   type WorkspaceDiscardError,
-  type WorkspaceFileCopyFiles,
+  type WorkspaceCopyFiles,
   type WorkspaceFilesApi,
   type WorkspaceFileScope,
   type WorkspaceFileWriteTreeError,
+  type WorkspaceObjectNamespace,
   type WorkspaceTreeEntries,
   type WorkspaceTreeEntryTooLargeError,
   type WorkspaceTreeSourceError,
 } from "./workspace";
 export { type WorkspaceEntry, type WorkspaceRevision, type WorkspaceStat } from "./model/entries";
-export type {
-  WorkspaceObject,
-  WorkspaceCopyRepositoryRecord,
-  WorkspaceCurrentRepositoryRecord,
-  WorkspaceObjectClient,
-  WorkspaceRepositoryAccess,
-} from "./workspace-object";
 export { type WorkspaceTreeEntry } from "./model/write-tree";
 export {
   type WorkspaceFileMount,

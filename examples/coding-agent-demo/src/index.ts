@@ -1,4 +1,5 @@
 import { routeAgentRequest } from "agents";
+import { Workspace } from "@cloudflare/workspace";
 
 export { Sandbox } from "@cloudflare/sandbox";
 
@@ -13,7 +14,10 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const importResponse = await handleRepoImportRequest(
       request,
-      { artifacts: env.ARTIFACTS, workspaceObjects: env.WORKSPACE_OBJECTS },
+      {
+        artifacts: env.ARTIFACTS,
+        workspaces: Workspace.bind({ artifacts: env.ARTIFACTS, objects: env.WORKSPACE_OBJECTS }),
+      },
       { agents: env.CodingAgent },
     );
     if (importResponse) {

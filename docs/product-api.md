@@ -202,15 +202,9 @@ This is materialization into a working copy, not a general source-overlay
 engine. If a source can be captured as an Artifacts-backed authority, prefer
 that over streaming every byte through a Worker.
 
-## Transitional implementation names
+## Source adapter adoption seam
 
-The current code still exposes some migration-era names:
-
-- `Workspace.fromArtifacts({ artifacts, object, name })` instead of
-  `Workspace.bind({ artifacts, objects }).get(name)`;
-- `workspace.files.copy(...)` instead of `workspace.copies.create(...)`;
-- app code that manually records Artifacts metadata in `WorkspaceObject` after
-  import/create flows.
-
-Those names should be treated as implementation debt, not target API. New code
-should move toward the shapes above.
+Source adapters that create or import Artifacts repositories can connect that
+repository to a Workspace through the bound Workspace handle. Normal product
+logic should still use `workspaces.get(name)` and Workspace file/copy APIs; it
+should not handle remotes, default branches, or repository tokens.

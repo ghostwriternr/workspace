@@ -39,7 +39,7 @@ describe("RepoStateController", () => {
       "/README.md": encoder.encode("# Repo"),
     });
 
-    const working = await workspace.files.copy("working");
+    const working = await workspace.copies.create({ label: "working" });
     if (Result.isError(working)) throw new Error("working copy failed");
     await working.value.files.write("/notes.md", encoder.encode("draft note"));
 

@@ -1,10 +1,8 @@
 import { Result } from "better-result";
-import { Workspace } from "@cloudflare/workspace";
+import { Workspace, type WorkspaceBindingOptions } from "@cloudflare/workspace";
 
-type PhotoArtifactsBinding = Parameters<typeof Workspace.fromArtifacts>[0]["artifacts"];
-type WorkspaceObjectNamespace = {
-  getByName(name: string): Parameters<typeof Workspace.fromArtifacts>[0]["object"];
-};
+type PhotoArtifactsBinding = WorkspaceBindingOptions["artifacts"];
+type WorkspaceObjectNamespace = WorkspaceBindingOptions["objects"];
 
 type PhotoAgentNamespace = {
   getByName(name: string): PhotoAgentForRead;
@@ -36,11 +34,7 @@ export async function handlePhotoReadRequest(
   }
 
   const workspaceName = decodeURIComponent(match[1]);
-  const workspace = Workspace.fromArtifacts({
-    artifacts,
-    object: workspaceObjects.getByName(workspaceName),
-    name: workspaceName,
-  });
+  const workspace = Workspace.bind({ artifacts, objects: workspaceObjects }).get(workspaceName);
   const target = match[2];
 
   if (target === "draft") {
