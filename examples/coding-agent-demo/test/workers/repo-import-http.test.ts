@@ -1,21 +1,28 @@
+import { Result } from "better-result";
 import { describe, expect, it, vi } from "vitest";
 
 import { Workspace } from "@cloudflare/workspace";
 import { FakeWorkspaceObject } from "@cloudflare/workspace/testing";
+import type { GitHubSource } from "@cloudflare/workspace-source-github";
 import { handleRepoImportRequest } from "../../src/http/repo-import";
 
 describe("repo import HTTP", () => {
-  it("imports a public GitHub repo through Artifacts", async () => {
+  it("imports a public GitHub repo through the GitHub source", async () => {
     const workspaceName = `repo-import-http-${crypto.randomUUID()}`;
-    const workspaceObject = new FakeWorkspaceObject();
-    const importRepo = vi.fn(async () => ({
-      id: "repo_456",
-      name: workspaceName,
-      description: null,
-      defaultBranch: "main",
-      remote: "https://artifacts.example/repo.git",
-      token: "secret-token",
-      tokenExpiresAt: "2026-01-01T00:00:00.000Z",
+    const importRepository = vi.fn(async ({ workspace, owner, repo, ref }) => Result.ok({
+      workspaceName: workspace.name,
+      importedAt: 1,
+      source: {
+        adapter: "github" as const,
+        host: "github.com" as const,
+        owner,
+        repo,
+        requestedRef: ref,
+      },
+      capture: {
+        type: "artifacts-repository" as const,
+        id: "repo_456",
+      },
     }));
 
     const response = await handleRepoImportRequest(
@@ -24,21 +31,14 @@ describe("repo import HTTP", () => {
         body: JSON.stringify({ owner: "cloudflare", repo: "example", ref: "main" }),
         headers: { "content-type": "application/json" },
       }),
-      runtimeFor({ import: importRepo }, workspaceObject),
+      runtimeFor({ importRepository }),
     );
 
-    expect(importRepo).toHaveBeenCalledWith({
-      source: {
-        url: "https://github.com/cloudflare/example.git",
-        branch: "main",
-        depth: 1,
-      },
-      target: {
-        name: workspaceName,
-        opts: {
-          description: "Imported from github.com/cloudflare/example",
-        },
-      },
+    expect(importRepository).toHaveBeenCalledWith({
+      workspace: expect.objectContaining({ name: workspaceName }),
+      owner: "cloudflare",
+      repo: "example",
+      ref: "main",
     });
     expect(response).toBeDefined();
     expect(response?.status).toBe(200);
@@ -46,17 +46,16 @@ describe("repo import HTTP", () => {
       status: "imported",
       workspaceName,
       source: {
-        type: "github",
+        adapter: "github",
+        host: "github.com",
         owner: "cloudflare",
         repo: "example",
-        ref: "main",
-        repositoryId: "repo_456",
+        requestedRef: "main",
       },
-    });
-    await expect(workspaceObject.currentRepository()).resolves.toMatchObject({
-      repository: workspaceName,
-      remote: "https://artifacts.example/repo.git",
-      defaultBranch: "main",
+      capture: {
+        type: "artifacts-repository",
+        id: "repo_456",
+      },
     });
   });
 
@@ -67,7 +66,7 @@ describe("repo import HTTP", () => {
         body: "null",
         headers: { "content-type": "application/json" },
       }),
-      runtimeFor({ import: async () => artifactImport("unused") }, new FakeWorkspaceObject()),
+      runtimeFor(successfulGitHubSource("unused")),
     );
 
     expect(response).toBeDefined();
@@ -86,7 +85,7 @@ describe("repo import HTTP", () => {
         body: JSON.stringify({ owner: "cloudflare", repo: "example" }),
         headers: { "content-type": "application/json" },
       }),
-      runtimeFor({ import: async () => artifactImport("repo_789") }, new FakeWorkspaceObject()),
+      runtimeFor(successfulGitHubSource("repo_789")),
       {
         agents: { getByName: () => ({ refreshRepoState }) },
       },
@@ -95,11 +94,12 @@ describe("repo import HTTP", () => {
     expect(response?.status).toBe(200);
     expect(refreshRepoState).toHaveBeenCalledWith(expect.objectContaining({
       workspaceName: "synced",
-      source: expect.objectContaining({ owner: "cloudflare", repo: "example", repositoryId: "repo_789" }),
+      source: expect.objectContaining({ owner: "cloudflare", repo: "example" }),
+      capture: expect.objectContaining({ id: "repo_789" }),
     }));
   });
 
-  it("returns Artifacts import errors", async () => {
+  it("returns GitHub source import errors", async () => {
     const response = await handleRepoImportRequest(
       new Request("http://example.com/api/workspaces/failed/imports/github", {
         method: "POST",
@@ -107,21 +107,19 @@ describe("repo import HTTP", () => {
         headers: { "content-type": "application/json" },
       }),
       runtimeFor({
-        import: async () => {
-          throw Object.assign(new Error("upstream unavailable"), {
-            name: "ArtifactsError",
-            code: "UPSTREAM_UNAVAILABLE",
-            numericCode: 1009,
-          });
-        },
-      }, new FakeWorkspaceObject()),
+        importRepository: async () => Result.err({
+          tag: "GitHubArtifactsImportError" as const,
+          message: "upstream unavailable",
+          code: "UPSTREAM_UNAVAILABLE",
+        }),
+      }),
     );
 
     expect(response?.status).toBe(502);
     await expect(response?.json()).resolves.toEqual({
       status: "error",
       error: {
-        tag: "ArtifactsImportError",
+        tag: "GitHubArtifactsImportError",
         message: "upstream unavailable",
         code: "UPSTREAM_UNAVAILABLE",
       },
@@ -132,29 +130,42 @@ describe("repo import HTTP", () => {
     await expect(
       handleRepoImportRequest(
         new Request("http://example.com/api/other", { method: "POST" }),
-        runtimeFor({ import: async () => artifactImport("unused") }, new FakeWorkspaceObject()),
+        runtimeFor(successfulGitHubSource("unused")),
       ),
     ).resolves.toBeUndefined();
   });
 });
 
-function runtimeFor(artifacts: { import(params: unknown): Promise<{ id: string; remote?: string; defaultBranch?: string }> }, object: FakeWorkspaceObject) {
+function runtimeFor(github: GitHubSource) {
+  const workspaceObject = new FakeWorkspaceObject();
   return {
-    artifacts,
+    github,
     workspaces: Workspace.bind({
       artifacts: {
         get: async () => { throw new Error("not used"); },
         delete: async () => false,
       },
-      objects: { getByName: () => object },
+      objects: { getByName: () => workspaceObject },
     }),
   };
 }
 
-function artifactImport(id: string) {
+function successfulGitHubSource(id: string): GitHubSource {
   return {
-    id,
-    remote: `https://artifacts.example/${id}.git`,
-    defaultBranch: "main",
+    importRepository: async ({ workspace, owner, repo, ref }) => Result.ok({
+      workspaceName: workspace.name,
+      importedAt: 1,
+      source: {
+        adapter: "github",
+        host: "github.com",
+        owner,
+        repo,
+        ...(ref ? { requestedRef: ref } : {}),
+      },
+      capture: {
+        type: "artifacts-repository",
+        id,
+      },
+    }),
   };
 }

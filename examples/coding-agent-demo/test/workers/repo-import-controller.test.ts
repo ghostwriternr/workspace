@@ -1,27 +1,33 @@
 import { Result } from "better-result";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { Workspace } from "@cloudflare/workspace";
 import { FakeWorkspaceObject } from "@cloudflare/workspace/testing";
+import type { GitHubSource } from "@cloudflare/workspace-source-github";
 import { RepoImportController } from "../../src/repo/import-controller";
 
 describe("RepoImportController", () => {
-  it("imports public GitHub repositories through Artifacts", async () => {
-    const imports: unknown[] = [];
+  it("imports public GitHub repositories through the GitHub source adapter", async () => {
     const workspaceObject = new FakeWorkspaceObject();
+    const importRepository = vi.fn(async ({ workspace, owner, repo, ref }) => Result.ok({
+      workspaceName: workspace.name,
+      importedAt: 1,
+      source: {
+        adapter: "github" as const,
+        host: "github.com" as const,
+        owner,
+        repo,
+        requestedRef: ref,
+      },
+      capture: {
+        type: "artifacts-repository" as const,
+        id: "repo_123",
+      },
+    }));
+    const github: GitHubSource = { importRepository };
     const controller = new RepoImportController({
       workspaces: workspacesFor(workspaceObject),
-      artifacts: {
-        import: async (params: unknown) => {
-          imports.push(params);
-          return {
-            id: "repo_123",
-            remote: "https://git.example/workspace-one.git",
-            defaultBranch: "main",
-            token: "secret-token",
-          };
-        },
-      },
+      github,
     });
 
     const result = await controller.importGitHubRepo({
@@ -31,85 +37,39 @@ describe("RepoImportController", () => {
       ref: "main",
     });
 
-    expect(imports).toEqual([
-      {
-        source: {
-          url: "https://github.com/cloudflare/sandbox-sdk.git",
-          branch: "main",
-          depth: 1,
-        },
-        target: {
-          name: "workspace-one",
-          opts: {
-            description: "Imported from github.com/cloudflare/sandbox-sdk",
-          },
-        },
+    expect(importRepository).toHaveBeenCalledWith({
+      workspace: expect.objectContaining({ name: "workspace-one" }),
+      owner: "cloudflare",
+      repo: "sandbox-sdk",
+      ref: "main",
+    });
+    expect(result).toEqual(Result.ok({
+      workspaceName: "workspace-one",
+      root: "/",
+      source: {
+        adapter: "github",
+        host: "github.com",
+        owner: "cloudflare",
+        repo: "sandbox-sdk",
+        requestedRef: "main",
       },
-    ]);
-    expect(Result.isOk(result)).toBe(true);
-    if (Result.isOk(result)) {
-      expect(result.value).toEqual({
-        workspaceName: "workspace-one",
-        root: "/",
-        source: {
-          type: "github",
-          owner: "cloudflare",
-          repo: "sandbox-sdk",
-          ref: "main",
-          repositoryId: "repo_123",
-        },
-        revisionId: "repo_123",
-        createdAt: expect.any(Number),
-      });
-      await expect(workspaceObject.currentRepository()).resolves.toEqual({
-        repository: "workspace-one",
-        remote: "https://git.example/workspace-one.git",
-        defaultBranch: "main",
-      });
-    }
+      capture: {
+        type: "artifacts-repository",
+        id: "repo_123",
+      },
+      importedAt: 1,
+    }));
   });
 
-  it("uses an explicit import ref for Workspace git access", async () => {
-    const workspaceObject = new FakeWorkspaceObject();
-    const controller = new RepoImportController({
-      workspaces: workspacesFor(workspaceObject),
-      artifacts: {
-        import: async () => ({
-          id: "repo_456",
-          remote: "https://git.example/workspace-master.git",
-          token: "secret-token",
-        }),
-      },
-    });
-
-    const result = await controller.importGitHubRepo({
-      workspaceName: "workspace-master",
-      owner: "octocat",
-      repo: "Hello-World",
-      ref: "master",
-    });
-
-    expect(Result.isOk(result)).toBe(true);
-    if (Result.isOk(result)) {
-      await expect(workspaceObject.currentRepository()).resolves.toEqual({
-        repository: "workspace-master",
-        remote: "https://git.example/workspace-master.git",
-        defaultBranch: "master",
-      });
-    }
-  });
-
-  it("returns Artifacts import failures as Result errors", async () => {
+  it("returns GitHub source failures as Result errors", async () => {
     const controller = new RepoImportController({
       workspaces: workspacesFor(new FakeWorkspaceObject()),
-      artifacts: {
-        import: async () => {
-          throw Object.assign(new Error("remote repository requires authentication"), {
-            name: "ArtifactsError",
-            code: "REMOTE_AUTH_REQUIRED",
-            numericCode: 1008,
-          });
-        },
+      github: {
+        importRepository: async () => Result.err({
+          tag: "GitHubArtifactsImportError" as const,
+          message: "remote repository requires authentication",
+          code: "REMOTE_AUTH_REQUIRED",
+        }),
       },
     });
 
@@ -122,7 +82,7 @@ describe("RepoImportController", () => {
     expect(Result.isError(result)).toBe(true);
     if (Result.isError(result)) {
       expect(result.error).toEqual({
-        tag: "ArtifactsImportError",
+        tag: "GitHubArtifactsImportError",
         message: "remote repository requires authentication",
         code: "REMOTE_AUTH_REQUIRED",
       });

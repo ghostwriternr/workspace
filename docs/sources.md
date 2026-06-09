@@ -45,6 +45,7 @@ remotes, default branches, tokens, or WorkspaceObject registration.
 Target product code should look like:
 
 ```ts
+const github = createGitHubSource({ artifacts: env.ARTIFACTS });
 const workspace = workspaces.get(workspaceName);
 
 await github.importRepository({
@@ -59,8 +60,8 @@ not like product logic that parses repository remotes, default branches, or
 Git credentials itself.
 
 An adapter may use a Workspace adoption seam internally after it creates or
-imports an Artifacts repository, but ordinary callers should not see that
-plumbing.
+imports an Artifacts repository, but ordinary callers should not handle remotes,
+default branches, tokens, or WorkspaceObject metadata registration.
 
 ## Artifacts changes the import center
 

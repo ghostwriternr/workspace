@@ -20,6 +20,7 @@
     "@cloudflare/workspace": "file:../../packages/workspace",
     "@cloudflare/workspace-adapter-dynamic-worker": "file:../../packages/adapters/dynamic-worker",
     "@cloudflare/workspace-adapter-sandbox": "file:../../packages/adapters/sandbox",
+    "@cloudflare/workspace-source-github": "file:../../packages/sources/github",
     "agents": "^0.13.3",
     "ai": "^6.0.193",
     "better-result": "^2.9.2",

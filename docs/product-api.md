@@ -100,6 +100,7 @@ adapters.
 The product-level shape should be:
 
 ```ts
+const github = createGitHubSource({ artifacts: env.ARTIFACTS });
 const workspace = workspaces.get(workspaceName);
 
 await github.importRepository({

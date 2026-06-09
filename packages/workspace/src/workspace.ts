@@ -97,10 +97,13 @@ export type WorkspaceArtifactsRepository = {
   defaultBranch?: string;
 };
 
-export type WorkspaceAdoptArtifactsRepositoryOptions = {
-  name: string;
+export type WorkspaceAdoptArtifactsRepositoryToCurrentOptions = {
   repository: WorkspaceArtifactsRepository;
   defaultBranch?: string;
+};
+
+export type WorkspaceAdoptArtifactsRepositoryOptions = WorkspaceAdoptArtifactsRepositoryToCurrentOptions & {
+  name: string;
 };
 
 export type WorkspaceArtifactsRepositoryAccessError = {
@@ -117,33 +120,42 @@ export type WorkspaceBinding = {
 
 export class Workspace {
   static bind(options: WorkspaceBindingOptions): WorkspaceBinding {
-    const get = (name: string) =>
-      new Workspace(
+    const get = (name: string): Workspace => {
+      const object = options.objects.getByName(name);
+      return new Workspace(
+        name,
         createArtifactsWorkspaceAuthority({
           artifacts: options.artifacts,
-          object: options.objects.getByName(name),
+          object,
           name,
         }),
+        async (adoption: WorkspaceAdoptArtifactsRepositoryToCurrentOptions): Promise<BetterResult<Workspace, WorkspaceArtifactsRepositoryAccessError>> => {
+          const access = artifactsRepositoryAccessFrom(adoption.repository, adoption.defaultBranch);
+          if (!access) {
+            return Result.err({
+              tag: "WorkspaceArtifactsRepositoryAccessError",
+              message: "Artifacts repository access metadata must include a remote URL.",
+            });
+          }
+
+          await object.recordCurrentRepository({
+            repository: name,
+            ...access,
+          });
+          return Result.ok(get(name));
+        },
       );
+    };
 
     return {
       get,
       async adoptArtifactsRepository(
         adoption: WorkspaceAdoptArtifactsRepositoryOptions,
       ): Promise<BetterResult<Workspace, WorkspaceArtifactsRepositoryAccessError>> {
-        const access = artifactsRepositoryAccessFrom(adoption.repository, adoption.defaultBranch);
-        if (!access) {
-          return Result.err({
-            tag: "WorkspaceArtifactsRepositoryAccessError",
-            message: "Artifacts repository access metadata must include a remote URL.",
-          });
-        }
-
-        await options.objects.getByName(adoption.name).recordCurrentRepository({
-          repository: adoption.name,
-          ...access,
+        return get(adoption.name).adoptArtifactsRepository({
+          repository: adoption.repository,
+          ...(adoption.defaultBranch ? { defaultBranch: adoption.defaultBranch } : {}),
         });
-        return Result.ok(get(adoption.name));
       },
     };
   }
@@ -151,9 +163,21 @@ export class Workspace {
   readonly files: WorkspaceCurrentFiles;
   readonly copies: WorkspaceCopies;
 
-  private constructor(private readonly authority: WorkspaceAuthority<WorkspaceCurrentFileError, WorkspaceCopyCreateError, WorkspaceCopyLookupError, WorkspaceCopyFileError, WorkspaceApplyError, WorkspaceDiscardError>) {
+  private constructor(
+    readonly name: string,
+    private readonly authority: WorkspaceAuthority<WorkspaceCurrentFileError, WorkspaceCopyCreateError, WorkspaceCopyLookupError, WorkspaceCopyFileError, WorkspaceApplyError, WorkspaceDiscardError>,
+    private readonly adoptArtifactsRepositoryToCurrent: (
+      options: WorkspaceAdoptArtifactsRepositoryToCurrentOptions,
+    ) => Promise<BetterResult<Workspace, WorkspaceArtifactsRepositoryAccessError>>,
+  ) {
     this.files = new WorkspaceFiles(authority.files);
     this.copies = new WorkspaceCopiesApi(authority);
+  }
+
+  async adoptArtifactsRepository(
+    options: WorkspaceAdoptArtifactsRepositoryToCurrentOptions,
+  ): Promise<BetterResult<Workspace, WorkspaceArtifactsRepositoryAccessError>> {
+    return this.adoptArtifactsRepositoryToCurrent(options);
   }
 }
 

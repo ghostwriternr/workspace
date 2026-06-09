@@ -15,6 +15,7 @@ Build only what is needed. Don't add inspection methods, convenience helpers, st
 - `packages/workspace/` — the Workspace package. Keep durable file-state primitives and Artifacts-backed work-surface APIs here.
 - `packages/adapters/dynamic-worker/` — Dynamic Worker adapter. Keep execution integration here, not in Workspace core.
 - `packages/adapters/sandbox/` — Sandbox adapter. Keep container execution integration here, not in Workspace core.
+- `packages/sources/github/` — GitHub source adapter. Keep GitHub import lifecycle here, not in Workspace core or demos.
 - `examples/photo-agent-demo/` — example Worker. Agent/Sandbox/Dynamic Worker concerns live here, not in the package.
 - `examples/coding-agent-demo/` — example Worker for importing public GitHub repos into Workspace before agent edits.
 - `docs/product-model.md` — product semantics and authority model.

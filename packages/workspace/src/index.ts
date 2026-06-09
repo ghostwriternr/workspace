@@ -4,6 +4,7 @@ export {
   Workspace,
   WorkspaceCopy,
   type WorkspaceAdoptArtifactsRepositoryOptions,
+  type WorkspaceAdoptArtifactsRepositoryToCurrentOptions,
   type WorkspaceApplyError,
   type WorkspaceArtifactsRepository,
   type WorkspaceArtifactsRepositoryAccessError,

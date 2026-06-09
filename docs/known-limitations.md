@@ -41,12 +41,12 @@ change calculation.
 Provenance should be metadata about Workspace state, not source lifecycle or
 auto-sync.
 
-## GitHub import is adapter-shaped but not clean yet
+## GitHub source import is minimal
 
-The coding-agent demo imports public GitHub repositories through Artifacts, but
-some implementation details still leak through the demo controller. The target
-shape is a source adapter that targets a Workspace handle and hides Artifacts
-metadata plumbing from product code.
+The GitHub source adapter imports public repositories through Artifacts and
+connects the captured authority to a Workspace. It does not yet resolve and
+report the captured Git commit, support private repository credentials, export
+changes back to GitHub, or create pull requests.
 
 ## Sandbox adapter still materializes and scans
 

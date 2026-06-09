@@ -1,6 +1,7 @@
 import { Result, type Result as BetterResult } from "better-result";
 import type { WorkspaceBinding } from "@cloudflare/workspace";
-import { RepoImportController, type ArtifactsImportBinding, type RepoImportSummary } from "../repo/import-controller";
+import type { GitHubSource } from "@cloudflare/workspace-source-github";
+import { RepoImportController, type RepoImportSummary } from "../repo/import-controller";
 
 const importPathPattern = /^\/api\/workspaces\/([^/]+)\/imports\/github$/;
 
@@ -15,7 +16,7 @@ type CodingAgentNamespace = {
 };
 
 type RepoImportRuntime = {
-  artifacts: ArtifactsImportBinding;
+  github: GitHubSource;
   workspaces: WorkspaceBinding;
 };
 
@@ -44,7 +45,7 @@ export async function handleRepoImportRequest(
   }
 
   const controller = new RepoImportController({
-    artifacts: runtime.artifacts,
+    github: runtime.github,
     workspaces: runtime.workspaces,
   });
   const result = await controller.importGitHubRepo({
@@ -95,8 +96,11 @@ function isImportBody(value: unknown): value is GitHubImportBody {
 }
 
 function statusForError(error: { tag: string }): number {
-  if (error.tag === "ArtifactsImportError") {
+  if (error.tag === "GitHubArtifactsImportError") {
     return 502;
+  }
+  if (error.tag === "InvalidGitHubRepositoryError") {
+    return 400;
   }
   return 409;
 }

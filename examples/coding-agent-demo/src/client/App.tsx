@@ -28,7 +28,7 @@ export function App() {
     name: workspaceName,
   });
   const lastImport = agent.state?.lastImport;
-  const lastImportKey = lastImport?.revisionId;
+  const lastImportKey = lastImport?.capture.id;
   const activeWorkingCopyId = repo?.workingCopyId ?? agent.state?.workingCopyId;
 
   useEffect(() => {
@@ -138,8 +138,8 @@ export function App() {
         </form>
         <div className="import-meta">
           <span>Last import</span>
-          <strong>{lastImport ? `${lastImport.source.owner}/${lastImport.source.repo}@${lastImport.source.ref}` : "none"}</strong>
-          <code>{lastImport?.source.repositoryId ?? "waiting for import"}</code>
+          <strong>{lastImport ? `${lastImport.source.owner}/${lastImport.source.repo}@${lastImport.source.requestedRef ?? "default"}` : "none"}</strong>
+          <code>{lastImport?.capture.id ?? "waiting for import"}</code>
         </div>
       </section>
 

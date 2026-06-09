@@ -1,5 +1,6 @@
 import { routeAgentRequest } from "agents";
 import { Workspace } from "@cloudflare/workspace";
+import { createGitHubSource } from "@cloudflare/workspace-source-github";
 
 export { Sandbox } from "@cloudflare/sandbox";
 
@@ -15,7 +16,7 @@ export default {
     const importResponse = await handleRepoImportRequest(
       request,
       {
-        artifacts: env.ARTIFACTS,
+        github: createGitHubSource({ artifacts: env.ARTIFACTS }),
         workspaces: Workspace.bind({ artifacts: env.ARTIFACTS, objects: env.WORKSPACE_OBJECTS }),
       },
       { agents: env.CodingAgent },

@@ -76,6 +76,7 @@ The implementation is still moving toward this API. See
 packages/workspace/                 Workspace package and work-surface API
 packages/adapters/dynamic-worker/   Dynamic Worker adapter for scoped files
 packages/adapters/sandbox/          Sandbox adapter for mounted working copies
+packages/sources/github/            GitHub source adapter for repo imports
 examples/photo-agent-demo/          Think photo agent over one Workspace draft
 examples/coding-agent-demo/         Think coding agent over imported repos
 ```

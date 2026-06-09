@@ -134,8 +134,8 @@ See [`runtime-adapters.md`](./runtime-adapters.md) for the runtime-facing model.
 
 Source adapters stay outside Workspace core. They may use Artifacts, GitHub,
 S3, uploads, Hugging Face, or any other source-specific API to seed or export a
-Workspace. The coding-agent demo currently imports GitHub repositories through
-Artifacts and then works through Workspace APIs.
+Workspace. `packages/sources/github` imports GitHub repositories through
+Artifacts and then connects the captured authority to a Workspace.
 
 Workspace should not learn GitHub branches, pull requests, S3 prefixes, or Hugging
 Face revisions. Adapters translate those source lifecycles into Workspace work
@@ -147,7 +147,7 @@ See [`sources.md`](./sources.md).
 
 The current implementation still has migration-era surfaces:
 
-- `apply()` needs stronger stale-base conflict semantics.
+- GitHub source import does not yet report resolved commit metadata.
 
 These are not target architecture. They are cleanup targets documented in
 [`product-api.md`](./product-api.md) and [`known-limitations.md`](./known-limitations.md).
