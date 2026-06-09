@@ -5,12 +5,11 @@ import type {
   Workspace,
 } from "@cloudflare/workspace";
 
-export type GitHubSourceArtifactsBinding = ArtifactsImportBindingClient;
-export type GitHubArtifactsImportParams = Parameters<ArtifactsImportBindingClient["import"]>[0];
-export type GitHubArtifactsImportResult = ArtifactsRepositoryResult;
+type SourceArtifactsBinding = ArtifactsImportBindingClient;
+type SourceArtifactsImportResult = ArtifactsRepositoryResult;
 
 export type GitHubSourceOptions = {
-  artifacts: GitHubSourceArtifactsBinding;
+  artifacts: SourceArtifactsBinding;
 };
 
 export type GitHubImportRepositoryOptions = {
@@ -30,10 +29,6 @@ export type GitHubImportSummary = {
     repo: string;
     requestedRef?: string;
   };
-  capture: {
-    type: "artifacts-repository";
-    id: string;
-  };
 };
 
 export type InvalidGitHubRepositoryError = {
@@ -41,21 +36,21 @@ export type InvalidGitHubRepositoryError = {
   message: string;
 };
 
-export type GitHubArtifactsImportError = {
-  tag: "GitHubArtifactsImportError";
+export type GitHubSourceImportError = {
+  tag: "GitHubSourceImportError";
   message: string;
   code?: string;
 };
 
-export type GitHubWorkspaceAdoptionError = {
-  tag: "GitHubWorkspaceAdoptionError";
+export type GitHubWorkspaceConnectionError = {
+  tag: "GitHubWorkspaceConnectionError";
   message: string;
 };
 
 export type GitHubImportError =
   | InvalidGitHubRepositoryError
-  | GitHubArtifactsImportError
-  | GitHubWorkspaceAdoptionError;
+  | GitHubSourceImportError
+  | GitHubWorkspaceConnectionError;
 
 export type GitHubSource = {
   importRepository(options: GitHubImportRepositoryOptions): Promise<BetterResult<GitHubImportSummary, GitHubImportError>>;
@@ -66,7 +61,7 @@ export function createGitHubSource(options: GitHubSourceOptions): GitHubSource {
 }
 
 class DefaultGitHubSource implements GitHubSource {
-  constructor(private readonly artifacts: GitHubSourceArtifactsBinding) {}
+  constructor(private readonly artifacts: SourceArtifactsBinding) {}
 
   async importRepository(options: GitHubImportRepositoryOptions): Promise<BetterResult<GitHubImportSummary, GitHubImportError>> {
     const valid = validateRepository(options.owner, options.repo);
@@ -74,7 +69,7 @@ class DefaultGitHubSource implements GitHubSource {
       return Result.err(valid.error);
     }
 
-    let imported: GitHubArtifactsImportResult;
+    let imported: SourceArtifactsImportResult;
     try {
       imported = await this.artifacts.import({
         source: {
@@ -99,7 +94,7 @@ class DefaultGitHubSource implements GitHubSource {
     });
     if (Result.isError(adopted)) {
       return Result.err({
-        tag: "GitHubWorkspaceAdoptionError",
+        tag: "GitHubWorkspaceConnectionError",
         message: adopted.error.message,
       });
     }
@@ -113,10 +108,6 @@ class DefaultGitHubSource implements GitHubSource {
         owner: options.owner,
         repo: options.repo,
         ...(options.ref ? { requestedRef: options.ref } : {}),
-      },
-      capture: {
-        type: "artifacts-repository",
-        id: imported.id ?? imported.name,
       },
     });
   }
@@ -146,18 +137,18 @@ function isValidRepo(value: string): boolean {
   return /^[A-Za-z0-9._-]+$/.test(value) && value !== "." && value !== "..";
 }
 
-function artifactsImportError(error: unknown): GitHubArtifactsImportError {
+function artifactsImportError(error: unknown): GitHubSourceImportError {
   if (isArtifactsError(error)) {
     return {
-      tag: "GitHubArtifactsImportError",
-      message: error.message,
+      tag: "GitHubSourceImportError",
+      message: "GitHub repository import failed.",
       code: error.code,
     };
   }
 
   return {
-    tag: "GitHubArtifactsImportError",
-    message: error instanceof Error ? error.message : "Artifacts import failed.",
+    tag: "GitHubSourceImportError",
+    message: error instanceof Error ? error.message : "GitHub repository import failed.",
   };
 }
 

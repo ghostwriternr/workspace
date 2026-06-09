@@ -54,11 +54,8 @@ describe("GitHub source", () => {
         repo: "sandbox-sdk",
         requestedRef: "main",
       },
-      capture: {
-        type: "artifacts-repository",
-        id: "repo-one",
-      },
     });
+    expect(imported.value).not.toHaveProperty("capture");
   });
 
   test("rejects invalid GitHub repository names before importing", async () => {
@@ -98,8 +95,8 @@ describe("GitHub source", () => {
     expect(Result.isError(imported)).toBe(true);
     if (Result.isOk(imported)) throw new Error("expected import to fail");
     expect(imported.error).toMatchObject({
-      tag: "GitHubArtifactsImportError",
-      message: "Artifacts import failed.",
+      tag: "GitHubSourceImportError",
+      message: "GitHub repository import failed.",
       code: "INTERNAL",
     });
   });

@@ -19,10 +19,6 @@ describe("RepoImportController", () => {
         repo,
         requestedRef: ref,
       },
-      capture: {
-        type: "artifacts-repository" as const,
-        id: "repo_123",
-      },
     }));
     const github: GitHubSource = { importRepository };
     const controller = new RepoImportController({
@@ -53,10 +49,6 @@ describe("RepoImportController", () => {
         repo: "sandbox-sdk",
         requestedRef: "main",
       },
-      capture: {
-        type: "artifacts-repository",
-        id: "repo_123",
-      },
       importedAt: 1,
     }));
   });
@@ -66,7 +58,7 @@ describe("RepoImportController", () => {
       workspaces: workspacesFor(new FakeWorkspaceObject()),
       github: {
         importRepository: async () => Result.err({
-          tag: "GitHubArtifactsImportError" as const,
+          tag: "GitHubSourceImportError" as const,
           message: "remote repository requires authentication",
           code: "REMOTE_AUTH_REQUIRED",
         }),
@@ -82,7 +74,7 @@ describe("RepoImportController", () => {
     expect(Result.isError(result)).toBe(true);
     if (Result.isError(result)) {
       expect(result.error).toEqual({
-        tag: "GitHubArtifactsImportError",
+        tag: "GitHubSourceImportError",
         message: "remote repository requires authentication",
         code: "REMOTE_AUTH_REQUIRED",
       });

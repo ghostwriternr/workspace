@@ -19,10 +19,6 @@ describe("repo import HTTP", () => {
         repo,
         requestedRef: ref,
       },
-      capture: {
-        type: "artifacts-repository" as const,
-        id: "repo_456",
-      },
     }));
 
     const response = await handleRepoImportRequest(
@@ -52,10 +48,6 @@ describe("repo import HTTP", () => {
         repo: "example",
         requestedRef: "main",
       },
-      capture: {
-        type: "artifacts-repository",
-        id: "repo_456",
-      },
     });
   });
 
@@ -66,7 +58,7 @@ describe("repo import HTTP", () => {
         body: "null",
         headers: { "content-type": "application/json" },
       }),
-      runtimeFor(successfulGitHubSource("unused")),
+      runtimeFor(successfulGitHubSource()),
     );
 
     expect(response).toBeDefined();
@@ -85,7 +77,7 @@ describe("repo import HTTP", () => {
         body: JSON.stringify({ owner: "cloudflare", repo: "example" }),
         headers: { "content-type": "application/json" },
       }),
-      runtimeFor(successfulGitHubSource("repo_789")),
+      runtimeFor(successfulGitHubSource()),
       {
         agents: { getByName: () => ({ refreshRepoState }) },
       },
@@ -95,7 +87,7 @@ describe("repo import HTTP", () => {
     expect(refreshRepoState).toHaveBeenCalledWith(expect.objectContaining({
       workspaceName: "synced",
       source: expect.objectContaining({ owner: "cloudflare", repo: "example" }),
-      capture: expect.objectContaining({ id: "repo_789" }),
+      importedAt: 1,
     }));
   });
 
@@ -108,7 +100,7 @@ describe("repo import HTTP", () => {
       }),
       runtimeFor({
         importRepository: async () => Result.err({
-          tag: "GitHubArtifactsImportError" as const,
+          tag: "GitHubSourceImportError" as const,
           message: "upstream unavailable",
           code: "UPSTREAM_UNAVAILABLE",
         }),
@@ -119,7 +111,7 @@ describe("repo import HTTP", () => {
     await expect(response?.json()).resolves.toEqual({
       status: "error",
       error: {
-        tag: "GitHubArtifactsImportError",
+        tag: "GitHubSourceImportError",
         message: "upstream unavailable",
         code: "UPSTREAM_UNAVAILABLE",
       },
@@ -130,7 +122,7 @@ describe("repo import HTTP", () => {
     await expect(
       handleRepoImportRequest(
         new Request("http://example.com/api/other", { method: "POST" }),
-        runtimeFor(successfulGitHubSource("unused")),
+        runtimeFor(successfulGitHubSource()),
       ),
     ).resolves.toBeUndefined();
   });
@@ -150,7 +142,7 @@ function runtimeFor(github: GitHubSource) {
   };
 }
 
-function successfulGitHubSource(id: string): GitHubSource {
+function successfulGitHubSource(): GitHubSource {
   return {
     importRepository: async ({ workspace, owner, repo, ref }) => Result.ok({
       workspaceName: workspace.name,
@@ -161,10 +153,6 @@ function successfulGitHubSource(id: string): GitHubSource {
         owner,
         repo,
         ...(ref ? { requestedRef: ref } : {}),
-      },
-      capture: {
-        type: "artifacts-repository",
-        id,
       },
     }),
   };

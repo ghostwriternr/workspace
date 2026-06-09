@@ -96,7 +96,7 @@ function isImportBody(value: unknown): value is GitHubImportBody {
 }
 
 function statusForError(error: { tag: string }): number {
-  if (error.tag === "GitHubArtifactsImportError") {
+  if (error.tag === "GitHubSourceImportError") {
     return 502;
   }
   if (error.tag === "InvalidGitHubRepositoryError") {
