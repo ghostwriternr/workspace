@@ -17,8 +17,13 @@ import {
   createArtifactsWorkspaceAuthority,
   type ArtifactsBindingClient,
 } from "./artifacts/authority";
-import type { ArtifactsRepositoryResult } from "./artifacts/binding";
 import type { WorkspaceObjectClient } from "./workspace-object";
+import {
+  registerWorkspaceSourceAdapterConnector,
+  type ConnectArtifactsRepositoryOptions,
+  type WorkspaceArtifactsRepository,
+  type WorkspaceArtifactsRepositoryAccessError,
+} from "./source-adapter-registry";
 import type { ErrorDtoFor } from "./model/errors";
 import type {
   WorkspaceApplyError as WorkspaceApplyDomainError,
@@ -93,42 +98,23 @@ export type WorkspaceBindingOptions = {
   objects: WorkspaceObjectNamespace;
 };
 
-export type WorkspaceArtifactsRepository = Partial<Pick<ArtifactsRepositoryResult, "remote" | "defaultBranch">>;
-
-export type WorkspaceAdoptArtifactsRepositoryToCurrentOptions = {
-  repository: WorkspaceArtifactsRepository;
-  defaultBranch?: string;
-};
-
-export type WorkspaceAdoptArtifactsRepositoryOptions = WorkspaceAdoptArtifactsRepositoryToCurrentOptions & {
-  name: string;
-};
-
-export type WorkspaceArtifactsRepositoryAccessError = {
-  tag: "WorkspaceArtifactsRepositoryAccessError";
-  message: string;
-};
-
 export type WorkspaceBinding = {
   get(name: string): Workspace;
-  adoptArtifactsRepository(
-    options: WorkspaceAdoptArtifactsRepositoryOptions,
-  ): Promise<BetterResult<Workspace, WorkspaceArtifactsRepositoryAccessError>>;
 };
 
 export class Workspace {
   static bind(options: WorkspaceBindingOptions): WorkspaceBinding {
     const get = (name: string): Workspace => {
       const object = options.objects.getByName(name);
-      return new Workspace(
+      const workspace = new Workspace(
         name,
         createArtifactsWorkspaceAuthority({
           artifacts: options.artifacts,
           object,
           name,
         }),
-        async (adoption: WorkspaceAdoptArtifactsRepositoryToCurrentOptions): Promise<BetterResult<Workspace, WorkspaceArtifactsRepositoryAccessError>> => {
-          const access = artifactsRepositoryAccessFrom(adoption.repository, adoption.defaultBranch);
+        async (connection: ConnectArtifactsRepositoryOptions): Promise<BetterResult<Workspace, WorkspaceArtifactsRepositoryAccessError>> => {
+          const access = artifactsRepositoryAccessFrom(connection.repository, connection.defaultBranch);
           if (!access) {
             return Result.err({
               tag: "WorkspaceArtifactsRepositoryAccessError",
@@ -140,22 +126,13 @@ export class Workspace {
             repository: name,
             ...access,
           });
-          return Result.ok(get(name));
+          return Result.ok(workspace);
         },
       );
+      return workspace;
     };
 
-    return {
-      get,
-      async adoptArtifactsRepository(
-        adoption: WorkspaceAdoptArtifactsRepositoryOptions,
-      ): Promise<BetterResult<Workspace, WorkspaceArtifactsRepositoryAccessError>> {
-        return get(adoption.name).adoptArtifactsRepository({
-          repository: adoption.repository,
-          ...(adoption.defaultBranch ? { defaultBranch: adoption.defaultBranch } : {}),
-        });
-      },
-    };
+    return { get };
   }
 
   readonly files: WorkspaceCurrentFiles;
@@ -164,18 +141,13 @@ export class Workspace {
   private constructor(
     readonly name: string,
     private readonly authority: WorkspaceAuthority<WorkspaceCurrentFileError, WorkspaceCopyCreateError, WorkspaceCopyLookupError, WorkspaceCopyFileError, WorkspaceApplyError, WorkspaceDiscardError>,
-    private readonly adoptArtifactsRepositoryToCurrent: (
-      options: WorkspaceAdoptArtifactsRepositoryToCurrentOptions,
+    connectArtifactsRepository: (
+      options: ConnectArtifactsRepositoryOptions,
     ) => Promise<BetterResult<Workspace, WorkspaceArtifactsRepositoryAccessError>>,
   ) {
     this.files = new WorkspaceFiles(authority.files);
     this.copies = new WorkspaceCopiesApi(authority);
-  }
-
-  async adoptArtifactsRepository(
-    options: WorkspaceAdoptArtifactsRepositoryToCurrentOptions,
-  ): Promise<BetterResult<Workspace, WorkspaceArtifactsRepositoryAccessError>> {
-    return this.adoptArtifactsRepositoryToCurrent(options);
+    registerWorkspaceSourceAdapterConnector(this, connectArtifactsRepository);
   }
 }
 

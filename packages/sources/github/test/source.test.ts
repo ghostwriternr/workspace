@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { Result } from "better-result";
-import { Workspace, type ArtifactsImportBindingClient } from "@cloudflare/workspace";
+import { Workspace } from "@cloudflare/workspace";
+import type { ArtifactsImportBindingClient } from "@cloudflare/workspace/source-adapter";
 import { createFakeArtifacts, resetFakeArtifacts, FakeArtifactsBinding, type FakeArtifactsWorkspaceDriver } from "@cloudflare/workspace/testing";
 
 import { createGitHubSource } from "../src/index";

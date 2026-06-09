@@ -1,5 +1,6 @@
 import { Result, type Result as BetterResult } from "better-result";
 import { Workspace, type WorkspaceBindingOptions, type WorkspaceCurrentFileError } from "@cloudflare/workspace";
+import { connectArtifactsRepository } from "@cloudflare/workspace/source-adapter";
 
 type PhotoArtifactsBinding = WorkspaceBindingOptions["artifacts"] & {
   create(name: string, opts?: { description?: string; setDefaultBranch?: string }): Promise<unknown>;
@@ -78,13 +79,12 @@ async function ensurePhotoRepository(artifacts: PhotoArtifactsBinding, workspace
       description: `Photo Workspace ${workspaceName}`,
       setDefaultBranch: "main",
     });
-    const adopted = await workspaces.adoptArtifactsRepository({
-      name: workspaceName,
+    const connected = await connectArtifactsRepository(workspaces.get(workspaceName), {
       repository: artifactsRepositoryFrom(created),
       defaultBranch: "main",
     });
-    if (Result.isError(adopted)) {
-      throw new Error(adopted.error.message);
+    if (Result.isError(connected)) {
+      throw new Error(connected.error.message);
     }
   }
 }

@@ -1,9 +1,10 @@
 import { Result, type Result as BetterResult } from "better-result";
-import type {
-  ArtifactsImportBindingClient,
-  ArtifactsRepositoryResult,
-  Workspace,
-} from "@cloudflare/workspace";
+import type { Workspace } from "@cloudflare/workspace";
+import {
+  connectArtifactsRepository,
+  type ArtifactsImportBindingClient,
+  type ArtifactsRepositoryResult,
+} from "@cloudflare/workspace/source-adapter";
 
 type SourceArtifactsBinding = ArtifactsImportBindingClient;
 type SourceArtifactsImportResult = ArtifactsRepositoryResult;
@@ -88,14 +89,14 @@ class DefaultGitHubSource implements GitHubSource {
       return Result.err(artifactsImportError(error));
     }
 
-    const adopted = await options.workspace.adoptArtifactsRepository({
+    const connected = await connectArtifactsRepository(options.workspace, {
       repository: imported,
       ...(options.ref ? { defaultBranch: options.ref } : {}),
     });
-    if (Result.isError(adopted)) {
+    if (Result.isError(connected)) {
       return Result.err({
         tag: "GitHubWorkspaceConnectionError",
-        message: adopted.error.message,
+        message: connected.error.message,
       });
     }
 

@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./source-adapter": "./src/source-adapter.ts",
     "./workers": "./src/workers.ts",
     "./testing": "./test/fake-artifacts.ts"
   },

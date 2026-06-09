@@ -3,11 +3,7 @@
 export {
   Workspace,
   WorkspaceCopy,
-  type WorkspaceAdoptArtifactsRepositoryOptions,
-  type WorkspaceAdoptArtifactsRepositoryToCurrentOptions,
   type WorkspaceApplyError,
-  type WorkspaceArtifactsRepository,
-  type WorkspaceArtifactsRepositoryAccessError,
   type WorkspaceBinding,
   type WorkspaceCopies,
   type WorkspaceCopyCreateOptions,
@@ -30,12 +26,6 @@ export {
   type WorkspaceTreeSourceError,
 } from "./workspace";
 export { type WorkspaceEntry, type WorkspaceRevision, type WorkspaceStat } from "./model/entries";
-export {
-  type ArtifactsBindingClient,
-  type ArtifactsImportBindingClient,
-  type ArtifactsRepositoryResult,
-  type ArtifactsRepoClient,
-} from "./artifacts/binding";
 export { type WorkspaceTreeEntry } from "./model/write-tree";
 export {
   type WorkspaceFileMount,

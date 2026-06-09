@@ -75,41 +75,6 @@ describe("Workspace", () => {
     if (Result.isOk(read)) expect(text(read.value)).toBe("hello");
   });
 
-  it("adopts Artifacts repository access through the binding", async () => {
-    const { artifacts, object } = createFakeArtifacts({ repo: { "/README.md": bytes("hello") } });
-    const workspaces = Workspace.bind({ artifacts, objects: { getByName: () => object } });
-
-    const adopted = await workspaces.adoptArtifactsRepository({
-      name: "repo",
-      repository: { remote: "https://git.example/repo.git", defaultBranch: "trunk" },
-    });
-
-    expect(Result.isOk(adopted)).toBe(true);
-    await expect(object.currentRepository()).resolves.toEqual({
-      repository: "repo",
-      remote: "https://git.example/repo.git",
-      defaultBranch: "trunk",
-    });
-  });
-
-  it("returns Result errors when adopting Artifacts repository access metadata is incomplete", async () => {
-    const { artifacts, object } = createFakeArtifacts({ repo: {} });
-    const workspaces = Workspace.bind({ artifacts, objects: { getByName: () => object } });
-
-    const adopted = await workspaces.adoptArtifactsRepository({
-      name: "repo",
-      repository: { defaultBranch: "main" },
-    });
-
-    expect(Result.isError(adopted)).toBe(true);
-    if (Result.isError(adopted)) {
-      expect(adopted.error).toEqual({
-        tag: "WorkspaceArtifactsRepositoryAccessError",
-        message: "Artifacts repository access metadata must include a remote URL.",
-      });
-    }
-  });
-
   it("returns Result errors when the Artifacts repository is missing", async () => {
     const { workspace } = createWorkspace({});
 
