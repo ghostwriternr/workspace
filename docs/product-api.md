@@ -1,8 +1,8 @@
 # Product API
 
-This doc describes the target Workspace API shape. The implementation still has
-some transitional names; [`known-limitations.md`](./known-limitations.md) calls
-those out. The target model is what new implementation work should move toward.
+This doc describes the Workspace API surface that callers use today. Anything
+that is not built yet is marked. [`known-limitations.md`](./known-limitations.md)
+lists current prototype gaps.
 
 For concepts, see [`product-model.md`](./product-model.md). For implementation,
 see [`architecture.md`](./architecture.md). For runtime-specific APIs, see
@@ -82,10 +82,10 @@ const discarded = await copy.discard();
 if (Result.isError(discarded)) return discarded;
 ```
 
-Apply should be safe by default. If current files changed since the copy was
-created, `apply` should return a conflict/stale-base error rather than silently
-overwriting newer current state. Explicit replacement can be added later if a
-real caller needs it.
+Apply is safe by default. If current files moved since the copy was created,
+`apply` returns `WorkspaceCopyStaleError` rather than silently overwriting
+newer current state. Explicit replacement can be added later if a real caller
+needs it.
 
 Reconciliation from a runtime is not publication. A Sandbox command can write
 files, and a runtime adapter can reconcile those files into the working copy,
@@ -93,13 +93,15 @@ but current files still do not change until `apply` succeeds.
 
 ## Source adapters target a Workspace
 
-Workspace core should not expose `importGitHub`, `importS3`, or
+Workspace core does not expose `importGitHub`, `importS3`, or
 `initializeFromArtifacts` methods. Source-specific lifecycle belongs in source
 adapters.
 
-The product-level shape should be:
+The product-level shape is:
 
 ```ts
+import { createGitHubSource } from "@cloudflare/workspace-source-github";
+
 const github = createGitHubSource({ artifacts: env.ARTIFACTS });
 const workspace = workspaces.get(workspaceName);
 
@@ -111,12 +113,12 @@ await github.importRepository({
 });
 ```
 
-The GitHub adapter may use Artifacts internally to capture the repository and
-then connect that captured authority to the Workspace. Product code should not
-manually handle Artifacts repository metadata such as remotes, default branches,
-or tokens.
+The GitHub adapter uses Artifacts internally to capture the repository and
+then connects that captured authority to the Workspace. Product code does not
+handle Artifacts repository metadata such as remotes, default branches, or
+tokens.
 
-Other sources follow the same dependency direction:
+Other sources would follow the same dependency direction (none are built yet):
 
 ```ts
 await upload.importArchive({ workspace, file });
@@ -125,7 +127,7 @@ await s3.importPrefix({ workspace, bucket, prefix });
 ```
 
 Source adapters can replace or seed current files only through explicit adapter
-semantics. Workspace should not pretend all sources are in-memory file maps.
+semantics. Workspace does not pretend all sources are in-memory file maps.
 Large source imports should remain authority-backed or streaming.
 
 ## Runtime adapters receive working copies
@@ -135,21 +137,34 @@ Runtime adapters are the normal way to execute against a working copy.
 Dynamic Worker:
 
 ```ts
-await dynamicWorker.run({
-  copy,
+import { createWorkspaceDynamicWorkerRunner } from "@cloudflare/workspace-adapter-dynamic-worker";
+
+const runner = createWorkspaceDynamicWorkerRunner(env.DYNAMIC_WORKERS);
+
+await runner.run({
   code,
-  scope: {
-    read: "/**",
-    write: "/**",
-  },
+  workspace: copy.files.scoped({ read: "/**", write: "/**" }),
 });
 ```
+
+The runner takes a `ScopedWorkspaceFileCapability`. In practice the parent
+exposes a `WorkerEntrypoint` that constructs the scoped capability per call so
+the delegated Worker receives a live stub; see
+[`runtime-adapters.md`](./runtime-adapters.md) and the dynamic-worker adapter
+README for the loopback pattern.
 
 Sandbox:
 
 ```ts
-const result = await sandbox.run({
-  copy,
+import { createWorkspaceSandboxCommandRunner } from "@cloudflare/workspace-adapter-sandbox";
+
+const runner = createWorkspaceSandboxCommandRunner((copyId) =>
+  getSandbox(env.Sandbox, `${workspaceName}-${copyId}`, { sleepAfter: "60s" }),
+);
+
+const result = await runner.runCommand({
+  files: copy.files,
+  sandboxId: copy.id,
   command: "npm test",
   root: "/workspace",
 });
@@ -158,8 +173,9 @@ const result = await sandbox.run({
 Adapters own execution mechanics. Workspace owns the file authority and the
 apply/discard boundary.
 
-Low-level mount and scoped-file APIs can exist for adapter authors, but product
-examples should lead with runtime adapters rather than mount-host plumbing.
+Low-level mount and scoped-file APIs are exported for adapter authors
+(`copy.files.attach`, `copy.files.scoped`), but product examples should lead
+with runtime adapters rather than mount-host plumbing.
 
 ## Scoped files
 
@@ -205,7 +221,18 @@ that over streaming every byte through a Worker.
 
 ## Source adapter adoption seam
 
-Source adapters that create or import Artifacts repositories can connect that
-repository to a Workspace through the bound Workspace handle. Normal product
-logic should still use `workspaces.get(name)` and Workspace file/copy APIs; it
-should not handle remotes, default branches, or repository tokens.
+Source adapters that create or import Artifacts repositories connect that
+repository to a Workspace through a narrow internal seam exported under
+`@cloudflare/workspace/source-adapter`:
+
+```ts
+import { connectArtifactsRepository } from "@cloudflare/workspace/source-adapter";
+
+await connectArtifactsRepository(workspace, { repository, defaultBranch });
+```
+
+Normal product logic stays on `workspaces.get(name)` and the Workspace
+file/copy APIs above. It does not handle remotes, default branches, or
+repository tokens. The `/source-adapter` export exists so adapter packages can
+bridge Artifacts repositories into a Workspace without leaking that plumbing
+into the root API.

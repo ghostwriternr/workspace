@@ -19,8 +19,12 @@ Build only what is needed. Don't add inspection methods, convenience helpers, st
 - `examples/photo-agent-demo/` — example Worker. Agent/Sandbox/Dynamic Worker concerns live here, not in the package.
 - `examples/coding-agent-demo/` — example Worker for importing public GitHub repos into Workspace before agent edits.
 - `docs/product-model.md` — product semantics and authority model.
+- `docs/product-api.md` — the API surface callers see.
 - `docs/architecture.md` — how things actually work in code.
 - `docs/product-boundaries.md` — the in/out-of-scope rules.
+- `docs/runtime-adapters.md` — Dynamic Worker and Sandbox adapter shape.
+- `docs/sources.md` — how source adapters seed/export Workspace state.
+- `docs/known-limitations.md` — current prototype gaps.
 
 ## Commands
 

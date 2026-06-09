@@ -30,21 +30,26 @@ file changes by writing a working copy; it does not publish current files.
 
 ## Dynamic Worker adapter
 
-A Dynamic Worker receives a scoped file capability, usually as
-`env.WORKSPACE`.
+A Dynamic Worker receives a scoped file capability, usually exposed to the
+delegated code as `env.WORKSPACE`.
 
 ```ts
-await dynamicWorker.run({
-  copy,
+import { createWorkspaceDynamicWorkerRunner } from "@cloudflare/workspace-adapter-dynamic-worker";
+
+const runner = createWorkspaceDynamicWorkerRunner(env.DYNAMIC_WORKERS);
+
+await runner.run({
   code,
-  scope: {
-    read: "/**",
-    write: "/**",
-  },
+  workspace: copy.files.scoped({ read: "/**", write: "/**" }),
 });
 ```
 
-Delegated code sees file methods:
+In practice the scoped capability is built inside a parent `WorkerEntrypoint`
+so the delegated Worker receives a live RPC stub (a directly-constructed
+`RpcTarget` cannot cross the Worker Loader boundary). The dynamic-worker
+adapter README shows that loopback pattern in full.
+
+Delegated code sees plain file methods:
 
 ```ts
 await env.WORKSPACE.readFile("/src/index.ts");
@@ -65,12 +70,25 @@ A Sandbox receives a filesystem view of one working copy, normally under
 `/workspace`.
 
 ```ts
-const result = await sandbox.run({
-  copy,
+import { createWorkspaceSandboxCommandRunner } from "@cloudflare/workspace-adapter-sandbox";
+import { getSandbox } from "@cloudflare/sandbox";
+
+const runner = createWorkspaceSandboxCommandRunner((copyId) =>
+  getSandbox(env.Sandbox, `${workspaceName}-${copyId}`, { sleepAfter: "60s" }),
+);
+
+const result = await runner.runCommand({
+  files: copy.files,
+  sandboxId: copy.id,
   command: "npm test",
   root: "/workspace",
 });
 ```
+
+The runner takes the working copy's `files` and an opaque `sandboxId` so the
+adapter can route to a per-copy Sandbox instance (avoiding shared `/workspace`
+collisions). A nonzero exit code is a command result, not a Workspace error;
+reconciliation always runs after the command completes.
 
 Use Sandbox when the task needs process execution, package managers, native
 binaries, or a filesystem-heavy toolchain.

@@ -21,7 +21,7 @@ Workspace is not an execution engine, Git porcelain, source lifecycle manager,
 or custom blob store. Source adapters seed or export Workspace state. Runtime
 adapters project working copies into execution environments.
 
-## Target shape
+## Shape
 
 ```ts
 const workspaces = Workspace.bind({
@@ -37,8 +37,9 @@ if (Result.isError(copyResult)) return copyResult;
 const copy = copyResult.value;
 await copy.files.write("/README.md", bytes);
 
-await sandbox.run({
-  copy,
+await sandboxRunner.runCommand({
+  files: copy.files,
+  sandboxId: copy.id,
   command: "npm test",
   root: "/workspace",
 });
@@ -46,9 +47,8 @@ await sandbox.run({
 await copy.apply(); // or discard()
 ```
 
-The implementation is still moving toward this API. See
-[`docs/product-api.md`](./docs/product-api.md) and
-[`docs/known-limitations.md`](./docs/known-limitations.md).
+See [`docs/product-api.md`](./docs/product-api.md) for the full surface and
+[`docs/known-limitations.md`](./docs/known-limitations.md) for current gaps.
 
 ## Where to look
 
@@ -83,15 +83,16 @@ examples/coding-agent-demo/         Think coding agent over imported repos
 
 ## Status
 
-Prototype. Workspace currently uses Artifacts as the durable/versioned file
-authority, a WorkspaceObject Durable Object for coordination metadata, and a
-temporary internal `isomorphic-git` bridge until Artifacts exposes direct file
-mutation APIs.
+Prototype. Workspace uses Artifacts as the durable/versioned file authority, a
+`WorkspaceObject` Durable Object for coordination metadata, and a temporary
+internal `isomorphic-git` bridge until Artifacts exposes direct file mutation
+APIs.
 
 The photo agent example is deployed at
 <https://workspace-photo-agent-demo.ghostwriternr.workers.dev>. The coding
-agent example imports public GitHub repositories through Artifacts and exposes
-Workspace-backed Dynamic Worker and Sandbox tools.
+agent example imports public GitHub repositories through Artifacts and edits
+them through Dynamic Worker (`run`) and Sandbox (`shell`) tools backed by a
+shared working copy.
 
 ## Commands
 

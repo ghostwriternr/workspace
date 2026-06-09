@@ -42,9 +42,11 @@ A source adapter may:
 A source adapter should not require product code to manually handle Artifacts
 remotes, default branches, tokens, or WorkspaceObject registration.
 
-Target product code should look like:
+Product code looks like:
 
 ```ts
+import { createGitHubSource } from "@cloudflare/workspace-source-github";
+
 const github = createGitHubSource({ artifacts: env.ARTIFACTS });
 const workspace = workspaces.get(workspaceName);
 
@@ -59,9 +61,18 @@ await github.importRepository({
 not like product logic that parses repository remotes, default branches, or
 Git credentials itself.
 
-An adapter may use a Workspace adoption seam internally after it creates or
-imports an Artifacts repository, but ordinary callers should not handle remotes,
-default branches, tokens, or WorkspaceObject metadata registration.
+Adapters bridge into a Workspace through the SPI exported from
+`@cloudflare/workspace/source-adapter`:
+
+```ts
+import { connectArtifactsRepository } from "@cloudflare/workspace/source-adapter";
+
+await connectArtifactsRepository(workspace, { repository, defaultBranch });
+```
+
+The root `@cloudflare/workspace` API does not expose `connectArtifactsRepository`,
+so ordinary callers do not handle remotes, default branches, tokens, or
+`WorkspaceObject` metadata registration.
 
 ## Artifacts changes the import center
 

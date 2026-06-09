@@ -29,13 +29,17 @@ small work-surface API above both.
 ```text
 packages/workspace/
   src/
-    workspace.ts          Workspace API and working-copy wrappers
-    authority.ts          authority contract used by the API
-    workspace-object.ts   Durable Object coordination metadata
-    workers.ts            Worker-runtime export for WorkspaceObject
-    artifacts/            Artifacts authority + temporary Git driver
-    model/                path, entry, error, write-tree primitives
-    projections/          scoped file capability and file mount internals
+    workspace.ts                  Workspace API and working-copy wrappers
+    authority.ts                  authority contract the API depends on
+    workspace-object.ts           Durable Object coordination metadata
+    workers.ts                    Worker-runtime export for WorkspaceObject
+    mount.ts                      mount-host SPI used by Sandbox adapter
+    write-tree.ts                 streaming tree-write planner/chunker
+    source-adapter.ts             public types for source adapter SPI
+    source-adapter-registry.ts    internal connect-Artifacts seam
+    artifacts/                    Artifacts authority + temporary Git driver
+    model/                        path, entry, error, write-tree primitives
+    projections/                  scoped file capability + working-copy mount
 
 packages/adapters/dynamic-worker/
   Dynamic Worker runner for scoped Workspace files
@@ -43,11 +47,16 @@ packages/adapters/dynamic-worker/
 packages/adapters/sandbox/
   Sandbox command runner for mounted Workspace working copies
 
+packages/sources/github/
+  GitHub source adapter that imports through Artifacts and connects the
+  resulting authority to a Workspace via the source-adapter SPI
+
 examples/photo-agent-demo/
   Think photo agent using Sandbox + Dynamic Worker over one draft copy
 
 examples/coding-agent-demo/
-  Think coding agent using Artifacts import, Dynamic Worker, and Sandbox
+  Think coding agent importing public GitHub repos, then editing them via
+  Dynamic Worker (`run`) and Sandbox (`shell`) over one working copy
 ```
 
 ## WorkspaceObject
@@ -137,6 +146,12 @@ S3, uploads, Hugging Face, or any other source-specific API to seed or export a
 Workspace. `packages/sources/github` imports GitHub repositories through
 Artifacts and then connects the captured authority to a Workspace.
 
+Adapters bridge to a Workspace through `@cloudflare/workspace/source-adapter`,
+which exposes a narrow `connectArtifactsRepository(workspace, { repository,
+defaultBranch })` helper. The root `@cloudflare/workspace` API does not expose
+that seam, so ordinary product code never handles repository remotes, default
+branches, or tokens.
+
 Workspace should not learn GitHub branches, pull requests, S3 prefixes, or Hugging
 Face revisions. Adapters translate those source lifecycles into Workspace work
 surfaces.
@@ -145,12 +160,16 @@ See [`sources.md`](./sources.md).
 
 ## Current implementation debt
 
-The current implementation still has migration-era surfaces:
+- The temporary `isomorphic-git` bridge in `artifacts/git-driver.ts` is
+  Workspace-internal and should be removed when Artifacts exposes direct file
+  mutation APIs.
+- The Sandbox adapter materializes and scans rather than mounting an
+  Artifacts-backed filesystem; the target direction is `artifact-fs`.
+- The GitHub source adapter imports public repositories but does not yet
+  report the resolved Git commit, support private credentials, or export
+  changes back to GitHub.
 
-- GitHub source import does not yet report resolved commit metadata.
-
-These are not target architecture. They are cleanup targets documented in
-[`product-api.md`](./product-api.md) and [`known-limitations.md`](./known-limitations.md).
+See [`known-limitations.md`](./known-limitations.md) for the full list.
 
 ## Design guardrails
 
