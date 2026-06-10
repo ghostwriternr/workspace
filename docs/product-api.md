@@ -87,9 +87,9 @@ Apply is safe by default. If current files moved since the copy was created,
 newer current state. Explicit replacement can be added later if a real caller
 needs it.
 
-Reconciliation from a runtime is not publication. A Sandbox command can write
-files, and a runtime adapter can reconcile those files into the working copy,
-but current files still do not change until `apply` succeeds.
+Capture from a runtime is not publication. A Sandbox command can write files,
+and a runtime adapter can capture those files into the working copy, but current
+files still do not change until `apply` succeeds.
 
 ## Source adapters target a Workspace
 
@@ -156,26 +156,30 @@ README for the loopback pattern.
 Sandbox:
 
 ```ts
-import { createWorkspaceSandboxCommandRunner } from "@cloudflare/workspace-adapter-sandbox";
+import { attachWorkspaceCopyToSandbox } from "@cloudflare/workspace-adapter-sandbox";
+import { getSandbox } from "@cloudflare/sandbox";
 
-const runner = createWorkspaceSandboxCommandRunner((copyId) =>
-  getSandbox(env.Sandbox, `${workspaceName}-${copyId}`, { sleepAfter: "60s" }),
-);
-
-const result = await runner.runCommand({
-  files: copy.files,
-  sandboxId: copy.id,
-  command: "npm test",
-  root: "/workspace",
+const sandbox = getSandbox(env.Sandbox, `${workspaceName}-${copy.id}`, {
+  sleepAfter: "60s",
 });
+const mount = await attachWorkspaceCopyToSandbox({
+  copy,
+  sandbox,
+  path: "/workspace",
+});
+if (Result.isError(mount)) return mount;
+
+const result = await sandbox.exec("npm test", { cwd: mount.value.path });
+const capture = await mount.value.capture();
 ```
 
-Adapters own execution mechanics. Workspace owns the file authority and the
+The Sandbox SDK owns execution mechanics. The Workspace adapter owns attaching
+and capturing the working copy. Workspace owns the file authority and the
 apply/discard boundary.
 
-Low-level mount and scoped-file APIs are exported for adapter authors
-(`copy.files.attach`, `copy.files.scoped`), but product examples should lead
-with runtime adapters rather than mount-host plumbing.
+Low-level scoped-file APIs are exported for adapter authors
+(`copy.files.scoped`), but product examples should lead with runtime adapters
+rather than mount-host plumbing.
 
 ## Scoped files
 

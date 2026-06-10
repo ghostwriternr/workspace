@@ -126,15 +126,14 @@ Runtime adapters depend on Workspace. Workspace does not depend on runtimes.
 only the paths granted by the parent and cannot apply or discard the copy.
 
 `packages/adapters/sandbox` receives a working copy and exposes it to a Sandbox
-as `/workspace`. The current implementation materializes files and scans for
-changes after a command. The target implementation should use
-[`artifact-fs`](https://github.com/cloudflare/artifact-fs) to mount the
-Artifacts-backed working-copy repository directly, hydrate blobs on demand, and
-capture command writes back into the working-copy repo. Sandbox outbound
-Workers/TLS auth should inject short-lived Artifacts Git credentials outside
-the container, so tokens do not enter the Sandbox.
+as `/workspace`. The adapter is shaped around
+[`artifact-fs`](https://github.com/cloudflare/artifact-fs): mount the
+Artifacts-backed working-copy ref directly, hydrate blobs on demand, and
+capture runtime writes back into the working-copy ref only when requested.
+Sandbox outbound Workers/TLS auth should inject short-lived Artifacts Git
+credentials outside the container, so tokens do not enter the Sandbox.
 
-Command success, capture/reconcile success, and publication are separate facts.
+Command success, capture success, and publication are separate facts.
 Publication still requires `copy.apply()`.
 
 See [`runtime-adapters.md`](./runtime-adapters.md) for the runtime-facing model.

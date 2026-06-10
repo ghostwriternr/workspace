@@ -71,11 +71,10 @@ error unions discriminate by `tag`.
 
 - `workspace.files.{mkdir, write, read, list, stat, delete}` — current files.
 - `workspace.copies.{create, get}` — durable, isolated working copies.
-- `copy.files.*` — same file methods plus `writeTree`, `attach`, `scoped`.
+- `copy.files.*` — same file methods plus `writeTree` and `scoped`.
 - `copy.apply()` / `copy.discard()` — the publication boundary, with
   optimistic stale-base detection.
 - `copy.files.scoped({ read, write, root? })` — capability for delegated code.
-- `copy.files.attach(host, path)` — mount-host SPI for runtime adapters.
 - `@cloudflare/workspace/source-adapter` — narrow SPI for adapter packages to
   connect an Artifacts repository to a Workspace.
 - `@cloudflare/workspace/workers` — the `WorkspaceObject` Durable Object class.

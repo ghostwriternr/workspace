@@ -70,49 +70,38 @@ A Sandbox receives a filesystem view of one working copy, normally under
 `/workspace`.
 
 ```ts
-import { createWorkspaceSandboxCommandRunner } from "@cloudflare/workspace-adapter-sandbox";
+import { attachWorkspaceCopyToSandbox } from "@cloudflare/workspace-adapter-sandbox";
 import { getSandbox } from "@cloudflare/sandbox";
 
-const runner = createWorkspaceSandboxCommandRunner((copyId) =>
-  getSandbox(env.Sandbox, `${workspaceName}-${copyId}`, { sleepAfter: "60s" }),
-);
-
-const result = await runner.runCommand({
-  files: copy.files,
-  sandboxId: copy.id,
-  command: "npm test",
-  root: "/workspace",
+const sandbox = getSandbox(env.Sandbox, `${workspaceName}-${copy.id}`, {
+  sleepAfter: "60s",
 });
+const mount = await attachWorkspaceCopyToSandbox({
+  copy,
+  sandbox,
+  path: "/workspace",
+});
+if (Result.isError(mount)) return mount;
+
+const result = await sandbox.exec("npm test", { cwd: mount.value.path });
+const capture = await mount.value.capture();
 ```
 
-The runner takes the working copy's `files` and an opaque `sandboxId` so the
-adapter can route to a per-copy Sandbox instance (avoiding shared `/workspace`
-collisions). A nonzero exit code is a command result, not a Workspace error;
-reconciliation always runs after the command completes.
+The Sandbox SDK owns command execution, streaming, environment variables,
+timeouts, ports, sessions, and lifecycle. The Workspace Sandbox adapter owns a
+smaller seam: attach the durable working copy at a runtime path and capture
+Workspace-owned changes back into that copy when product or agent code asks.
 
 Use Sandbox when the task needs process execution, package managers, native
 binaries, or a filesystem-heavy toolchain.
 
-### Current implementation
+### Current implementation direction
 
-The current adapter is intentionally simple:
-
-1. materialize the working copy into the Sandbox path;
-2. run the command with an appropriate working directory;
-3. scan the mounted path after the command;
-4. write changed regular files back into the working copy;
-5. return command output and reconcile information.
-
-This proves the Workspace publication boundary, but it is not the desired
-long-term Sandbox filesystem implementation.
-
-### Target implementation direction
-
-The Sandbox adapter should move toward
+The Sandbox adapter is being shaped around
 [`artifact-fs`](https://github.com/cloudflare/artifact-fs) over the
 Artifacts-backed working-copy ref.
 
-Target flow:
+Flow:
 
 ```text
 Workspace working-copy ref
@@ -177,7 +166,7 @@ Runtime adapters should not:
 - expose Workspace identity to delegated code by default;
 - implement source-specific lifecycle such as GitHub PRs;
 - introduce Git branch/rebase/merge semantics into Workspace;
-- hide whether runtime changes were reconciled into durable state.
+- hide whether runtime changes were captured into durable state.
 
 Adapters should be explicit at semantic boundaries and quiet about routine
 plumbing.

@@ -5,7 +5,7 @@ import { createWorkersAI } from "workers-ai-provider";
 import { z } from "zod";
 
 import { Workspace } from "@cloudflare/workspace";
-import { createSandboxWorkspaceCommandRunner } from "../workspace/cloudflare-sandbox";
+import { createSandboxForDraft } from "../workspace/cloudflare-sandbox";
 import { createWorkspaceDynamicWorkerRunner } from "@cloudflare/workspace-adapter-dynamic-worker";
 import { PhotoDraftController, type PhotoState } from "../photo/draft-controller";
 import { photoAgentPrompt } from "./prompt";
@@ -18,6 +18,7 @@ type PhotoAgentState = {
 const photoToolNames = [
   "listPhotoState",
   "runWorkspaceCommand",
+  "captureDraft",
   "runDynamicWorker",
   "commitDraft",
   "discardDraft",
@@ -51,7 +52,7 @@ export class PhotoAgent extends Think<Env, PhotoAgentState> {
         description: [
           "Run any shell command inside the isolated Sandbox with the active draft mounted at /workspace.",
           "Use this for image inspection and edits. Available tools include ImageMagick commands such as identify and convert.",
-          "Files written under /workspace become part of the draft preview after the command exits, even if the command fails.",
+          "Files written under /workspace are visible to the Sandbox. Call captureDraft when you want those filesystem changes saved into the durable draft.",
           "Examples: `identify /workspace/photos/original.jpg`, `convert /workspace/photos/original.jpg -gravity center -crop 1024x1024+0+0 +repage /workspace/photos/current`, or short Python scripts that read and write /workspace files.",
         ].join(" "),
         inputSchema: z.object({
@@ -59,6 +60,15 @@ export class PhotoAgent extends Think<Env, PhotoAgentState> {
         }),
         execute: async ({ command }) => {
           const result = await this.controller().runWorkspaceCommand({ command });
+          await this.refreshPhotoState();
+          return result;
+        },
+      }),
+      captureDraft: tool({
+        description: "Capture files written under the Sandbox /workspace mount into the durable draft. Use this after image-editing commands that produced a result you want to preview or commit.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          const result = await this.controller().captureDraft();
           await this.refreshPhotoState();
           return result;
         },
@@ -125,7 +135,7 @@ export class PhotoAgent extends Think<Env, PhotoAgentState> {
         artifacts: this.env.ARTIFACTS,
         objects: this.env.WORKSPACE_OBJECTS,
       }).get(this.name),
-      commandRunner: createSandboxWorkspaceCommandRunner(this.env.Sandbox, this.name),
+      sandboxForDraft: createSandboxForDraft(this.env.Sandbox, this.name),
       dynamicWorkerRunner: createWorkspaceDynamicWorkerRunner(this.env.DYNAMIC_WORKERS),
       workspaceForDraft: (draftEditId) =>
         this.ctx.exports.WorkspaceFileCapability({ props: { workspaceName: this.name, draftEditId } }),

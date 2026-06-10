@@ -485,29 +485,6 @@ describe("Workspace", () => {
     });
   });
 
-  it("attaches a working copy to a filesystem host and reconciles changed files", async () => {
-    const { workspace } = createWorkspace({ repo: { "/photos/original.txt": bytes("original") } });
-    const host = new FakeMountHost();
-    const copy = await workspace.copies.create({ label: "edit-photo" });
-    if (Result.isError(copy)) throw new Error("copy failed");
-
-    const mount = await copy.value.files.attach(host, "/workspace");
-    expect(Result.isOk(mount)).toBe(true);
-    if (Result.isError(mount)) throw new Error("attach failed");
-
-    host.files["/workspace/photos/current.txt"] = bytes("edited");
-    const reconcile = await mount.value.reconcile();
-    const apply = await copy.value.apply();
-    const current = await workspace.files.read("/photos/current.txt");
-
-    expect(mount.value.path).toBe("/workspace");
-    expect(Result.isOk(reconcile)).toBe(true);
-    if (Result.isOk(reconcile)) expect(reconcile.value.created).toContain("/photos/current.txt");
-    expect(Result.isOk(apply)).toBe(true);
-    expect(Result.isOk(current)).toBe(true);
-    if (Result.isOk(current)) expect(text(current.value)).toBe("edited");
-  });
-
   it("creates scoped file capabilities from file copies", async () => {
     const { workspace } = createWorkspace({ repo: { "/photos/current": bytes("photo") } });
     const copy = await workspace.copies.create({ label: "dynamic-worker" });
@@ -534,43 +511,6 @@ function createWorkspace(initial: Record<string, Record<string, Uint8Array>>) {
     defaultBranch: "main",
   });
   return { workspace: Workspace.bind({ artifacts, objects: { getByName: () => object } }).get("repo"), artifacts, driver, object };
-}
-
-class FakeMountHost {
-  readonly directories = new Set<string>();
-  readonly files: Record<string, Uint8Array> = {};
-
-  async resetDirectory(path: string) {
-    for (const filePath of Object.keys(this.files)) {
-      if (filePath === path || filePath.startsWith(`${path}/`)) delete this.files[filePath];
-    }
-  }
-
-  async mkdir(path: string, _options: { recursive: boolean }) {
-    this.directories.add(path);
-  }
-
-  async writeFile(path: string, contents: Uint8Array) {
-    this.files[path] = contents;
-  }
-
-  async readFile(path: string) {
-    const content = this.files[path];
-    if (!content) throw new Error(`missing fake mount file: ${path}`);
-    return content;
-  }
-
-  async listTree(path: string) {
-    const prefix = `${path}/`;
-    return [
-      ...[...this.directories]
-        .filter((directoryPath) => directoryPath !== path && directoryPath.startsWith(prefix))
-        .map((directoryPath) => ({ path: directoryPath, type: "directory" as const })),
-      ...Object.keys(this.files)
-        .filter((filePath) => filePath.startsWith(prefix))
-        .map((filePath) => ({ path: filePath, type: "file" as const })),
-    ];
-  }
 }
 
 describe("Workspace bug check", () => {

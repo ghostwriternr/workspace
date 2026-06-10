@@ -4,8 +4,13 @@ import {
   type WorkspaceCurrentFiles,
   type WorkspaceCopyFiles,
 } from "@cloudflare/workspace";
-import type { WorkspaceFileReconcileSummary } from "@cloudflare/workspace";
-import type { WorkspaceSandboxCommandError, WorkspaceSandboxCommandRunner } from "@cloudflare/workspace-adapter-sandbox";
+import {
+  attachWorkspaceCopyToSandbox,
+  type WorkspaceSandboxAttachError,
+  type WorkspaceSandboxCaptureError,
+  type WorkspaceSandboxCaptureSummary,
+  type WorkspaceSandboxClient,
+} from "@cloudflare/workspace-adapter-sandbox";
 import type {
   WorkspaceDynamicWorkerExecutionError,
   WorkspaceDynamicWorkerFileCapability,
@@ -82,7 +87,7 @@ export type PhotoState = {
 export type PhotoDraftControllerDependencies = {
   workspaceName: string;
   workspace: PhotoWorkspace;
-  commandRunner: WorkspaceSandboxCommandRunner;
+  sandboxForDraft(draftEditId: string): WorkspaceSandboxClient;
   dynamicWorkerRunner: WorkspaceDynamicWorkerRunner;
   workspaceForDraft(draftEditId: string): WorkspaceDynamicWorkerFileCapability;
   getDraftEditId(): string | undefined;
@@ -142,27 +147,52 @@ export class PhotoDraftController {
     stdout: string;
     stderr: string;
     exitCode: number;
-    reconcile: WorkspaceFileReconcileSummary;
-  } | { status: "error"; error: WorkspaceSandboxCommandError }> {
+  } | { status: "error"; error: WorkspaceSandboxAttachError }> {
     return this.withDraftCopy(async (copy, draftEditId) => {
-      const result = await this.dependencies.commandRunner.runCommand({
-        files: copy.files,
-        command,
-        root: WORKSPACE_ROOT,
-        sandboxId: draftEditId,
+      const attached = await attachWorkspaceCopyToSandbox({
+        copy,
+        sandbox: this.dependencies.sandboxForDraft(draftEditId),
+        path: WORKSPACE_ROOT,
       });
-      if (Result.isError(result)) {
-        return { status: "error", error: result.error };
+      if (Result.isError(attached)) {
+        return { status: "error", error: attached.error };
       }
+
+      const result = await this.dependencies.sandboxForDraft(draftEditId).exec(command, { cwd: attached.value.path });
 
       return {
         status: "command-completed",
-        root: result.value.root,
-        command: result.value.command,
-        stdout: result.value.stdout,
-        stderr: result.value.stderr,
-        exitCode: result.value.exitCode,
-        reconcile: result.value.reconcile,
+        root: attached.value.path,
+        command,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+      };
+    });
+  }
+
+  async captureDraft(): Promise<{
+    status: "draft-captured";
+    capture: WorkspaceSandboxCaptureSummary;
+  } | { status: "error"; error: WorkspaceSandboxAttachError | WorkspaceSandboxCaptureError }> {
+    return this.withDraftCopy(async (copy, draftEditId) => {
+      const attached = await attachWorkspaceCopyToSandbox({
+        copy,
+        sandbox: this.dependencies.sandboxForDraft(draftEditId),
+        path: WORKSPACE_ROOT,
+      });
+      if (Result.isError(attached)) {
+        return { status: "error", error: attached.error };
+      }
+
+      const captured = await attached.value.capture();
+      if (Result.isError(captured)) {
+        return { status: "error", error: captured.error };
+      }
+
+      return {
+        status: "draft-captured",
+        capture: captured.value,
       };
     });
   }

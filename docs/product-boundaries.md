@@ -14,7 +14,7 @@ target API, see [`product-api.md`](./product-api.md). For implementation, see
 - Durable working copies.
 - Apply and discard semantics.
 - Scoped file capabilities for delegated code.
-- Runtime-independent mount/reconcile semantics used by adapters.
+- Runtime-independent attach/capture semantics used by adapters.
 - Small coordination metadata needed to use Artifacts reliably.
 - Revisions/recovery points as exposed by the underlying file authority.
 

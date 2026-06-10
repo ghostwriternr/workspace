@@ -7,7 +7,7 @@ import { z } from "zod";
 import { Workspace } from "@cloudflare/workspace";
 import { createWorkspaceDynamicWorkerRunner } from "@cloudflare/workspace-adapter-dynamic-worker";
 import { RepoWorkingCopyController } from "../repo/working-copy-controller";
-import { createSandboxCommandRunner } from "../workspace/cloudflare-sandbox";
+import { createSandboxForWorkingCopy } from "../workspace/cloudflare-sandbox";
 import { RepoStateController } from "../repo/state-controller";
 import type { GitHubImportSummary } from "@cloudflare/workspace-source-github";
 import { buildSystemPrompt } from "./prompt";
@@ -81,6 +81,11 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
         }),
         execute: async (input) => resultToModelToolOutput(await this.workingCopyController().shell(input)),
       }),
+      capture: tool({
+        description: codingToolDescription("capture"),
+        inputSchema: z.object({}),
+        execute: async () => resultToModelToolOutput(await this.workingCopyController().captureWorkingCopy()),
+      }),
     };
   }
 
@@ -115,6 +120,11 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
   }
 
   @callable()
+  async capture() {
+    return resultToRpc(await this.workingCopyController().captureWorkingCopy());
+  }
+
+  @callable()
   async applyWorkingCopy() {
     return resultToRpc(await this.workingCopyController().applyWorkingCopy());
   }
@@ -143,7 +153,7 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
       workspace: this.workspaceSurface(),
       workspaceName: this.name,
       dynamicWorkerRunner: createWorkspaceDynamicWorkerRunner(this.env.DYNAMIC_WORKERS),
-      shellRunner: createSandboxCommandRunner(this.env.Sandbox, this.name),
+      sandboxForWorkingCopy: createSandboxForWorkingCopy(this.env.Sandbox, this.name),
       workspaceForWorkingCopy: (workingCopyId) => this.ctx.exports.WorkspaceFileCapability({ props: { workspaceName: this.name, workingCopyId } }),
       getWorkingCopyId: () => this.state.workingCopyId,
       setWorkingCopyId: (workingCopyId) => this.setState({ ...this.state, workingCopyId }),

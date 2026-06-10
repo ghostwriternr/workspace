@@ -49,12 +49,22 @@ export const CODING_TOOLS = [
   {
     name: "shell",
     description:
-      "Run a shell command against the repository in an isolated Sandbox with the working copy mounted at /workspace. Use this for package managers, test runners, native tools, and process execution. Files written under /workspace are reconciled back into the durable working copy after the command exits, even if the command fails.",
-    promptSnippet: "Run shell commands against the repository",
+      "Run a shell command in an isolated Sandbox with the working copy mounted at /workspace. Use this for package managers, test runners, native tools, and process execution. Command execution does not publish changes and does not capture filesystem changes by itself.",
+    promptSnippet: "Run shell commands against the mounted working copy",
     promptGuidelines: [
       "Use shell when you need package managers, test runners, native tools, or real process execution.",
       "shell runs with the working copy mounted at /workspace. Use paths under /workspace in commands.",
-      "Files written under /workspace are reconciled back into the durable working copy after the command exits, even when the exit code is nonzero. Failed commands can still teach you about the environment or leave useful files to inspect.",
+      "After a shell command writes files you want to keep, call capture to update the durable working copy.",
+    ],
+  },
+  {
+    name: "capture",
+    description:
+      "Capture files written under the Sandbox /workspace mount back into the durable working copy. This does not apply or publish the working copy.",
+    promptSnippet: "Capture Sandbox filesystem changes into the working copy",
+    promptGuidelines: [
+      "Use capture after shell commands that create or modify files under /workspace and should become part of the working copy.",
+      "capture updates the durable working copy but does not publish it. The user still decides whether to apply or discard.",
     ],
   },
 ] as const satisfies readonly CodingToolDefinition[];

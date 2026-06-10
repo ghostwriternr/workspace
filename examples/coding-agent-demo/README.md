@@ -34,6 +34,8 @@ Pi-inspired toolbelt:
   binding; cheap, no container start.
 - `shell({ command })` — Sandbox shell command with the working copy mounted
   at `/workspace`; for package managers, builds, native tools.
+- `capture()` — capture files written under the Sandbox `/workspace` mount
+  back into the durable working copy.
 
 `applyWorkingCopy` and `discardWorkingCopy` are user-facing controls, not
 default model tools. The agent must be explicitly asked to apply.

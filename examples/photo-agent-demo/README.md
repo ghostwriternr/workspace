@@ -28,6 +28,8 @@ The `PhotoAgent` (built on `@cloudflare/think`) exposes:
 
 - `listPhotoState` — what's in the current draft.
 - `runWorkspaceCommand` — Sandbox shell for ImageMagick (`identify`, `convert`).
+- `captureDraft` — capture files written under `/workspace` into the durable
+  draft so they can be previewed or made current.
 - `runDynamicWorker` — Worker-native JS over a scoped Workspace binding for
   metadata, notes, manifests.
 - `commitDraft` / `discardDraft` — the publication boundary.

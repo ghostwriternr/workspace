@@ -1,6 +1,7 @@
 import type { Result as BetterResult } from "better-result";
 import type { WorkspaceEntry, WorkspaceRevision, WorkspaceStat } from "./model/entries";
 import type { WorkspaceTreeEntry } from "./model/write-tree";
+import type { WorkspaceRuntimeMountDescriptor, WorkspaceRuntimeMountError } from "./runtime-adapter";
 
 export type WorkspaceAuthorityFiles<FileError> = {
   mkdir(path: string): Promise<BetterResult<void, FileError>>;
@@ -17,6 +18,7 @@ export type WorkspaceAuthorityCopy<CopyFileError, ApplyError, DiscardError> = {
   label?: string;
   createdAt: number;
   files: WorkspaceAuthorityFiles<CopyFileError>;
+  runtimeMount?(): Promise<BetterResult<WorkspaceRuntimeMountDescriptor, WorkspaceRuntimeMountError>>;
   apply(): Promise<BetterResult<WorkspaceRevision, ApplyError>>;
   discard(): Promise<BetterResult<void, DiscardError>>;
 };

@@ -12,6 +12,7 @@ import {
   WorkspaceNotFoundError,
 } from "../model/errors";
 import type { WorkspaceRevision } from "../model/entries";
+import type { WorkspaceRuntimeMountDescriptor, WorkspaceRuntimeMountError } from "../runtime-adapter";
 import { toWorkspaceErrorDto } from "../projections/dto";
 import type {
   WorkspaceAuthority,
@@ -34,6 +35,7 @@ import {
 } from "./files";
 import { currentFileTarget } from "./file-target";
 import { isArtifactsNotFound, isGitPushRejected, isMissingWorkingCopyRef } from "./errors";
+import { workingCopyRef } from "./git-path";
 
 export type { ArtifactsBindingClient, ArtifactsRepoClient } from "./binding";
 export type { ArtifactsWorkspaceDriver, ArtifactsWorkspaceDriverFactory } from "./driver";
@@ -234,6 +236,22 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
   workspaceDriver(): ArtifactsWorkspaceDriver {
     return this.driver;
   }
+
+  async runtimeMountDescriptor(copyId: string): Promise<BetterResult<WorkspaceRuntimeMountDescriptor, WorkspaceRuntimeMountError>> {
+    const current = await this.workspaceObject.currentRepository();
+    if (!current) {
+      return Result.err({
+        tag: "WorkspaceRuntimeMountUnavailableError",
+        message: `Workspace ${this.repositoryName} has no current repository to mount.`,
+      });
+    }
+
+    return Result.ok({
+      copyId,
+      remote: current.remote,
+      ref: workingCopyRef(copyId),
+    });
+  }
 }
 
 class ArtifactsWorkspaceCopy implements ArtifactsWorkspaceAuthorityCopy {
@@ -251,6 +269,10 @@ class ArtifactsWorkspaceCopy implements ArtifactsWorkspaceAuthorityCopy {
       copyId: id,
       ensureCopyExists: () => authority.copyFileTargetExists(id),
     });
+  }
+
+  runtimeMount(): Promise<BetterResult<WorkspaceRuntimeMountDescriptor, WorkspaceRuntimeMountError>> {
+    return this.authority.runtimeMountDescriptor(this.id);
   }
 
   apply(): Promise<BetterResult<WorkspaceRevision, ArtifactsApplyError>> {

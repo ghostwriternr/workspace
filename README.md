@@ -37,12 +37,15 @@ if (Result.isError(copyResult)) return copyResult;
 const copy = copyResult.value;
 await copy.files.write("/README.md", bytes);
 
-await sandboxRunner.runCommand({
-  files: copy.files,
-  sandboxId: copy.id,
-  command: "npm test",
-  root: "/workspace",
+const mount = await attachWorkspaceCopyToSandbox({
+  copy,
+  sandbox,
+  path: "/workspace",
 });
+if (Result.isError(mount)) return mount;
+
+await sandbox.exec("npm test", { cwd: mount.value.path });
+await mount.value.capture();
 
 await copy.apply(); // or discard()
 ```

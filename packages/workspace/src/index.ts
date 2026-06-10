@@ -28,13 +28,6 @@ export {
 export { type WorkspaceEntry, type WorkspaceRevision, type WorkspaceStat } from "./model/entries";
 export { type WorkspaceTreeEntry } from "./model/write-tree";
 export {
-  type WorkspaceFileMount,
-  type WorkspaceFileMountError,
-  type WorkspaceFileMountHost,
-  type WorkspaceFileMountHostEntry,
-  type WorkspaceFileReconcileSummary,
-} from "./mount";
-export {
   type ScopedWorkspaceAccessErrorDto,
   type ScopedWorkspaceErrorDto,
   type ScopedWorkspaceFileCapability,

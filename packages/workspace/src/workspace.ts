@@ -1,12 +1,6 @@
 import { Result, type Result as BetterResult } from "better-result";
 import type { WorkspaceAuthority, WorkspaceAuthorityCopy, WorkspaceAuthorityFiles } from "./authority";
 import {
-  attachWorkspaceFiles,
-  type WorkspaceFileMount,
-  type WorkspaceFileMountError,
-  type WorkspaceFileMountHost,
-} from "./mount";
-import {
   writeTreeEntries,
   type WorkspaceFileWriteTreeError as WorkspaceFileWriteTreeStreamError,
   type WorkspaceTreeEntries,
@@ -40,6 +34,7 @@ import type {
 } from "./model/errors";
 import type { WorkspaceEntry, WorkspaceRevision, WorkspaceStat } from "./model/entries";
 import { createWorkspaceFileCapability, type ScopedWorkspaceFileCapability } from "./projections/scoped-file-capability";
+import { registerWorkspaceCopyRuntimeMount } from "./runtime-adapter";
 
 export type WorkspaceCurrentFiles = WorkspaceCurrentFilesApi;
 
@@ -75,7 +70,6 @@ export type WorkspaceFileScope = {
 
 export type WorkspaceCopyFiles = WorkspaceCopyFilesApi & {
   writeTree(root: string, entries: WorkspaceTreeEntries): Promise<BetterResult<void, WorkspaceFileWriteTreeError>>;
-  attach(host: WorkspaceFileMountHost, path: string): Promise<BetterResult<WorkspaceFileMount, WorkspaceFileMountError>>;
   scoped(options: WorkspaceFileScope): ScopedWorkspaceFileCapability;
 };
 
@@ -159,6 +153,10 @@ export class WorkspaceCopy {
     this.label = copy.label;
     this.createdAt = copy.createdAt;
     this.files = new WorkspaceCopyFilesView(copy.files);
+    const runtimeMount = copy.runtimeMount?.bind(copy);
+    if (runtimeMount) {
+      registerWorkspaceCopyRuntimeMount(this, runtimeMount);
+    }
   }
 
   readonly id: string;
@@ -207,10 +205,6 @@ class WorkspaceCopyFilesView implements WorkspaceCopyFiles {
 
   async delete(path: string): Promise<BetterResult<void, WorkspaceCopyFileError>> {
     return this.files.delete(path);
-  }
-
-  async attach(host: WorkspaceFileMountHost, path: string): Promise<BetterResult<WorkspaceFileMount, WorkspaceFileMountError>> {
-    return attachWorkspaceFiles(this, host, path);
   }
 
   scoped(options: WorkspaceFileScope): ScopedWorkspaceFileCapability {

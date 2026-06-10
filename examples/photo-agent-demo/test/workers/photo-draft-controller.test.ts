@@ -34,7 +34,7 @@ describe("PhotoDraftController", () => {
     expect(state.files.map((file) => file.path)).toEqual(["/notes/edit-summary.md", "/photos/original.png"]);
   });
 
-  it("runs commands with the draft mounted at /workspace and reconciles changes into the draft", async () => {
+  it("runs commands with the draft mounted and captures changes explicitly", async () => {
     const dependencies = createDependencies({
       head: { "/photos/original.png": originalPng },
       commandOutput: draftPng,
@@ -52,20 +52,24 @@ describe("PhotoDraftController", () => {
       stdout: "ok",
       stderr: "",
       exitCode: 0,
-      reconcile: {
-        created: [],
-        modified: ["/photos/current"],
-        deleted: [],
-        unchanged: 1,
-      },
+    });
+    expect(dependencies.driver.file(dependencies.draftEditId!, "/photos/current")).toBeUndefined();
+
+    const captured = await controller.captureDraft();
+
+    expect(captured).toEqual({
+      status: "draft-captured",
+      capture: { path: "/workspace", stdout: "captured", stderr: "" },
     });
     expect(dependencies.driver.file(dependencies.draftEditId!, "/photos/current")).toEqual(draftPng);
-    expect(dependencies.commandRunner.calls).toEqual([
+    expect(dependencies.sandbox.commands).toEqual([
+      expect.objectContaining({ command: expect.stringContaining("artifact-fs mount") }),
       {
         command: "identify /workspace/photos/original.png && convert /workspace/photos/original.png /workspace/photos/current",
-        root: "/workspace",
-        sandboxId: dependencies.draftEditId,
+        options: { cwd: "/workspace" },
       },
+      expect.objectContaining({ command: expect.stringContaining("artifact-fs mount") }),
+      { command: "artifact-fs capture --path '/workspace'", options: { cwd: "/" } },
     ]);
   });
 
@@ -82,14 +86,14 @@ describe("PhotoDraftController", () => {
       command: "convert /workspace/photos/current -resize 512x512^ /workspace/photos/current",
     });
 
-    expect(dependencies.commandRunner.calls).toEqual([
+    expect(dependencies.sandbox.commands).toEqual([
+      expect.objectContaining({ command: expect.stringContaining("artifact-fs mount") }),
       {
         command: "convert /workspace/photos/current -resize 512x512^ /workspace/photos/current",
-        root: "/workspace",
-        sandboxId: "copy-1",
+        options: { cwd: "/workspace" },
       },
     ]);
-    expect(dependencies.driver.file("copy-1", "/photos/current")).toEqual(draftPng);
+    expect(dependencies.driver.file("copy-1", "/photos/current")).toEqual(currentPng);
   });
 
   it("runs Dynamic Worker code against the same draft working copy", async () => {
@@ -190,7 +194,7 @@ describe("PhotoDraftController", () => {
 
     await expect(commandController.runWorkspaceCommand({ command: "identify /workspace/photos/original.png" })).resolves.toMatchObject({
       status: "error",
-      error: { tag: "WorkspaceSandboxMountError", message: "mount failed" },
+      error: { tag: "WorkspaceSandboxAttachError", message: "mount failed" },
     });
 
     const workerDependencies = createDependencies({ head: { "/photos/original.png": originalPng }, dynamicWorkerError: "worker failed" });
@@ -215,7 +219,7 @@ type CreateDependenciesOptions = {
 type TestDependencies = ConstructorParameters<typeof PhotoDraftController>[0] & {
   draftEditId?: string;
   driver: FakeArtifactsWorkspaceDriver;
-  commandRunner: FakeWorkspaceCommandRunner;
+  sandbox: FakeSandbox;
   dynamicWorkerRunner: FakeDynamicWorkerRunner;
 };
 
@@ -238,11 +242,12 @@ function createDependencies(options: CreateDependenciesOptions): TestDependencie
   }
   const workspace = Workspace.bind({ artifacts, objects: { getByName: () => object } }).get("demo");
   let draftEditId = options.draftEditId;
+  const sandbox = new FakeSandbox(workspace, () => draftEditId, options.commandOutput ?? draftPng, options.commandError);
 
   return {
     workspaceName: "demo",
     workspace,
-    commandRunner: new FakeWorkspaceCommandRunner(options.commandOutput ?? draftPng, options.commandError),
+    sandboxForDraft: () => sandbox,
     dynamicWorkerRunner: new FakeDynamicWorkerRunner(() => draftFiles(workspace, draftEditId), options.dynamicWorkerError),
     workspaceForDraft: () => ({}) as WorkspaceDynamicWorkerFileCapability,
     getDraftEditId: () => draftEditId,
@@ -253,6 +258,7 @@ function createDependencies(options: CreateDependenciesOptions): TestDependencie
       return draftEditId;
     },
     driver,
+    sandbox,
   } satisfies TestDependencies;
 }
 
@@ -284,42 +290,27 @@ class FakeDynamicWorkerRunner {
   }
 }
 
-class FakeWorkspaceCommandRunner {
-  readonly calls: Array<{ command: string; root: string; sandboxId: string }> = [];
+class FakeSandbox {
+  readonly commands: Array<{ command: string; options: { cwd?: string } | undefined }> = [];
 
   constructor(
+    private readonly workspace: Workspace,
+    private readonly getDraftEditId: () => string | undefined,
     private readonly output: Uint8Array,
     private readonly error?: string,
   ) {}
 
-  async runCommand(options: { files: WorkspaceCopyFiles; command: string; root?: string; sandboxId: string }) {
-    this.calls.push({ command: options.command, root: options.root ?? "/workspace", sandboxId: options.sandboxId });
-    if (this.error) {
-      return Result.err({
-        tag: "WorkspaceSandboxMountError" as const,
-        operation: "attach" as const,
-        message: this.error,
-        error: {
-          tag: "WorkspaceFileMountOperationError" as const,
-          operation: "attach",
-          errorTag: "TestError",
-          message: this.error,
-        },
-      });
+  async exec(command: string, options?: { cwd?: string }) {
+    this.commands.push({ command, options });
+    if (this.error && command.startsWith("artifact-fs mount")) {
+      return { success: false, exitCode: 1, stdout: "", stderr: this.error };
     }
-    await options.files.write("/photos/current", this.output);
-    return Result.ok({
-      command: options.command,
-      root: options.root ?? "/workspace",
-      exitCode: 0,
-      stdout: "ok",
-      stderr: "",
-      reconcile: {
-        created: [],
-        modified: ["/photos/current"],
-        deleted: [],
-        unchanged: 1,
-      },
-    });
+    if (command === "artifact-fs capture --path '/workspace'") {
+      const copy = await this.workspace.copies.get(this.getDraftEditId() ?? "");
+      if (Result.isError(copy)) throw new Error("draft not found");
+      await copy.value.files.write("/photos/current", this.output);
+      return { success: true, exitCode: 0, stdout: "captured", stderr: "" };
+    }
+    return { success: true, exitCode: 0, stdout: "ok", stderr: "" };
   }
 }

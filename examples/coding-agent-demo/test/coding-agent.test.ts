@@ -4,10 +4,11 @@ import { buildSystemPrompt } from "../src/agent/prompt";
 import { CODING_TOOLS, CODING_TOOL_NAMES, codingToolDescription } from "../src/agent/tools";
 
 describe("coding agent", () => {
-  it("exposes read, write, edit, run, and shell", () => {
-    expect(CODING_TOOL_NAMES).toEqual(["read", "write", "edit", "run", "shell"]);
+  it("exposes read, write, edit, run, shell, and capture", () => {
+    expect(CODING_TOOL_NAMES).toEqual(["read", "write", "edit", "run", "shell", "capture"]);
     expect(codingToolDescription("run")).toContain("JavaScript program");
     expect(codingToolDescription("shell")).toContain("shell command");
+    expect(codingToolDescription("capture")).toContain("Capture files");
   });
 
   it("assembles system prompt from tool snippets and guidelines", () => {

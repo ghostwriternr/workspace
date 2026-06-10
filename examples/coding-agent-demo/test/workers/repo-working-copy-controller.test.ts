@@ -173,8 +173,8 @@ describe("RepoWorkingCopyController", () => {
     expect(decoder.decode(edited)).toBe("read # Repo");
   });
 
-  it("runs shell commands against the active working copy and reconciles changes", async () => {
-    const { controller, workspace, shellRunner, getWorkingCopyId } = await setupWorkingCopyController();
+  it("runs shell commands and captures Sandbox changes explicitly", async () => {
+    const { controller, workspace, sandbox, getWorkingCopyId } = await setupWorkingCopyController();
 
     const result = await expectOk(controller.shell({ command: "npm test" }));
 
@@ -185,15 +185,29 @@ describe("RepoWorkingCopyController", () => {
       exitCode: 1,
       stdout: "",
       stderr: "tests failed",
-      reconcile: { created: ["/notes/shell.md"], modified: [], deleted: [], unchanged: 1 },
     });
     expect(getWorkingCopyId()).toEqual(expect.any(String));
 
+    const beforeCapture = unwrap(await workspace.copies.get(getWorkingCopyId()!));
+    expect(Result.isError(await beforeCapture.files.read("/notes/shell.md"))).toBe(true);
+
+    const captured = await expectOk(controller.captureWorkingCopy());
     const current = await workspace.files.read("/notes/shell.md");
     const copy = unwrap(await workspace.copies.get(getWorkingCopyId()!));
     const edited = unwrap(await copy.files.read("/notes/shell.md"));
 
-    expect(shellRunner.calls).toEqual([{ command: "npm test", workingCopyId: getWorkingCopyId() }]);
+    expect(captured).toEqual({
+      status: "workspace-captured",
+      path: "/workspace",
+      stdout: "captured",
+      stderr: "",
+    });
+    expect(sandbox.commands).toEqual([
+      expect.objectContaining({ command: expect.stringContaining("artifact-fs mount") }),
+      { command: "npm test", options: { cwd: "/workspace" } },
+      expect.objectContaining({ command: expect.stringContaining("artifact-fs mount") }),
+      { command: "artifact-fs capture --path '/workspace'", options: { cwd: "/" } },
+    ]);
     expect(Result.isError(current)).toBe(true);
     expect(decoder.decode(edited)).toBe("shell wrote this");
   });
@@ -245,29 +259,28 @@ async function setupWorkingCopyController() {
       return Result.ok({ wrote: "/notes/edit.md" });
     },
   };
-  const shellRunner = {
-    calls: [] as Array<{ command: string; workingCopyId: string | undefined }>,
-    async runCommand(options: { command: string; sandboxId: string }) {
-      this.calls.push({ command: options.command, workingCopyId: options.sandboxId });
-      const copy = unwrap(await workspace.copies.get(options.sandboxId));
-      await copy.files.writeTree("/", [
-        { path: "notes/shell.md", contents: encoder.encode("shell wrote this") },
-      ]);
-      return Result.ok({
-        command: options.command,
-        root: "/workspace",
-        exitCode: 1,
-        stdout: "",
-        stderr: "tests failed",
-        reconcile: { created: ["/notes/shell.md"], modified: [], deleted: [], unchanged: 1 },
-      });
+  const sandbox = {
+    commands: [] as Array<{ command: string; options: { cwd?: string } | undefined }>,
+    async exec(command: string, options?: { cwd?: string }) {
+      this.commands.push({ command, options });
+      if (command === "artifact-fs capture --path '/workspace'") {
+        const copy = unwrap(await workspace.copies.get(workingCopyId!));
+        await copy.files.writeTree("/", [
+          { path: "notes/shell.md", contents: encoder.encode("shell wrote this") },
+        ]);
+        return { success: true, exitCode: 0, stdout: "captured", stderr: "" };
+      }
+      if (command === "npm test") {
+        return { success: false, exitCode: 1, stdout: "", stderr: "tests failed" };
+      }
+      return { success: true, exitCode: 0, stdout: "", stderr: "" };
     },
   };
   const controller = new RepoWorkingCopyController({
     workspace,
     workspaceName,
     dynamicWorkerRunner: runner,
-    shellRunner,
+    sandboxForWorkingCopy: () => sandbox,
     workspaceForWorkingCopy: () => ({}) as never,
     getWorkingCopyId: () => workingCopyId,
     setWorkingCopyId: (next) => { workingCopyId = next; },
@@ -277,7 +290,7 @@ async function setupWorkingCopyController() {
     controller,
     workspace,
     runner,
-    shellRunner,
+    sandbox,
     getWorkingCopyId: () => workingCopyId,
   };
 }
