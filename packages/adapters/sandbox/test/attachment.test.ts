@@ -5,11 +5,12 @@ import { registerWorkspaceCopyRuntimeMount } from "@cloudflare/workspace/runtime
 import { attachWorkspaceCopyToSandbox } from "../src/index";
 
 describe("attachWorkspaceCopyToSandbox", () => {
-  it("mounts a Workspace copy through artifact-fs without wrapping command execution", async () => {
+  it("mounts a Workspace copy through the adapter container commands", async () => {
     const copy = { id: "copy-123" };
     registerWorkspaceCopyRuntimeMount(copy, async () => Result.ok({
       copyId: "copy-123",
       remote: "https://artifacts.example/workspaces/demo.git",
+      baseRef: "main",
       ref: "refs/workspace/copies/copy-123",
     }));
     const sandbox = new FakeSandbox();
@@ -29,8 +30,16 @@ describe("attachWorkspaceCopyToSandbox", () => {
     });
     expect(sandbox.commands).toEqual([
       {
-        command: "artifact-fs mount --remote 'https://artifacts.example/workspaces/demo.git' --ref 'refs/workspace/copies/copy-123' --path '/workspace'",
-        options: { cwd: "/" },
+        command: "workspace-mount",
+        options: {
+          cwd: "/",
+          env: {
+            WORKSPACE_REMOTE: "https://artifacts.example/workspaces/demo.git",
+            WORKSPACE_BASE_REF: "main",
+            WORKSPACE_COPY_REF: "refs/workspace/copies/copy-123",
+            WORKSPACE_PATH: "/workspace",
+          },
+        },
       },
     ]);
 
@@ -41,16 +50,22 @@ describe("attachWorkspaceCopyToSandbox", () => {
 
     expect(Result.isOk(captured)).toBe(true);
     expect(sandbox.commands.at(-1)).toEqual({
-      command: "artifact-fs capture --path '/workspace'",
-      options: { cwd: "/" },
+      command: "workspace-capture",
+      options: {
+        cwd: "/",
+        env: {
+          WORKSPACE_COPY_REF: "refs/workspace/copies/copy-123",
+          WORKSPACE_PATH: "/workspace",
+        },
+      },
     });
   });
 });
 
 class FakeSandbox {
-  readonly commands: Array<{ command: string; options: { cwd?: string } | undefined }> = [];
+  readonly commands: Array<{ command: string; options: { cwd?: string; env?: Record<string, string> } | undefined }> = [];
 
-  async exec(command: string, options?: { cwd?: string }) {
+  async exec(command: string, options?: { cwd?: string; env?: Record<string, string> }) {
     this.commands.push({ command, options });
     return { success: true, exitCode: 0, stdout: "", stderr: "" };
   }

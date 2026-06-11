@@ -91,13 +91,18 @@ The Sandbox SDK owns command execution, streaming, environment variables,
 timeouts, ports, sessions, and lifecycle. The Workspace Sandbox adapter owns a
 smaller seam: attach the durable working copy at a runtime path and capture
 Workspace-owned changes back into that copy when product or agent code asks.
+The adapter package also provides the local Sandbox base image contract used by
+examples: `workspace-mount`, `workspace-capture`, `artifact-fs`, `git`, and
+FUSE dependencies. Local FUSE dev is opt-in through a patched `workerd`
+installed by `just install-fuse-workerd`; normal dev and production behavior do
+not use that binary.
 
 Use Sandbox when the task needs process execution, package managers, native
 binaries, or a filesystem-heavy toolchain.
 
-### Current implementation direction
+### Current implementation
 
-The Sandbox adapter is being shaped around
+The Sandbox adapter uses
 [`artifact-fs`](https://github.com/cloudflare/artifact-fs) over the
 Artifacts-backed working-copy ref.
 
@@ -113,8 +118,10 @@ Workspace working-copy ref
 
 `artifact-fs` owns the runtime filesystem mechanics: lazy blob hydration,
 copy-on-write writes, local filesystem behavior, and Git-compatible working tree
-operations. Workspace should not rebuild those mechanics in WorkspaceObject or
-in a path-level overlay store.
+operations. The adapter package owns the small wrapper commands that adapt
+Workspace's hidden working-copy refs to the current `artifact-fs` CLI. Workspace
+should not rebuild those mechanics in WorkspaceObject or in a path-level
+overlay store.
 
 Sandbox outbound Workers/TLS auth should be the credential boundary for this
 flow. The Sandbox should mount a token-free HTTPS Artifacts remote, while a
@@ -141,8 +148,8 @@ These are runtime-local authorities with their own lifecycle. They are not
 "Workspace files excluded by a pattern." Treating them as separate authority is
 what lets products preserve useful caches without accidentally publishing them.
 
-The current Sandbox adapter is still simple: it materializes and scans a working
-copy path. Richer runtime-local mount handling is future work.
+The current Sandbox adapter mounts one Workspace-owned working-copy path.
+Richer runtime-local mount handling is future work.
 
 ## Future projections
 

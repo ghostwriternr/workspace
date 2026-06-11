@@ -249,6 +249,7 @@ class ArtifactsWorkspaceAuthority implements ArtifactsWorkspaceAuthorityContract
     return Result.ok({
       copyId,
       remote: current.remote,
+      baseRef: current.defaultBranch,
       ref: workingCopyRef(copyId),
     });
   }

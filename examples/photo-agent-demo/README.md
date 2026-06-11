@@ -48,14 +48,38 @@ npm run deploy       # build + wrangler deploy
 ```
 
 The Sandbox container needs Docker (Colima works) running locally for dev and
-deploy.
+deploy. Build the shared Workspace Sandbox base image before running the demo:
+
+```bash
+just build-sandbox-base
+```
+
+Local FUSE-backed Sandbox mounts require a patched `workerd`. From the repo
+root, use the opt-in recipe:
+
+```bash
+just dev-photo-fuse
+```
+
+Normal `npm run dev` remains unchanged.
+
+For local dev that exercises the ArtifactFS/FUSE mount path, run from the
+repository root:
+
+```bash
+just dev-photo-fuse
+```
+
+This downloads the pinned patched `workerd` binary into `.cache/`, builds the
+Sandbox base image, and starts Vite with `MINIFLARE_WORKERD_PATH` plus
+`WORKERD_LOCAL_DOCKER_ENABLE_FUSE=1`.
 
 ## Boundary
 
 Workspace owns durable file state and working-copy semantics. Think owns the
-chat loop and tool selection. The Sandbox adapter owns command execution and
-filesystem reconciliation. The Dynamic Worker adapter owns Worker Loader
-mechanics.
+chat loop and tool selection. The Sandbox SDK owns command execution and
+container lifecycle. The Workspace Sandbox adapter owns attach/capture. The
+Dynamic Worker adapter owns Worker Loader mechanics.
 
 Photo-specific concepts ("draft", "original", "current image") stay in this
 example; they are not pushed into Workspace core.

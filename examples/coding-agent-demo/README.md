@@ -63,14 +63,39 @@ binding shape. For end-to-end testing today, deploy and run against the
 deployed Worker.
 
 The Sandbox container needs Docker (Colima works) running locally for dev and
-deploy.
+deploy. Build the shared Workspace Sandbox base image before running the demo:
+
+```bash
+just build-sandbox-base
+```
+
+Local FUSE-backed Sandbox mounts require a patched `workerd`. From the repo
+root, use the opt-in recipe:
+
+```bash
+just dev-coding-fuse
+```
+
+Normal `npm run dev` remains unchanged.
+
+For local dev that exercises the ArtifactFS/FUSE mount path, run from the
+repository root:
+
+```bash
+just dev-coding-fuse
+```
+
+This downloads the pinned patched `workerd` binary into `.cache/`, builds the
+Sandbox base image, and starts Vite with `MINIFLARE_WORKERD_PATH` plus
+`WORKERD_LOCAL_DOCKER_ENABLE_FUSE=1`.
 
 ## Boundary
 
 Workspace owns durable file state and working-copy semantics. Think owns the
-chat loop and tool selection. The Sandbox adapter owns command execution and
-filesystem reconciliation. The Dynamic Worker adapter owns Worker Loader
-mechanics. The GitHub source adapter owns import lifecycle.
+chat loop and tool selection. The Sandbox SDK owns command execution and
+container lifecycle. The Workspace Sandbox adapter owns attach/capture. The
+Dynamic Worker adapter owns Worker Loader mechanics. The GitHub source adapter
+owns import lifecycle.
 
 The demo does not export back to GitHub (no PRs, no branches, no push). That
 would be additional source-adapter work.

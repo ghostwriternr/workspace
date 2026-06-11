@@ -2,7 +2,7 @@ import { Result, type Result as BetterResult } from "better-result";
 import { workspaceCopyRuntimeMount, type WorkspaceRuntimeMountDescriptor } from "@cloudflare/workspace/runtime-adapter";
 
 export type WorkspaceSandboxClient = {
-  exec(command: string, options?: { cwd?: string }): Promise<{ success: boolean; exitCode: number; stdout: string; stderr: string }>;
+  exec(command: string, options?: { cwd?: string; env?: Record<string, string> }): Promise<{ success: boolean; exitCode: number; stdout: string; stderr: string }>;
 };
 
 export type WorkspaceSandboxAttachOptions = {
@@ -47,11 +47,14 @@ export async function attachWorkspaceCopyToSandbox(
     });
   }
 
-  const mounted = await options.sandbox.exec(mountCommand(descriptor.value, path), { cwd: "/" });
+  const mounted = await options.sandbox.exec("workspace-mount", {
+    cwd: "/",
+    env: mountEnvironment(descriptor.value, path),
+  });
   if (!mounted.success) {
     return Result.err({
       tag: "WorkspaceSandboxAttachError",
-      message: mounted.stderr || `artifact-fs mount exited with ${mounted.exitCode}`,
+      message: mounted.stderr || `workspace-mount exited with ${mounted.exitCode}`,
     });
   }
 
@@ -59,11 +62,14 @@ export async function attachWorkspaceCopyToSandbox(
     copyId: options.copy.id,
     path,
     capture: async () => {
-      const captured = await options.sandbox.exec(captureCommand(path), { cwd: "/" });
+      const captured = await options.sandbox.exec("workspace-capture", {
+        cwd: "/",
+        env: captureEnvironment(descriptor.value, path),
+      });
       if (!captured.success) {
         return Result.err({
           tag: "WorkspaceSandboxCaptureError",
-          message: captured.stderr || `artifact-fs capture exited with ${captured.exitCode}`,
+          message: captured.stderr || `workspace-capture exited with ${captured.exitCode}`,
         });
       }
 
@@ -76,22 +82,24 @@ export async function attachWorkspaceCopyToSandbox(
   });
 }
 
-function mountCommand(descriptor: WorkspaceRuntimeMountDescriptor, path: string): string {
-  return [
-    "artifact-fs mount",
-    "--remote",
-    shellQuote(descriptor.remote),
-    "--ref",
-    shellQuote(descriptor.ref),
-    "--path",
-    shellQuote(path),
-  ].join(" ");
+function mountEnvironment(
+  descriptor: WorkspaceRuntimeMountDescriptor,
+  path: string,
+): Record<string, string> {
+  return {
+    WORKSPACE_REMOTE: descriptor.remote,
+    WORKSPACE_BASE_REF: descriptor.baseRef,
+    WORKSPACE_COPY_REF: descriptor.ref,
+    WORKSPACE_PATH: path,
+  };
 }
 
-function captureCommand(path: string): string {
-  return ["artifact-fs capture", "--path", shellQuote(path)].join(" ");
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
+function captureEnvironment(
+  descriptor: WorkspaceRuntimeMountDescriptor,
+  path: string,
+): Record<string, string> {
+  return {
+    WORKSPACE_COPY_REF: descriptor.ref,
+    WORKSPACE_PATH: path,
+  };
 }

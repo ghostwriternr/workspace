@@ -19,6 +19,73 @@ It is not a command runner. The Cloudflare Sandbox SDK already owns `getSandbox`
 - `apply()` or `discard()`.
 - Agent tools, prompts, UI state, approvals, or source export.
 
+## Container base image
+
+The TypeScript adapter expects the Sandbox image to provide two commands:
+
+- `workspace-mount` — mounts the Artifacts-backed working-copy ref at the
+  requested path.
+- `workspace-capture` — commits dirty files in that mount and pushes them back
+  to the hidden working-copy ref.
+
+This package includes a local base-image source at `container/Dockerfile`.
+Build it from the repository root before running examples locally:
+
+```bash
+just build-sandbox-base
+```
+
+Example Dockerfiles can then extend it:
+
+```dockerfile
+FROM workspace-sandbox-base:local
+```
+
+The base image includes `artifact-fs`, `git`, `fuse3`, and the Workspace wrapper
+commands. App images can layer extra tools on top, such as ImageMagick.
+
+Local Sandbox FUSE support also requires patched `workerd`. The repo provides
+an opt-in installer and dev recipes:
+
+```bash
+just install-fuse-workerd
+just dev-coding-fuse
+just dev-photo-fuse
+```
+
+Those recipes set `MINIFLARE_WORKERD_PATH` and
+`WORKERD_LOCAL_DOCKER_ENABLE_FUSE=1`. Normal dev and production behavior are
+unchanged.
+
+## Local FUSE development
+
+Local Sandbox development needs a patched `workerd` binary so Docker containers
+receive `/dev/fuse` and the Linux capabilities required by `artifact-fs`. This is
+opt-in and only affects local dev runs that set both environment variables below;
+production deploys continue to use the normal Cloudflare runtime.
+
+From the repository root:
+
+```bash
+just install-fuse-workerd
+just build-sandbox-base
+MINIFLARE_WORKERD_PATH="$PWD/.cache/workerd-fuse/workerd" \
+  WORKERD_LOCAL_DOCKER_ENABLE_FUSE=1 \
+  npm --prefix examples/photo-agent-demo run dev
+```
+
+The installer downloads a pinned release from `ghostwriternr/workerd` into
+`.cache/workerd-fuse/workerd` and verifies its SHA-256 checksum. Override the
+release when needed with `FUSE_WORKERD_VERSION`, or override the fork with
+`FUSE_WORKERD_OWNER` / `FUSE_WORKERD_REPO`.
+
+Convenience recipes run the demos with the same local-only environment:
+
+```bash
+just dev-photo-fuse
+just dev-coding-fuse
+```
+
 ## Usage
 
 ```ts
@@ -54,6 +121,9 @@ const capture = await mount.value.capture();
 
 A nonzero command exit code is a Sandbox result, not a Workspace error. Capture is explicit and separate from command execution. Publication remains a separate product decision through `copy.apply()` or `copy.discard()`.
 
-## Direction
+## Runtime foundation
 
-The adapter is intended to use `artifact-fs` as its filesystem foundation: mount the Artifacts-backed hidden working-copy ref at `/workspace`, let Sandbox-native APIs operate on that tree, and capture dirty state back into the same working-copy ref.
+The adapter uses `artifact-fs` as its filesystem foundation: mount the
+Artifacts-backed hidden working-copy ref at `/workspace`, let Sandbox-native
+APIs operate on that tree, and capture dirty state back into the same
+working-copy ref.

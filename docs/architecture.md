@@ -33,19 +33,19 @@ packages/workspace/
     authority.ts                  authority contract the API depends on
     workspace-object.ts           Durable Object coordination metadata
     workers.ts                    Worker-runtime export for WorkspaceObject
-    mount.ts                      mount-host SPI used by Sandbox adapter
+    runtime-adapter.ts            SPI for runtime mount descriptors
     write-tree.ts                 streaming tree-write planner/chunker
     source-adapter.ts             public types for source adapter SPI
     source-adapter-registry.ts    internal connect-Artifacts seam
     artifacts/                    Artifacts authority + temporary Git driver
     model/                        path, entry, error, write-tree primitives
-    projections/                  scoped file capability + working-copy mount
+    projections/                  scoped file capability DTO helpers
 
 packages/adapters/dynamic-worker/
   Dynamic Worker runner for scoped Workspace files
 
 packages/adapters/sandbox/
-  Sandbox command runner for mounted Workspace working copies
+  Sandbox attachment/capture adapter and shared base image contract
 
 packages/sources/github/
   GitHub source adapter that imports through Artifacts and connects the
@@ -162,8 +162,9 @@ See [`sources.md`](./sources.md).
 - The temporary `isomorphic-git` bridge in `artifacts/git-driver.ts` is
   Workspace-internal and should be removed when Artifacts exposes direct file
   mutation APIs.
-- The Sandbox adapter materializes and scans rather than mounting an
-  Artifacts-backed filesystem; the target direction is `artifact-fs`.
+- The Sandbox adapter uses `artifact-fs` through a local base image and wrapper
+  scripts. That base image is not published yet, and token-free outbound
+  Artifacts Git auth is still future work.
 - The GitHub source adapter imports public repositories but does not yet
   report the resolved Git commit, support private credentials, or export
   changes back to GitHub.

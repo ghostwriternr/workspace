@@ -203,10 +203,10 @@ describe("RepoWorkingCopyController", () => {
       stderr: "",
     });
     expect(sandbox.commands).toEqual([
-      expect.objectContaining({ command: expect.stringContaining("artifact-fs mount") }),
+      expect.objectContaining({ command: "workspace-mount" }),
       { command: "npm test", options: { cwd: "/workspace" } },
-      expect.objectContaining({ command: expect.stringContaining("artifact-fs mount") }),
-      { command: "artifact-fs capture --path '/workspace'", options: { cwd: "/" } },
+      expect.objectContaining({ command: "workspace-mount" }),
+      expect.objectContaining({ command: "workspace-capture" }),
     ]);
     expect(Result.isError(current)).toBe(true);
     expect(decoder.decode(edited)).toBe("shell wrote this");
@@ -260,10 +260,10 @@ async function setupWorkingCopyController() {
     },
   };
   const sandbox = {
-    commands: [] as Array<{ command: string; options: { cwd?: string } | undefined }>,
-    async exec(command: string, options?: { cwd?: string }) {
+    commands: [] as Array<{ command: string; options: { cwd?: string; env?: Record<string, string> } | undefined }>,
+    async exec(command: string, options?: { cwd?: string; env?: Record<string, string> }) {
       this.commands.push({ command, options });
-      if (command === "artifact-fs capture --path '/workspace'") {
+      if (command === "workspace-capture") {
         const copy = unwrap(await workspace.copies.get(workingCopyId!));
         await copy.files.writeTree("/", [
           { path: "notes/shell.md", contents: encoder.encode("shell wrote this") },

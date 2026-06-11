@@ -48,17 +48,17 @@ connects the captured authority to a Workspace. It does not yet resolve and
 report the captured Git commit, support private repository credentials, export
 changes back to GitHub, or create pull requests.
 
-## Sandbox adapter still materializes and scans
+## Sandbox adapter uses a local base image
 
-The current Sandbox adapter materializes files into the Sandbox filesystem and
-scans/hashes host files after each command. This proves `/workspace` semantics,
-but it is not the desired Artifacts-backed Sandbox implementation.
+The current Sandbox adapter uses a local `workspace-sandbox-base:local` image
+that packages `artifact-fs` and Workspace wrapper scripts. This keeps the
+runtime contract shared by examples, but it is not a published base image yet.
 
-The target direction is an `artifact-fs` FUSE mount over the working-copy
-Artifacts repository, with Sandbox outbound Workers/TLS auth injecting
-short-lived Artifacts Git credentials outside the container. That should avoid
-full-tree materialization, avoid scanning unchanged files, and keep tokens out
-of sandboxed code.
+Sandbox outbound Workers/TLS auth is still future work. Today the mounted Git
+remote must be usable by `artifact-fs` from inside the Sandbox image. The target
+credential boundary is still token-free HTTPS remotes in the container with a
+trusted outbound handler injecting short-lived Artifacts Git credentials outside
+sandboxed code.
 
 ## Runtime-local mounts are basic
 

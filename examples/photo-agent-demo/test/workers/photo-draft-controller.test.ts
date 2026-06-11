@@ -63,13 +63,13 @@ describe("PhotoDraftController", () => {
     });
     expect(dependencies.driver.file(dependencies.draftEditId!, "/photos/current")).toEqual(draftPng);
     expect(dependencies.sandbox.commands).toEqual([
-      expect.objectContaining({ command: expect.stringContaining("artifact-fs mount") }),
+      expect.objectContaining({ command: "workspace-mount" }),
       {
         command: "identify /workspace/photos/original.png && convert /workspace/photos/original.png /workspace/photos/current",
         options: { cwd: "/workspace" },
       },
-      expect.objectContaining({ command: expect.stringContaining("artifact-fs mount") }),
-      { command: "artifact-fs capture --path '/workspace'", options: { cwd: "/" } },
+      expect.objectContaining({ command: "workspace-mount" }),
+      expect.objectContaining({ command: "workspace-capture" }),
     ]);
   });
 
@@ -87,7 +87,7 @@ describe("PhotoDraftController", () => {
     });
 
     expect(dependencies.sandbox.commands).toEqual([
-      expect.objectContaining({ command: expect.stringContaining("artifact-fs mount") }),
+      expect.objectContaining({ command: "workspace-mount" }),
       {
         command: "convert /workspace/photos/current -resize 512x512^ /workspace/photos/current",
         options: { cwd: "/workspace" },
@@ -177,7 +177,7 @@ describe("PhotoDraftController", () => {
     await expect(controller.readDraftImage()).resolves.toEqual({ status: "ok", value: draftPng });
   });
 
-  it("passes shell syntax through to the mounted workspace command runner", async () => {
+  it("passes shell syntax through to the mounted workspace", async () => {
     const dependencies = createDependencies({ head: { "/photos/original.png": originalPng } });
     const controller = new PhotoDraftController(dependencies);
 
@@ -291,7 +291,7 @@ class FakeDynamicWorkerRunner {
 }
 
 class FakeSandbox {
-  readonly commands: Array<{ command: string; options: { cwd?: string } | undefined }> = [];
+  readonly commands: Array<{ command: string; options: { cwd?: string; env?: Record<string, string> } | undefined }> = [];
 
   constructor(
     private readonly workspace: Workspace,
@@ -300,12 +300,12 @@ class FakeSandbox {
     private readonly error?: string,
   ) {}
 
-  async exec(command: string, options?: { cwd?: string }) {
+  async exec(command: string, options?: { cwd?: string; env?: Record<string, string> }) {
     this.commands.push({ command, options });
-    if (this.error && command.startsWith("artifact-fs mount")) {
+    if (this.error && command === "workspace-mount") {
       return { success: false, exitCode: 1, stdout: "", stderr: this.error };
     }
-    if (command === "artifact-fs capture --path '/workspace'") {
+    if (command === "workspace-capture") {
       const copy = await this.workspace.copies.get(this.getDraftEditId() ?? "");
       if (Result.isError(copy)) throw new Error("draft not found");
       await copy.value.files.write("/photos/current", this.output);

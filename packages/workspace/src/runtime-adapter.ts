@@ -3,6 +3,7 @@ import { Result, type Result as BetterResult } from "better-result";
 export type WorkspaceRuntimeMountDescriptor = {
   copyId: string;
   remote: string;
+  baseRef: string;
   ref: string;
 };
 

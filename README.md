@@ -105,7 +105,11 @@ shared working copy.
 ## Commands
 
 ```bash
-just check    # typecheck + knip
-just test     # vitest across packages/examples
-just typegen  # regenerate worker-configuration.d.ts files
+just check                 # typecheck + knip
+just test                  # vitest across packages/examples
+just typegen               # regenerate worker-configuration.d.ts files
+just build-sandbox-base    # build local base image for Sandbox examples
+just install-fuse-workerd  # install patched local workerd for FUSE dev
+just dev-coding-fuse       # coding demo with local Sandbox FUSE enabled
+just dev-photo-fuse        # photo demo with local Sandbox FUSE enabled
 ```

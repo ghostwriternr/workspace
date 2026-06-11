@@ -26,6 +26,7 @@ describe("Workspace runtime adapter SPI", () => {
       expect(mount.value).toEqual({
         copyId: copy.value.id,
         remote: "https://artifacts.example/workspaces/repo.git",
+        baseRef: "main",
         ref: `refs/workspace/copies/${copy.value.id}`,
       });
     }

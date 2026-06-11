@@ -179,7 +179,7 @@ apply/discard boundary.
 
 Low-level scoped-file APIs are exported for adapter authors
 (`copy.files.scoped`), but product examples should lead with runtime adapters
-rather than mount-host plumbing.
+rather than their internal plumbing.
 
 ## Scoped files
 
