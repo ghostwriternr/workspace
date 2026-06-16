@@ -74,6 +74,18 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
         }),
         execute: async (input) => resultToModelToolOutput(await this.workingCopyController().run(input)),
       }),
+      shell: tool({
+        description: codingToolDescription("shell"),
+        inputSchema: z.object({
+          command: z.string().min(1).describe("Shell command to run with the repository mounted at /workspace."),
+        }),
+        execute: async (input) => resultToModelToolOutput(await this.workingCopyController().shell(input)),
+      }),
+      capture: tool({
+        description: codingToolDescription("capture"),
+        inputSchema: z.object({}),
+        execute: async () => resultToModelToolOutput(await this.workingCopyController().captureWorkingCopy()),
+      }),
     };
   }
 

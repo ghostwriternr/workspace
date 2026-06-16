@@ -47,6 +47,27 @@ export const CODING_TOOLS = [
       "run is not a shell — no subprocesses, no package manager, no native tools. But it runs full JavaScript, so use it freely for anything you can express in code.",
     ],
   },
+  {
+    name: "shell",
+    description:
+      "Run a shell command with the repository mounted at /workspace. Use this for package managers, test runners, native tools, and commands that need a real process environment. File changes made by shell are not visible to Workspace tools until capture runs.",
+    promptSnippet: "Run shell commands in a mounted repository working tree",
+    promptGuidelines: [
+      "Use shell only when you need a real process environment: package managers, test runners, build tools, native binaries, or filesystem-heavy commands.",
+      "shell runs with the repository mounted at /workspace. Use /workspace paths in shell commands.",
+      "After a shell command writes files that should become part of the working copy, call capture before reading those files with read or before telling the user the change is in the working copy.",
+    ],
+  },
+  {
+    name: "capture",
+    description:
+      "Capture file changes made by shell commands under /workspace back into the durable working copy. This does not publish changes; the user still decides whether to apply or discard the working copy.",
+    promptSnippet: "Capture shell-written files into the working copy",
+    promptGuidelines: [
+      "Use capture after shell commands that create, modify, or delete repository files under /workspace.",
+      "capture does not publish changes. The user still decides whether to apply or discard the working copy.",
+    ],
+  },
 ] as const satisfies readonly CodingToolDefinition[];
 
 export type CodingToolName = typeof CODING_TOOLS[number]["name"];
