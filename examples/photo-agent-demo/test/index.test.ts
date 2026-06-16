@@ -48,6 +48,19 @@ describe("photo agent demo worker", () => {
     expect(source).toContain("this.controller().runDynamicWorker");
   });
 
+  it("keeps draft publication out of active model tools", async () => {
+    const source = await readFile(fileURLToPath(new URL("../src/agent/photo-agent.ts", import.meta.url)), "utf8");
+    const activeTools = source.slice(
+      source.indexOf("const photoToolNames"),
+      source.indexOf("];") + 2,
+    );
+
+    expect(activeTools).not.toContain('"commitDraft"');
+    expect(activeTools).not.toContain('"discardDraft"');
+    expect(source).toContain("@callable()\n  async commitDraft");
+    expect(source).toContain("@callable()\n  async discardDraft");
+  });
+
   it("enables the compatibility flag required by Dynamic Worker loader capabilities", async () => {
     const config = JSON.parse(
       await readFile(fileURLToPath(new URL("../wrangler.jsonc", import.meta.url)), "utf8"),

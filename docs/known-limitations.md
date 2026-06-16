@@ -54,11 +54,12 @@ The current Sandbox adapter uses a local `workspace-sandbox-base:local` image
 that packages `artifact-fs` and Workspace wrapper scripts. This keeps the
 runtime contract shared by examples, but it is not a published base image yet.
 
-Sandbox outbound Workers/TLS auth is still future work. Today the mounted Git
-remote must be usable by `artifact-fs` from inside the Sandbox image. The target
-credential boundary is still token-free HTTPS remotes in the container with a
-trusted outbound handler injecting short-lived Artifacts Git credentials outside
-sandboxed code.
+Sandbox outbound Workers/TLS auth is implemented through Sandbox runtime
+outbound overrides. The adapter scopes Artifacts Git credential injection to the
+repository being mounted rather than acting as a namespace-wide Artifacts
+credential gateway. The current shape is still prototype infrastructure: the
+base image is local, and the handler is specific to Workspace's Artifacts Git
+mount path rather than a general egress policy system.
 
 ## Runtime-local mounts are basic
 

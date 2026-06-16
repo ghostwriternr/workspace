@@ -20,8 +20,6 @@ const photoToolNames = [
   "runWorkspaceCommand",
   "captureDraft",
   "runDynamicWorker",
-  "commitDraft",
-  "discardDraft",
 ];
 
 export class PhotoAgent extends Think<Env, PhotoAgentState> {
@@ -90,24 +88,6 @@ export class PhotoAgent extends Think<Env, PhotoAgentState> {
           return result;
         },
       }),
-      commitDraft: tool({
-        description: "Make the draft edit current. Use only when the user asks to commit, approve, publish, or make it current.",
-        inputSchema: z.object({}),
-        execute: async () => {
-          const result = await this.controller().commitDraft();
-          await this.refreshPhotoState();
-          return result;
-        },
-      }),
-      discardDraft: tool({
-        description: "Throw away the draft edit without changing the current image.",
-        inputSchema: z.object({}),
-        execute: async () => {
-          const result = await this.controller().discardDraft();
-          await this.refreshPhotoState();
-          return result;
-        },
-      }),
     };
   }
 
@@ -126,6 +106,20 @@ export class PhotoAgent extends Think<Env, PhotoAgentState> {
   @callable()
   async readDraftImage() {
     return this.controller().readDraftImage();
+  }
+
+  @callable()
+  async commitDraft() {
+    const result = await this.controller().commitDraft();
+    await this.refreshPhotoState();
+    return result;
+  }
+
+  @callable()
+  async discardDraft() {
+    const result = await this.controller().discardDraft();
+    await this.refreshPhotoState();
+    return result;
   }
 
   private controller(): PhotoDraftController {

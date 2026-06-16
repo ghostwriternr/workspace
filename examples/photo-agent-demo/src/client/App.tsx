@@ -18,6 +18,9 @@ type PhotoAgentState = {
 type ImageState = PhotoState["original"] | PhotoState["current"] | PhotoState["draft"];
 
 type UploadStatus = { tone: "idle" | "ok" | "error"; message: string };
+type DraftActionResult =
+  | { status: "error"; error: { tag: string; message?: string } }
+  | { status: "current-updated" | "draft-discarded"; [key: string]: unknown };
 
 type ToolPart = Parameters<typeof getToolName>[0];
 
@@ -74,6 +77,34 @@ export function App() {
     setUploadStatus({ tone: "ok", message: "Original uploaded. Tell the agent what to change." });
   }
 
+  async function commitDraft() {
+    setUploadStatus({ tone: "idle", message: "Making draft current…" });
+    try {
+      await agent.ready;
+      const result = await agent.call("commitDraft") as DraftActionResult;
+      if (result.status === "error") {
+        throw new Error(result.error.message ?? result.error.tag);
+      }
+      setUploadStatus({ tone: "ok", message: "Draft is now current." });
+    } catch (error) {
+      setUploadStatus({ tone: "error", message: error instanceof Error ? error.message : "Could not update draft." });
+    }
+  }
+
+  async function discardDraft() {
+    setUploadStatus({ tone: "idle", message: "Throwing away draft…" });
+    try {
+      await agent.ready;
+      const result = await agent.call("discardDraft") as DraftActionResult;
+      if (result.status === "error") {
+        throw new Error(result.error.message ?? result.error.tag);
+      }
+      setUploadStatus({ tone: "ok", message: "Draft was thrown away." });
+    } catch (error) {
+      setUploadStatus({ tone: "error", message: error instanceof Error ? error.message : "Could not update draft." });
+    }
+  }
+
   return (
     <main className="shell">
       <header className="hero">
@@ -83,7 +114,7 @@ export function App() {
         </div>
         <p>
           Upload gives the agent bytes. From there, edits happen through conversation:
-          draft previews update passively, and only “make this current” publishes the draft.
+          draft previews update passively, and the draft controls publish or discard the result.
         </p>
       </header>
 
@@ -128,8 +159,13 @@ export function App() {
           title="Current"
           image={photo?.current}
           url={currentUrl(workspaceName)}
-          empty="Say “make this current”"
+          empty="Use the draft controls to publish"
         />
+      </section>
+
+      <section className="draft-actions" aria-label="Draft publication controls">
+        <button type="button" disabled={!photo?.draft.exists} onClick={commitDraft}>Make draft current</button>
+        <button type="button" className="secondary" disabled={!photo?.draft.exists} onClick={discardDraft}>Throw away draft</button>
       </section>
 
       <section className="chat-zone" aria-label="Chat and agent activity timeline">
@@ -259,7 +295,7 @@ function AgentChat({ agent }: { agent: ReturnType<typeof useAgent<PhotoAgentStat
       <div ref={timelineRef} className="timeline" aria-live="polite">
         {messages.length === 0 ? (
           <div className="empty-chat">
-            Try “make this look like an old newspaper photo”, then “make it current” or “throw away the draft”.
+            Try “make this look like an old newspaper photo”, then use the draft controls when you like the result.
           </div>
         ) : (
           messages.map((message) => (

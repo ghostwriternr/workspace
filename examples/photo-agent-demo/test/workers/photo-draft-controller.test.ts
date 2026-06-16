@@ -150,6 +150,22 @@ describe("PhotoDraftController", () => {
     expect(dependencies.driver.file("demo", "/photos/current")).toEqual(draftPng);
   });
 
+  it("returns commit errors as values", async () => {
+    const dependencies = createDependencies({
+      head: { "/photos/original.png": originalPng },
+      copy: { "/photos/current": draftPng },
+      draftEditId: "copy-1",
+    });
+    const controller = new PhotoDraftController(dependencies);
+    await dependencies.driver.discardWorkingCopy("demo", "copy-1");
+
+    await expect(controller.commitDraft()).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "WorkspaceCopyNotFoundError" },
+    });
+    expect(dependencies.draftEditId).toBe("copy-1");
+  });
+
   it("throws away the draft edit without publishing it", async () => {
     const dependencies = createDependencies({
       head: { "/photos/original.png": originalPng },
@@ -291,7 +307,9 @@ class FakeDynamicWorkerRunner {
 }
 
 class FakeSandbox {
-  readonly commands: Array<{ command: string; options: { cwd?: string; env?: Record<string, string> } | undefined }> = [];
+  readonly commands: Array<{ command: string; options: { cwd?: string; env?: Record<string, string>; timeout?: number } | undefined }> = [];
+  readonly outboundHosts: Array<{ hostname: string; methodName: string; params: unknown }> = [];
+
   constructor(
     private readonly workspace: Workspace,
     private readonly getDraftEditId: () => string | undefined,
@@ -299,7 +317,11 @@ class FakeSandbox {
     private readonly error?: string,
   ) {}
 
-  async exec(command: string, options?: { cwd?: string; env?: Record<string, string> }) {
+  async setOutboundByHost(hostname: string, methodName: string, params: unknown) {
+    this.outboundHosts.push({ hostname, methodName, params });
+  }
+
+  async exec(command: string, options?: { cwd?: string; env?: Record<string, string>; timeout?: number }) {
     this.commands.push({ command, options });
     if (this.error && command.includes("workspace-mount")) {
       return { success: false, exitCode: 1, stdout: "", stderr: this.error };

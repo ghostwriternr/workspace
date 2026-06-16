@@ -32,10 +32,10 @@ The `PhotoAgent` (built on `@cloudflare/think`) exposes:
   draft so they can be previewed or made current.
 - `runDynamicWorker` — Worker-native JS over a scoped Workspace binding for
   metadata, notes, manifests.
-- `commitDraft` / `discardDraft` — the publication boundary.
 
 Both runtimes get limited authority over the same draft. Neither runtime owns
-the publication decision.
+the publication decision. The browser exposes explicit “Make draft current” and
+“Throw away draft” controls for the publication boundary.
 
 ## Running it
 

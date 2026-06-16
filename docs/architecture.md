@@ -163,8 +163,9 @@ See [`sources.md`](./sources.md).
   Workspace-internal and should be removed when Artifacts exposes direct file
   mutation APIs.
 - The Sandbox adapter uses `artifact-fs` through a local base image and wrapper
-  scripts. That base image is not published yet, and token-free outbound
-  Artifacts Git auth is still future work.
+  scripts. That base image is not published yet, and outbound Artifacts Git
+  auth is implemented only for Workspace's mounted working-copy path, not as a
+  general egress policy system.
 - The GitHub source adapter imports public repositories but does not yet
   report the resolved Git commit, support private credentials, or export
   changes back to GitHub.

@@ -260,8 +260,12 @@ async function setupWorkingCopyController() {
     },
   };
   const sandbox = {
-    commands: [] as Array<{ command: string; options: { cwd?: string; env?: Record<string, string> } | undefined }>,
-    async exec(command: string, options?: { cwd?: string; env?: Record<string, string> }) {
+    commands: [] as Array<{ command: string; options: { cwd?: string; env?: Record<string, string>; timeout?: number } | undefined }>,
+    outboundHosts: [] as Array<{ hostname: string; methodName: string; params: unknown }>,
+    async setOutboundByHost(hostname: string, methodName: string, params: unknown) {
+      this.outboundHosts.push({ hostname, methodName, params });
+    },
+    async exec(command: string, options?: { cwd?: string; env?: Record<string, string>; timeout?: number }) {
       this.commands.push({ command, options });
       if (command.includes("workspace-capture")) {
         const copy = unwrap(await workspace.copies.get(workingCopyId!));

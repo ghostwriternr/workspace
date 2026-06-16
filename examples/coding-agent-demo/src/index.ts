@@ -16,7 +16,9 @@ export class Sandbox extends BaseSandbox<Env> {
   interceptHttps = true;
 }
 
-Sandbox.outbound = workspaceArtifactsGitOutboundHandler;
+Sandbox.outboundHandlers = {
+  workspaceArtifactsGit: workspaceArtifactsGitOutboundHandler,
+};
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {

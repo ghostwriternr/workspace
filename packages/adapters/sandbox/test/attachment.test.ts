@@ -31,6 +31,18 @@ describe("attachWorkspaceCopyToSandbox", () => {
       copyId: "copy-123",
       path: "/workspace",
     });
+    expect(sandbox.outboundHosts).toEqual([
+      {
+        hostname: "artifacts.example",
+        methodName: "workspaceArtifactsGit",
+        params: {
+          baseRef: "main",
+          copyRef: "refs/workspace/copies/copy-123",
+          remote: "https://artifacts.example/workspaces/demo.git",
+          repository: "demo",
+        },
+      },
+    ]);
     expect(sandbox.commands).toEqual([
       {
         command: "timeout 115s workspace-mount",
@@ -66,12 +78,12 @@ describe("attachWorkspaceCopyToSandbox", () => {
     });
   });
 
-  it("injects read Artifacts Git auth for upload-pack", async () => {
+  it("injects read Artifacts Git auth for the mounted repository", async () => {
     const fetched: Request[] = [];
     const response = await workspaceArtifactsGitOutboundHandler(
       new Request("https://account.artifacts.cloudflare.net/workspace-coding-agent-demo/demo.git/git-upload-pack", { method: "POST" }),
       fakeArtifactsEnv(),
-      { containerId: "container", className: "Sandbox" },
+      outboundContext(),
       async (request) => {
         fetched.push(request);
         return new Response("ok");
@@ -85,12 +97,23 @@ describe("attachWorkspaceCopyToSandbox", () => {
     expect(atob(authorization?.slice("Basic ".length) ?? "")).toBe("x-access-token:read-3600-token");
   });
 
-  it("uses write Artifacts Git auth for receive-pack", async () => {
+  it("rejects Artifacts Git auth for repositories outside the mount", async () => {
+    const response = await workspaceArtifactsGitOutboundHandler(
+      new Request("https://account.artifacts.cloudflare.net/workspace-coding-agent-demo/other.git/git-upload-pack", { method: "POST" }),
+      fakeArtifactsEnv(),
+      outboundContext(),
+      async () => new Response("should not fetch"),
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  it("uses write Artifacts Git auth for receive-pack to the mounted repository", async () => {
     const fetched: Request[] = [];
     const response = await workspaceArtifactsGitOutboundHandler(
-      new Request("https://account.artifacts.cloudflare.net/workspace-coding-agent-demo/demo.git/git-receive-pack", { method: "POST" }),
+      new Request("https://account.artifacts.cloudflare.net/workspace-coding-agent-demo/demo.git/git-receive-pack", { method: "POST", body: "pack" }),
       fakeArtifactsEnv(),
-      { containerId: "container", className: "Sandbox" },
+      outboundContext(),
       async (request) => {
         fetched.push(request);
         return new Response("ok");
@@ -100,6 +123,7 @@ describe("attachWorkspaceCopyToSandbox", () => {
     expect(response.status).toBe(200);
     const authorization = fetched[0]?.headers.get("authorization");
     expect(atob(authorization?.slice("Basic ".length) ?? "")).toBe("x-access-token:write-3600-token");
+    expect(await fetched[0]?.text()).toBe("pack");
   });
 
   it("passes non-Artifacts outbound requests through", async () => {
@@ -107,7 +131,7 @@ describe("attachWorkspaceCopyToSandbox", () => {
     const response = await workspaceArtifactsGitOutboundHandler(
       new Request("https://github.com/cloudflare/workspace", { method: "GET" }),
       { ARTIFACTS: { get: async () => { throw new Error("not used"); } } },
-      { containerId: "container", className: "Sandbox" },
+      outboundContext(),
       async (request) => {
         fetched.push(request);
         return new Response("passed");
@@ -124,7 +148,7 @@ describe("attachWorkspaceCopyToSandbox", () => {
     const response = await workspaceArtifactsGitOutboundHandler(
       new Request("https://account.artifacts.cloudflare.net/workspace-coding-agent-demo/demo.git/raw/main/README.md", { method: "GET" }),
       { ARTIFACTS: { get: async () => { throw new Error("not used"); } } },
-      { containerId: "container", className: "Sandbox" },
+      outboundContext(),
       async () => new Response("should not fetch"),
     );
 
@@ -134,6 +158,11 @@ describe("attachWorkspaceCopyToSandbox", () => {
 
 class FakeSandbox {
   readonly commands: Array<{ command: string; options: { cwd?: string; env?: Record<string, string>; timeout?: number } | undefined }> = [];
+  readonly outboundHosts: Array<{ hostname: string; methodName: string; params: unknown }> = [];
+
+  async setOutboundByHost(hostname: string, methodName: string, params: unknown) {
+    this.outboundHosts.push({ hostname, methodName, params });
+  }
 
   async exec(command: string, options?: { cwd?: string; env?: Record<string, string>; timeout?: number }) {
     this.commands.push({ command, options });
@@ -148,6 +177,19 @@ function fakeArtifactsEnv() {
         name,
         createToken: async (scope: "read" | "write", ttl: number) => ({ plaintext: `${scope}-${ttl}-token` }),
       }),
+    },
+  };
+}
+
+function outboundContext() {
+  return {
+    containerId: "container",
+    className: "Sandbox",
+    params: {
+      baseRef: "main",
+      copyRef: "refs/workspace/copies/copy-123",
+      remote: "https://account.artifacts.cloudflare.net/workspace-coding-agent-demo/demo.git",
+      repository: "demo",
     },
   };
 }

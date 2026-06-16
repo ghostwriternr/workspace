@@ -262,15 +262,18 @@ export class PhotoDraftController {
     revisionId: string;
     createdAt: number;
     message: string;
-  }> {
+  } | { status: "error"; error: WorkspaceOperationError }> {
     return this.withDraftCopy(async (copy) => {
-      const revision = await expectOkResult(copy.apply(), "make draft edit current") as RevisionInfo;
+      const revision = await copy.apply();
+      if (Result.isError(revision)) {
+        return { status: "error", error: revision.error };
+      }
       this.dependencies.setDraftEditId(undefined);
 
       return {
         status: "current-updated",
-        revisionId: revision.revisionId,
-        createdAt: revision.createdAt,
+        revisionId: revision.value.revisionId,
+        createdAt: revision.value.createdAt,
         message: "Draft edit is now the current version.",
       };
     });
@@ -279,9 +282,12 @@ export class PhotoDraftController {
   async discardDraft(): Promise<{
     status: "draft-discarded";
     message: string;
-  }> {
+  } | { status: "error"; error: WorkspaceOperationError }> {
     return this.withDraftCopy(async (copy) => {
-      await expectOkResult(copy.discard(), "throw away draft edit");
+      const discarded = await copy.discard();
+      if (Result.isError(discarded)) {
+        return { status: "error", error: discarded.error };
+      }
       this.dependencies.setDraftEditId(undefined);
 
       return {

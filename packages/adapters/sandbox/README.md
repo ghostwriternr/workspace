@@ -88,10 +88,27 @@ just dev-coding-fuse
 
 ## Usage
 
+The Sandbox class must enable HTTPS interception and register the Workspace
+Artifacts Git outbound handler as a named handler. `attachWorkspaceCopyToSandbox`
+then installs a per-mounted-copy host override before running `workspace-mount`.
+
 ```ts
-import { getSandbox } from "@cloudflare/sandbox";
+import { ContainerProxy, getSandbox, Sandbox as BaseSandbox } from "@cloudflare/sandbox";
 import { Workspace } from "@cloudflare/workspace";
-import { attachWorkspaceCopyToSandbox } from "@cloudflare/workspace-adapter-sandbox";
+import {
+  attachWorkspaceCopyToSandbox,
+  workspaceArtifactsGitOutboundHandler,
+} from "@cloudflare/workspace-adapter-sandbox";
+
+export { ContainerProxy };
+
+export class Sandbox extends BaseSandbox<Env> {
+  interceptHttps = true;
+}
+
+Sandbox.outboundHandlers = {
+  workspaceArtifactsGit: workspaceArtifactsGitOutboundHandler,
+};
 
 const workspaces = Workspace.bind({
   artifacts: env.ARTIFACTS,
@@ -120,6 +137,10 @@ const capture = await mount.value.capture();
 ```
 
 A nonzero command exit code is a Sandbox result, not a Workspace error. Capture is explicit and separate from command execution. Publication remains a separate product decision through `copy.apply()` or `copy.discard()`.
+
+The outbound handler is scoped by the mount descriptor. It mints short-lived
+Artifacts Git credentials only for the mounted repository instead of acting as a
+namespace-wide Artifacts credential gateway.
 
 ## Runtime foundation
 

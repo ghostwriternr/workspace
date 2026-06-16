@@ -2,6 +2,7 @@ import { Result, type Result as BetterResult } from "better-result";
 import { workspaceCopyRuntimeMount, type WorkspaceRuntimeMountDescriptor } from "@cloudflare/workspace/runtime-adapter";
 
 export type WorkspaceSandboxClient = {
+  setOutboundByHost(hostname: string, methodName: string, params: WorkspaceArtifactsGitOutboundParams): Promise<void>;
   exec(command: string, options?: { cwd?: string; env?: Record<string, string>; timeout?: number }): Promise<{ success: boolean; exitCode: number; stdout: string; stderr: string }>;
 };
 
@@ -41,9 +42,17 @@ export type WorkspaceArtifactsGitEnv = {
   };
 };
 
+export type WorkspaceArtifactsGitOutboundParams = {
+  remote: string;
+  repository: string;
+  baseRef: string;
+  copyRef: string;
+};
+
 export type WorkspaceArtifactsGitOutboundContext = {
   containerId: string;
   className: string;
+  params?: WorkspaceArtifactsGitOutboundParams;
 };
 
 const DEFAULT_PATH = "/workspace";
@@ -53,6 +62,7 @@ const CAPTURE_TIMEOUT_MS = 125_000;
 const MOUNT_COMMAND_TIMEOUT_SECONDS = 115;
 const CAPTURE_COMMAND_TIMEOUT_SECONDS = 115;
 const ARTIFACTS_HOST_SUFFIX = ".artifacts.cloudflare.net";
+const WORKSPACE_ARTIFACTS_GIT_HANDLER = "workspaceArtifactsGit";
 
 export async function attachWorkspaceCopyToSandbox(
   options: WorkspaceSandboxAttachOptions,
@@ -63,6 +73,23 @@ export async function attachWorkspaceCopyToSandbox(
     return Result.err({
       tag: "WorkspaceSandboxAttachError",
       message: descriptor.error.message,
+    });
+  }
+
+  const outbound = outboundMountParams(descriptor.value);
+  if (!outbound) {
+    return Result.err({
+      tag: "WorkspaceSandboxAttachError",
+      message: "Workspace mount descriptor does not include a valid Artifacts Git remote.",
+    });
+  }
+
+  try {
+    await options.sandbox.setOutboundByHost(outbound.hostname, WORKSPACE_ARTIFACTS_GIT_HANDLER, outbound.params);
+  } catch (error) {
+    return Result.err({
+      tag: "WorkspaceSandboxAttachError",
+      message: error instanceof Error ? error.message : "Workspace Sandbox outbound setup failed.",
     });
   }
 
@@ -106,12 +133,17 @@ export async function attachWorkspaceCopyToSandbox(
 export async function workspaceArtifactsGitOutboundHandler(
   request: Request,
   env: WorkspaceArtifactsGitEnv,
-  _ctx: WorkspaceArtifactsGitOutboundContext,
+  ctx: WorkspaceArtifactsGitOutboundContext,
   fetcher: (request: Request) => Promise<Response> = fetch,
 ): Promise<Response> {
   const url = new URL(request.url);
   if (!isArtifactsHost(url.hostname)) {
     return fetcher(request);
+  }
+
+  const params = ctx.params;
+  if (!params) {
+    return new Response("Workspace Artifacts Git outbound request is not scoped to a mounted copy.", { status: 403 });
   }
 
   if (!isGitSmartHttpRequest(url, request.method)) {
@@ -121,6 +153,10 @@ export async function workspaceArtifactsGitOutboundHandler(
   const repository = repositoryNameFromArtifactsGitUrl(url);
   if (!repository) {
     return new Response("Workspace Artifacts Git repository could not be determined.", { status: 403 });
+  }
+
+  if (repository !== params.repository) {
+    return new Response("Workspace Artifacts Git repository is outside the mounted copy scope.", { status: 403 });
   }
 
   const repo = await env.ARTIFACTS.get(repository);
@@ -133,6 +169,30 @@ export async function workspaceArtifactsGitOutboundHandler(
   headers.set("authorization", basicAuth("x-access-token", token.plaintext));
 
   return fetcher(new Request(request, { headers }));
+}
+
+function outboundMountParams(
+  descriptor: WorkspaceRuntimeMountDescriptor,
+): { hostname: string; params: WorkspaceArtifactsGitOutboundParams } | undefined {
+  let url: URL;
+  try {
+    url = new URL(descriptor.remote);
+  } catch {
+    return undefined;
+  }
+
+  const repository = repositoryNameFromArtifactsGitUrl(url);
+  if (!repository) return undefined;
+
+  return {
+    hostname: url.hostname,
+    params: {
+      remote: descriptor.remote,
+      repository,
+      baseRef: descriptor.baseRef,
+      copyRef: descriptor.ref,
+    },
+  };
 }
 
 function mountEnvironment(
