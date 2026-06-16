@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { fileURLToPath, URL } from "node:url";
 import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
@@ -6,6 +8,10 @@ import {
   attachWorkspaceCopyToSandbox,
   workspaceArtifactsGitOutboundHandler,
 } from "../src/index";
+
+async function readProjectFile(path: string): Promise<string> {
+  return readFile(fileURLToPath(new URL(`../${path}`, import.meta.url)), "utf8");
+}
 
 describe("attachWorkspaceCopyToSandbox", () => {
   it("mounts a Workspace copy through the adapter container commands", async () => {
@@ -153,6 +159,17 @@ describe("attachWorkspaceCopyToSandbox", () => {
     );
 
     expect(response.status).toBe(403);
+  });
+
+  it("exports Workspace Sandbox Worker helpers separately", async () => {
+    const packageJson = JSON.parse(await readProjectFile("package.json")) as { exports: Record<string, string> };
+    const source = await readProjectFile("src/workers.ts");
+
+    expect(packageJson.exports["./workers"]).toBe("./src/workers.ts");
+    expect(source).toContain("class WorkspaceSandbox");
+    expect(source).toContain("interceptHttps = true");
+    expect(source).toContain("workspaceArtifactsGit");
+    expect(source).toContain("WorkspaceContainerProxy");
   });
 });
 

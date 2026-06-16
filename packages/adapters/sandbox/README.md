@@ -88,27 +88,23 @@ just dev-coding-fuse
 
 ## Usage
 
-The Sandbox class must enable HTTPS interception and register the Workspace
-Artifacts Git outbound handler as a named handler. `attachWorkspaceCopyToSandbox`
-then installs a per-mounted-copy host override before running `workspace-mount`.
+The adapter provides a Worker-runtime base class that enables HTTPS
+interception and registers the Workspace Artifacts Git outbound handler as a
+named handler. `attachWorkspaceCopyToSandbox` then installs a per-mounted-copy
+host override before running `workspace-mount`.
 
 ```ts
-import { ContainerProxy, getSandbox, Sandbox as BaseSandbox } from "@cloudflare/sandbox";
+import { getSandbox } from "@cloudflare/sandbox";
 import { Workspace } from "@cloudflare/workspace";
+import { attachWorkspaceCopyToSandbox } from "@cloudflare/workspace-adapter-sandbox";
 import {
-  attachWorkspaceCopyToSandbox,
-  workspaceArtifactsGitOutboundHandler,
-} from "@cloudflare/workspace-adapter-sandbox";
+  WorkspaceSandbox,
+  WorkspaceContainerProxy,
+} from "@cloudflare/workspace-adapter-sandbox/workers";
 
-export { ContainerProxy };
+export { WorkspaceContainerProxy as ContainerProxy };
 
-export class Sandbox extends BaseSandbox<Env> {
-  interceptHttps = true;
-}
-
-Sandbox.outboundHandlers = {
-  workspaceArtifactsGit: workspaceArtifactsGitOutboundHandler,
-};
+export class Sandbox extends WorkspaceSandbox<Env> {}
 
 const workspaces = Workspace.bind({
   artifacts: env.ARTIFACTS,

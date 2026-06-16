@@ -1,7 +1,6 @@
 import { routeAgentRequest } from "agents";
-import { ContainerProxy, Sandbox as BaseSandbox } from "@cloudflare/sandbox";
 import { Workspace } from "@cloudflare/workspace";
-import { workspaceArtifactsGitOutboundHandler } from "@cloudflare/workspace-adapter-sandbox";
+import { WorkspaceSandbox, WorkspaceContainerProxy } from "@cloudflare/workspace-adapter-sandbox/workers";
 import { createGitHubSource } from "@cloudflare/workspace-source-github";
 
 import { handleDemoRequest } from "./http/demo";
@@ -10,15 +9,9 @@ import { handleRepoImportRequest } from "./http/repo-import";
 export { WorkspaceObject } from "@cloudflare/workspace/workers";
 export { CodingAgent } from "./agent/coding-agent";
 export { WorkspaceFileCapability } from "./workspace/workspace-file-capability";
-export { ContainerProxy };
+export { WorkspaceContainerProxy as ContainerProxy };
 
-export class Sandbox extends BaseSandbox<Env> {
-  interceptHttps = true;
-}
-
-Sandbox.outboundHandlers = {
-  workspaceArtifactsGit: workspaceArtifactsGitOutboundHandler,
-};
+export class Sandbox extends WorkspaceSandbox<Env> {}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {

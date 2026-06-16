@@ -1,9 +1,23 @@
+import { readFile } from "node:fs/promises";
+import { fileURLToPath, URL } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { buildSystemPrompt } from "../src/agent/prompt";
 import { CODING_TOOLS, CODING_TOOL_NAMES, codingToolDescription } from "../src/agent/tools";
 
+async function readProjectFile(path: string): Promise<string> {
+  return readFile(fileURLToPath(new URL(`../${path}`, import.meta.url)), "utf8");
+}
+
 describe("coding agent", () => {
+  it("uses the Workspace Sandbox Worker base", async () => {
+    const source = await readProjectFile("src/index.ts");
+
+    expect(source).toContain("@cloudflare/workspace-adapter-sandbox/workers");
+    expect(source).toContain("extends WorkspaceSandbox<Env>");
+    expect(source).not.toContain("Sandbox.outboundHandlers =");
+  });
+
   it("exposes the stable coding tools", () => {
     expect(CODING_TOOL_NAMES).toEqual(["read", "write", "edit", "run", "shell", "capture"]);
     expect(codingToolDescription("run")).toContain("JavaScript program");

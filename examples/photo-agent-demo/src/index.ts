@@ -1,26 +1,19 @@
 import { routeAgentRequest } from "agents";
-import { ContainerProxy, Sandbox as BaseSandbox } from "@cloudflare/sandbox";
-import { workspaceArtifactsGitOutboundHandler } from "@cloudflare/workspace-adapter-sandbox";
+import { WorkspaceSandbox, WorkspaceContainerProxy } from "@cloudflare/workspace-adapter-sandbox/workers";
 
 import { handleDemoRequest } from "./http/demo";
 import { handlePhotoReadRequest } from "./http/photo-read";
 import { handlePhotoStateRequest } from "./http/photo-state";
 import { handlePhotoUploadRequest } from "./http/photo-upload";
 
-export { ContainerProxy };
+export { WorkspaceContainerProxy as ContainerProxy };
 export { WorkspaceObject } from "@cloudflare/workspace/workers";
 export { PhotoAgent } from "./agent/photo-agent";
 // Dynamic Worker Loader can receive reconstructable loopback stubs through props.
 // The example keeps that transport boundary explicit and outside the photo controller.
 export { WorkspaceFileCapability } from "./workspace/workspace-file-capability";
 
-export class Sandbox extends BaseSandbox<Env> {
-  interceptHttps = true;
-}
-
-Sandbox.outboundHandlers = {
-  workspaceArtifactsGit: workspaceArtifactsGitOutboundHandler,
-};
+export class Sandbox extends WorkspaceSandbox<Env> {}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {

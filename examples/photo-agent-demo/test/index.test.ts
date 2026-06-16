@@ -24,6 +24,14 @@ describe("photo agent demo worker", () => {
     expect(agentRouteIndex).toBeGreaterThan(demoRouteIndex);
   });
 
+  it("uses the Workspace Sandbox Worker base", async () => {
+    const source = await readFile(fileURLToPath(new URL("../src/index.ts", import.meta.url)), "utf8");
+
+    expect(source).toContain("@cloudflare/workspace-adapter-sandbox/workers");
+    expect(source).toContain("extends WorkspaceSandbox<Env>");
+    expect(source).not.toContain("Sandbox.outboundHandlers =");
+  });
+
   it("describes the wired demo capabilities", async () => {
     const response = handleDemoRequest(
       new Request("http://example.com/api/demo-capabilities"),
