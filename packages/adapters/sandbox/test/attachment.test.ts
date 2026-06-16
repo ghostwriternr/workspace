@@ -2,7 +2,10 @@ import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
 import { registerWorkspaceCopyRuntimeMount } from "@cloudflare/workspace/runtime-adapter";
-import { attachWorkspaceCopyToSandbox } from "../src/index";
+import {
+  attachWorkspaceCopyToSandbox,
+  workspaceArtifactsGitOutboundHandler,
+} from "../src/index";
 
 describe("attachWorkspaceCopyToSandbox", () => {
   it("mounts a Workspace copy through the adapter container commands", async () => {
@@ -30,7 +33,7 @@ describe("attachWorkspaceCopyToSandbox", () => {
     });
     expect(sandbox.commands).toEqual([
       {
-        command: "workspace-mount",
+        command: "timeout 115s workspace-mount",
         options: {
           cwd: "/",
           env: {
@@ -39,6 +42,7 @@ describe("attachWorkspaceCopyToSandbox", () => {
             WORKSPACE_COPY_REF: "refs/workspace/copies/copy-123",
             WORKSPACE_PATH: "/workspace",
           },
+          timeout: 125_000,
         },
       },
     ]);
@@ -50,23 +54,100 @@ describe("attachWorkspaceCopyToSandbox", () => {
 
     expect(Result.isOk(captured)).toBe(true);
     expect(sandbox.commands.at(-1)).toEqual({
-      command: "workspace-capture",
+      command: "timeout 115s workspace-capture",
       options: {
         cwd: "/",
         env: {
           WORKSPACE_COPY_REF: "refs/workspace/copies/copy-123",
           WORKSPACE_PATH: "/workspace",
         },
+        timeout: 125_000,
       },
     });
+  });
+
+  it("injects read Artifacts Git auth for upload-pack", async () => {
+    const fetched: Request[] = [];
+    const response = await workspaceArtifactsGitOutboundHandler(
+      new Request("https://account.artifacts.cloudflare.net/workspace-coding-agent-demo/demo.git/git-upload-pack", { method: "POST" }),
+      fakeArtifactsEnv(),
+      { containerId: "container", className: "Sandbox" },
+      async (request) => {
+        fetched.push(request);
+        return new Response("ok");
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetched).toHaveLength(1);
+    const authorization = fetched[0]?.headers.get("authorization");
+    expect(authorization).toMatch(/^Basic /);
+    expect(atob(authorization?.slice("Basic ".length) ?? "")).toBe("x-access-token:read-3600-token");
+  });
+
+  it("uses write Artifacts Git auth for receive-pack", async () => {
+    const fetched: Request[] = [];
+    const response = await workspaceArtifactsGitOutboundHandler(
+      new Request("https://account.artifacts.cloudflare.net/workspace-coding-agent-demo/demo.git/git-receive-pack", { method: "POST" }),
+      fakeArtifactsEnv(),
+      { containerId: "container", className: "Sandbox" },
+      async (request) => {
+        fetched.push(request);
+        return new Response("ok");
+      },
+    );
+
+    expect(response.status).toBe(200);
+    const authorization = fetched[0]?.headers.get("authorization");
+    expect(atob(authorization?.slice("Basic ".length) ?? "")).toBe("x-access-token:write-3600-token");
+  });
+
+  it("passes non-Artifacts outbound requests through", async () => {
+    const fetched: Request[] = [];
+    const response = await workspaceArtifactsGitOutboundHandler(
+      new Request("https://github.com/cloudflare/workspace", { method: "GET" }),
+      { ARTIFACTS: { get: async () => { throw new Error("not used"); } } },
+      { containerId: "container", className: "Sandbox" },
+      async (request) => {
+        fetched.push(request);
+        return new Response("passed");
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("passed");
+    expect(fetched).toHaveLength(1);
+    expect(fetched[0]?.headers.has("authorization")).toBe(false);
+  });
+
+  it("rejects non-Git Artifacts outbound requests", async () => {
+    const response = await workspaceArtifactsGitOutboundHandler(
+      new Request("https://account.artifacts.cloudflare.net/workspace-coding-agent-demo/demo.git/raw/main/README.md", { method: "GET" }),
+      { ARTIFACTS: { get: async () => { throw new Error("not used"); } } },
+      { containerId: "container", className: "Sandbox" },
+      async () => new Response("should not fetch"),
+    );
+
+    expect(response.status).toBe(403);
   });
 });
 
 class FakeSandbox {
-  readonly commands: Array<{ command: string; options: { cwd?: string; env?: Record<string, string> } | undefined }> = [];
+  readonly commands: Array<{ command: string; options: { cwd?: string; env?: Record<string, string>; timeout?: number } | undefined }> = [];
 
-  async exec(command: string, options?: { cwd?: string; env?: Record<string, string> }) {
+  async exec(command: string, options?: { cwd?: string; env?: Record<string, string>; timeout?: number }) {
     this.commands.push({ command, options });
     return { success: true, exitCode: 0, stdout: "", stderr: "" };
   }
+}
+
+function fakeArtifactsEnv() {
+  return {
+    ARTIFACTS: {
+      get: async (name: string) => ({
+        name,
+        createToken: async (scope: "read" | "write", ttl: number) => ({ plaintext: `${scope}-${ttl}-token` }),
+      }),
+    },
+  };
 }

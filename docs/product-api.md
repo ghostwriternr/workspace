@@ -160,7 +160,7 @@ import { attachWorkspaceCopyToSandbox } from "@cloudflare/workspace-adapter-sand
 import { getSandbox } from "@cloudflare/sandbox";
 
 const sandbox = getSandbox(env.Sandbox, `${workspaceName}-${copy.id}`, {
-  sleepAfter: "60s",
+  sleepAfter: "10m",
 });
 const mount = await attachWorkspaceCopyToSandbox({
   copy,

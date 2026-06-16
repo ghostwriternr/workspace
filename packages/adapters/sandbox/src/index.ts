@@ -2,7 +2,7 @@ import { Result, type Result as BetterResult } from "better-result";
 import { workspaceCopyRuntimeMount, type WorkspaceRuntimeMountDescriptor } from "@cloudflare/workspace/runtime-adapter";
 
 export type WorkspaceSandboxClient = {
-  exec(command: string, options?: { cwd?: string; env?: Record<string, string> }): Promise<{ success: boolean; exitCode: number; stdout: string; stderr: string }>;
+  exec(command: string, options?: { cwd?: string; env?: Record<string, string>; timeout?: number }): Promise<{ success: boolean; exitCode: number; stdout: string; stderr: string }>;
 };
 
 export type WorkspaceSandboxAttachOptions = {
@@ -33,7 +33,26 @@ export type WorkspaceSandboxCaptureError = {
   message: string;
 };
 
+export type WorkspaceArtifactsGitEnv = {
+  ARTIFACTS: {
+    get(name: string): Promise<{
+      createToken?: (scope: "read" | "write", ttl: number) => Promise<{ plaintext: string }>;
+    }>;
+  };
+};
+
+export type WorkspaceArtifactsGitOutboundContext = {
+  containerId: string;
+  className: string;
+};
+
 const DEFAULT_PATH = "/workspace";
+const TOKEN_TTL_SECONDS = 60 * 60;
+const MOUNT_TIMEOUT_MS = 125_000;
+const CAPTURE_TIMEOUT_MS = 125_000;
+const MOUNT_COMMAND_TIMEOUT_SECONDS = 115;
+const CAPTURE_COMMAND_TIMEOUT_SECONDS = 115;
+const ARTIFACTS_HOST_SUFFIX = ".artifacts.cloudflare.net";
 
 export async function attachWorkspaceCopyToSandbox(
   options: WorkspaceSandboxAttachOptions,
@@ -47,9 +66,10 @@ export async function attachWorkspaceCopyToSandbox(
     });
   }
 
-  const mounted = await options.sandbox.exec("workspace-mount", {
+  const mounted = await options.sandbox.exec(`timeout ${MOUNT_COMMAND_TIMEOUT_SECONDS}s workspace-mount`, {
     cwd: "/",
     env: mountEnvironment(descriptor.value, path),
+    timeout: MOUNT_TIMEOUT_MS,
   });
   if (!mounted.success) {
     return Result.err({
@@ -62,9 +82,10 @@ export async function attachWorkspaceCopyToSandbox(
     copyId: options.copy.id,
     path,
     capture: async () => {
-      const captured = await options.sandbox.exec("workspace-capture", {
+      const captured = await options.sandbox.exec(`timeout ${CAPTURE_COMMAND_TIMEOUT_SECONDS}s workspace-capture`, {
         cwd: "/",
         env: captureEnvironment(descriptor.value, path),
+        timeout: CAPTURE_TIMEOUT_MS,
       });
       if (!captured.success) {
         return Result.err({
@@ -80,6 +101,38 @@ export async function attachWorkspaceCopyToSandbox(
       });
     },
   });
+}
+
+export async function workspaceArtifactsGitOutboundHandler(
+  request: Request,
+  env: WorkspaceArtifactsGitEnv,
+  _ctx: WorkspaceArtifactsGitOutboundContext,
+  fetcher: (request: Request) => Promise<Response> = fetch,
+): Promise<Response> {
+  const url = new URL(request.url);
+  if (!isArtifactsHost(url.hostname)) {
+    return fetcher(request);
+  }
+
+  if (!isGitSmartHttpRequest(url, request.method)) {
+    return new Response("Workspace Artifacts Git outbound request is not allowed.", { status: 403 });
+  }
+
+  const repository = repositoryNameFromArtifactsGitUrl(url);
+  if (!repository) {
+    return new Response("Workspace Artifacts Git repository could not be determined.", { status: 403 });
+  }
+
+  const repo = await env.ARTIFACTS.get(repository);
+  if (typeof repo.createToken !== "function") {
+    return new Response("Workspace Artifacts repository cannot mint Git credentials.", { status: 502 });
+  }
+
+  const token = await repo.createToken(gitScope(url, request.method), TOKEN_TTL_SECONDS);
+  const headers = new Headers(request.headers);
+  headers.set("authorization", basicAuth("x-access-token", token.plaintext));
+
+  return fetcher(new Request(request, { headers }));
 }
 
 function mountEnvironment(
@@ -102,4 +155,41 @@ function captureEnvironment(
     WORKSPACE_COPY_REF: descriptor.ref,
     WORKSPACE_PATH: path,
   };
+}
+
+function isArtifactsHost(hostname: string): boolean {
+  return hostname === "artifacts.cloudflare.net" || hostname.endsWith(ARTIFACTS_HOST_SUFFIX);
+}
+
+function repositoryNameFromArtifactsGitUrl(url: URL): string | undefined {
+  const segments = url.pathname.split("/").filter(Boolean);
+  const serviceIndex = segments.findIndex((segment) => segment === "info" || segment === "git-upload-pack" || segment === "git-receive-pack");
+  const repoSegment = segments.slice(0, serviceIndex === -1 ? undefined : serviceIndex).at(-1);
+  if (!repoSegment) return undefined;
+  return repoSegment.endsWith(".git") ? repoSegment.slice(0, -4) : repoSegment;
+}
+
+function isGitSmartHttpRequest(url: URL, method: string): boolean {
+  if (method === "GET" && url.pathname.endsWith("/info/refs")) {
+    const service = url.searchParams.get("service");
+    return service === "git-upload-pack" || service === "git-receive-pack";
+  }
+  if (method === "POST") {
+    return url.pathname.endsWith("/git-upload-pack") || url.pathname.endsWith("/git-receive-pack");
+  }
+  return false;
+}
+
+function gitScope(url: URL, method: string): "read" | "write" {
+  if (method === "POST" && url.pathname.endsWith("/git-receive-pack")) {
+    return "write";
+  }
+  if (url.searchParams.get("service") === "git-receive-pack") {
+    return "write";
+  }
+  return "read";
+}
+
+function basicAuth(username: string, password: string): string {
+  return `Basic ${btoa(`${username}:${password}`)}`;
 }

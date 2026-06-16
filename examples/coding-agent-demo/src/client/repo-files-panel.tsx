@@ -1,13 +1,15 @@
-import type { RepoState } from "../repo/state-controller";
+import type { RepoDirectoryState } from "../repo/state-controller";
 import { UI_COPY } from "./ui-copy";
 
 export function RepoFilesPanel({
-  files,
+  entries,
+  path,
   activeWorkingCopyId,
   onApplyWorkingCopy,
   onDiscardWorkingCopy,
 }: {
-  files: RepoState["files"];
+  entries: RepoDirectoryState["entries"];
+  path: string;
   activeWorkingCopyId?: string;
   onApplyWorkingCopy(): void;
   onDiscardWorkingCopy(): void;
@@ -17,6 +19,7 @@ export function RepoFilesPanel({
       <div className="panel-heading">
         <p className="eyebrow">Passive state</p>
         <h2>{UI_COPY.filesTitle}</h2>
+        <p className="directory-path">Showing <code>{path}</code></p>
       </div>
       {activeWorkingCopyId ? (
         <div className="edit-actions">
@@ -26,15 +29,15 @@ export function RepoFilesPanel({
           <button type="button" className="secondary" onClick={onDiscardWorkingCopy}>{UI_COPY.discardWorkingCopyAction}</button>
         </div>
       ) : null}
-      {files.length === 0 ? (
+      {entries.length === 0 ? (
         <p className="empty">No repository files imported yet.</p>
       ) : (
         <ol className="file-list">
-          {files.map((file) => (
-            <li key={file.path}>
-              <span className={file.type}>{file.type === "directory" ? "dir" : "file"}</span>
-              <code>{file.path}</code>
-              <small>{file.type}</small>
+          {entries.map((entry) => (
+            <li key={entry.path}>
+              <span className={entry.type}>{entry.type === "directory" ? "dir" : "file"}</span>
+              <code>{entry.path}</code>
+              <small>{entry.type}</small>
             </li>
           ))}
         </ol>

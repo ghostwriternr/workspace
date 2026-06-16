@@ -74,7 +74,7 @@ import { attachWorkspaceCopyToSandbox } from "@cloudflare/workspace-adapter-sand
 import { getSandbox } from "@cloudflare/sandbox";
 
 const sandbox = getSandbox(env.Sandbox, `${workspaceName}-${copy.id}`, {
-  sleepAfter: "60s",
+  sleepAfter: "10m",
 });
 const mount = await attachWorkspaceCopyToSandbox({
   copy,
@@ -104,7 +104,9 @@ binaries, or a filesystem-heavy toolchain.
 
 The Sandbox adapter uses
 [`artifact-fs`](https://github.com/cloudflare/artifact-fs) over the
-Artifacts-backed working-copy ref.
+Artifacts-backed working-copy ref. The current local base image builds
+`artifact-fs` without blobless clone filtering because the Artifacts Git
+endpoint does not yet support that partial-clone contract reliably.
 
 Flow:
 

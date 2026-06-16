@@ -2,11 +2,12 @@ import { useAgent } from "agents/react";
 import { useEffect, useState, type FormEvent } from "react";
 
 import type { CodingAgentState } from "../agent/coding-agent";
-import type { RepoState } from "../repo/state-controller";
+import type { RepoDirectoryState, RepoState } from "../repo/state-controller";
 import { AgentChat } from "./agent-chat";
 import { RepoFilesPanel } from "./repo-files-panel";
-import { loadRepoState } from "./repo-state";
+import { loadDirectoryState, loadRepoState } from "./repo-state";
 import { UI_COPY } from "./ui-copy";
+import { activateDraftWorkspaceName, updateDraftWorkspaceName } from "./workspace-selection";
 import "./styles.css";
 
 const DEFAULT_WORKSPACE = "coding-demo";
@@ -17,12 +18,17 @@ type WorkingCopyActionResult =
   | { status: "error"; error: { tag: string; message?: string } };
 
 export function App() {
-  const [workspaceName, setWorkspaceName] = useState(DEFAULT_WORKSPACE);
+  const [workspaceSelection, setWorkspaceSelection] = useState({
+    activeWorkspaceName: DEFAULT_WORKSPACE,
+    draftWorkspaceName: DEFAULT_WORKSPACE,
+  });
   const [repoInput, setRepoInput] = useState("cloudflare/workspace");
   const [refInput, setRefInput] = useState("");
   const [status, setStatus] = useState<ImportStatus>({ tone: "idle", message: "Import a public GitHub repo to begin." });
   const [repo, setRepo] = useState<RepoState>();
+  const [directory, setDirectory] = useState<RepoDirectoryState>();
 
+  const workspaceName = workspaceSelection.activeWorkspaceName;
   const agent = useAgent<CodingAgentState>({
     agent: "CodingAgent",
     name: workspaceName,
@@ -37,7 +43,7 @@ export function App() {
       try {
         await agent.ready;
         if (!cancelled) {
-          setRepo(await loadRepoState(agent));
+          await loadWorkspaceBrowserState(agent, setRepo, setDirectory);
         }
       } catch (error) {
         if (!cancelled) {
@@ -67,7 +73,7 @@ export function App() {
       if (result.status === "error") {
         throw new Error(result.error.message ?? result.error.tag);
       }
-      setRepo(await loadRepoState(agent));
+      await loadWorkspaceBrowserState(agent, setRepo, setDirectory);
       setStatus({ tone: "ok", message: done });
     } catch (error) {
       setStatus({ tone: "error", message: error instanceof Error ? error.message : "Could not update working copy." });
@@ -82,8 +88,17 @@ export function App() {
       return;
     }
 
+    const activated = activateDraftWorkspaceName(workspaceSelection);
+    if (activated.status === "error") {
+      setStatus({ tone: "error", message: activated.message });
+      return;
+    }
+
+    const targetWorkspaceName = activated.value.activeWorkspaceName;
+    const switchingWorkspace = targetWorkspaceName !== workspaceName;
+
     setStatus({ tone: "idle", message: "Importing repository into Workspace…" });
-    const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceName)}/imports/github`, {
+    const response = await fetch(`/api/workspaces/${encodeURIComponent(targetWorkspaceName)}/imports/github`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ ...parsed, ref: refInput.trim() || undefined }),
@@ -94,7 +109,13 @@ export function App() {
       return;
     }
 
-    setRepo(await loadRepoState(agent));
+    setWorkspaceSelection(activated.value);
+    if (switchingWorkspace) {
+      setRepo(undefined);
+      setDirectory(undefined);
+    } else {
+      await loadWorkspaceBrowserState(agent, setRepo, setDirectory);
+    }
     setStatus({ tone: "ok", message: "Repository imported into current Workspace files." });
   }
 
@@ -111,8 +132,11 @@ export function App() {
           <label htmlFor="workspace-name">Workspace name</label>
           <input
             id="workspace-name"
-            value={workspaceName}
-            onChange={(event) => setWorkspaceName(event.currentTarget.value)}
+            value={workspaceSelection.draftWorkspaceName}
+            onChange={(event) => {
+              const nextWorkspaceName = event.currentTarget.value;
+              setWorkspaceSelection((current) => updateDraftWorkspaceName(current, nextWorkspaceName));
+            }}
             spellCheck={false}
           />
 
@@ -137,23 +161,35 @@ export function App() {
           <p className={`status ${status.tone}`}>{status.message}</p>
         </form>
         <div className="import-meta">
-          <span>Last import</span>
-          <strong>{lastImport ? `${lastImport.source.owner}/${lastImport.source.repo}@${lastImport.source.requestedRef ?? "default"}` : "none"}</strong>
-          <code>{lastImport ? "connected to Workspace" : "waiting for import"}</code>
+          <span>Active workspace</span>
+          <strong>{workspaceName}</strong>
+          <code>{lastImport ? `${lastImport.source.owner}/${lastImport.source.repo}@${lastImport.source.requestedRef ?? "default"}` : "waiting for import"}</code>
         </div>
       </section>
 
       <section className="workspace-grid">
         <RepoFilesPanel
-          files={repo?.files ?? []}
+          entries={directory?.entries ?? []}
+          path={directory?.path ?? "/"}
           activeWorkingCopyId={activeWorkingCopyId}
           onApplyWorkingCopy={applyWorkingCopy}
           onDiscardWorkingCopy={discardWorkingCopy}
         />
-        <AgentChat agent={agent} onRepoState={setRepo} />
+        <AgentChat agent={agent} onRepoState={setRepo} onDirectoryState={setDirectory} />
       </section>
     </main>
   );
+}
+
+async function loadWorkspaceBrowserState(
+  agent: ReturnType<typeof useAgent<CodingAgentState>>,
+  setRepo: (repo: RepoState) => void,
+  setDirectory: (directory: RepoDirectoryState) => void,
+) {
+  const nextRepo = await loadRepoState(agent);
+  const nextDirectory = await loadDirectoryState(agent, "/");
+  setRepo(nextRepo);
+  setDirectory(nextDirectory);
 }
 
 function parseRepoInput(value: string): { owner: string; repo: string } | undefined {

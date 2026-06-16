@@ -12,7 +12,7 @@ describe("createSandboxForDraft", () => {
 
     const sandbox = sandboxForDraft("draft-123");
 
-    expect(sandbox).toEqual({ id: "manual-demo-draft-123", options: { sleepAfter: "60s" } });
-    expect(getSandbox).toHaveBeenCalledWith({}, "manual-demo-draft-123", { sleepAfter: "60s" });
+    expect(sandbox).toEqual({ id: "manual-demo-draft-123", options: { sleepAfter: "10m" } });
+    expect(getSandbox).toHaveBeenCalledWith({}, "manual-demo-draft-123", { sleepAfter: "10m" });
   });
 });

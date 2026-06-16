@@ -8,6 +8,7 @@ type RepoReadableFiles = {
 };
 
 type RepoFileState = {
+  name: string;
   path: string;
   type: "directory" | "file";
 };
@@ -15,7 +16,11 @@ type RepoFileState = {
 export type RepoState = {
   workspaceName: string;
   workingCopyId?: string;
-  files: RepoFileState[];
+};
+
+export type RepoDirectoryState = RepoState & {
+  path: string;
+  entries: RepoFileState[];
 };
 
 export type RepoStateError = WorkspaceOperationError;
@@ -29,22 +34,37 @@ export type RepoStateControllerDependencies = {
 export class RepoStateController {
   constructor(private readonly dependencies: RepoStateControllerDependencies) {}
 
-  async listRepoState(): Promise<BetterResult<RepoState, RepoStateError>> {
+  async getRepoState(): Promise<BetterResult<RepoState, RepoStateError>> {
+    return Result.ok(this.repoState());
+  }
+
+  async listDirectory({ path = "/" }: { path?: string } = {}): Promise<BetterResult<RepoDirectoryState, RepoStateError>> {
     const source = await this.filesToList(this.dependencies.workspace);
     if (Result.isError(source)) {
       return Result.err(source.error);
     }
 
-    const files = await listTree(source.value, "/");
-    if (Result.isError(files)) {
-      return Result.err(files.error);
+    const normalizedPath = normalizeDirectoryPath(path);
+    const entries = await source.value.list(normalizedPath);
+    if (Result.isError(entries)) {
+      if (entries.error.tag === "PathNotFoundError" && normalizedPath === "/") {
+        return Result.ok({ ...this.repoState(), path: normalizedPath, entries: [] });
+      }
+      return Result.err(entries.error);
     }
 
     return Result.ok({
-      workspaceName: this.dependencies.workspaceName,
-      workingCopyId: this.dependencies.workingCopyId,
-      files: files.value,
+      ...this.repoState(),
+      path: normalizedPath,
+      entries: entries.value.map(entryState).sort((left, right) => comparePath(left.path, right.path)),
     });
+  }
+
+  private repoState(): RepoState {
+    return {
+      workspaceName: this.dependencies.workspaceName,
+      ...(this.dependencies.workingCopyId ? { workingCopyId: this.dependencies.workingCopyId } : {}),
+    };
   }
 
   private async filesToList(workspace: Workspace): Promise<BetterResult<RepoReadableFiles, RepoStateError>> {
@@ -60,41 +80,20 @@ export class RepoStateController {
   }
 }
 
-async function listTree(files: RepoReadableFiles, root: string): Promise<BetterResult<RepoFileState[], RepoStateError>> {
-  const result: RepoFileState[] = [];
-  const listed = await visitTree(files, root, result);
-  if (Result.isError(listed)) {
-    return Result.err(listed.error);
+function normalizeDirectoryPath(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed || trimmed === ".") {
+    return "/";
   }
-
-  return Result.ok(result.sort((left, right) => comparePath(left.path, right.path)));
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
-async function visitTree(
-  files: RepoReadableFiles,
-  path: string,
-  result: RepoFileState[],
-): Promise<BetterResult<void, RepoStateError>> {
-  const entries = await files.list(path);
-  if (Result.isError(entries)) {
-    if (entries.error.tag === "PathNotFoundError" && path === "/") {
-      return Result.ok(undefined);
-    }
-    return Result.err(entries.error);
-  }
-
-  for (const entry of entries.value) {
-    result.push({ path: entry.path, type: entry.type });
-
-    if (entry.type === "directory") {
-      const child = await visitTree(files, entry.path, result);
-      if (Result.isError(child)) {
-        return Result.err(child.error);
-      }
-    }
-  }
-
-  return Result.ok(undefined);
+function entryState(entry: WorkspaceEntry): RepoFileState {
+  return {
+    name: entry.path === "/" ? "/" : entry.path.split("/").filter(Boolean).at(-1) ?? entry.path,
+    path: entry.path,
+    type: entry.type,
+  };
 }
 
 function comparePath(left: string, right: string): number {

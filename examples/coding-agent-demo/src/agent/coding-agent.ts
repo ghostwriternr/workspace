@@ -20,7 +20,7 @@ export type CodingAgentState = {
 };
 
 export class CodingAgent extends Think<Env, CodingAgentState> {
-  static readonly actions = ["listRepoState", "refreshRepoState", "applyWorkingCopy", "discardWorkingCopy", ...CODING_TOOL_NAMES] as const;
+  static readonly actions = ["getRepoState", "listDirectory", "recordImportSummary", "applyWorkingCopy", "discardWorkingCopy", ...CODING_TOOL_NAMES] as const;
 
   initialState: CodingAgentState = {};
   override workspace = disabledThinkWorkspace;
@@ -74,24 +74,27 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
         }),
         execute: async (input) => resultToModelToolOutput(await this.workingCopyController().run(input)),
       }),
-      shell: tool({
-        description: codingToolDescription("shell"),
-        inputSchema: z.object({
-          command: z.string().min(1).describe("Shell command to run with the working copy mounted at /workspace."),
-        }),
-        execute: async (input) => resultToModelToolOutput(await this.workingCopyController().shell(input)),
-      }),
-      capture: tool({
-        description: codingToolDescription("capture"),
-        inputSchema: z.object({}),
-        execute: async () => resultToModelToolOutput(await this.workingCopyController().captureWorkingCopy()),
-      }),
     };
   }
 
   @callable()
-  async listRepoState() {
-    return this.refreshRepoState();
+  async getRepoState() {
+    const repo = await new RepoStateController({
+      workspace: this.workspaceSurface(),
+      workspaceName: this.name,
+      workingCopyId: this.state.workingCopyId,
+    }).getRepoState();
+    return resultToRpc(repo);
+  }
+
+  @callable()
+  async listDirectory(input?: { path?: string }) {
+    const directory = await new RepoStateController({
+      workspace: this.workspaceSurface(),
+      workspaceName: this.name,
+      workingCopyId: this.state.workingCopyId,
+    }).listDirectory({ path: input?.path ?? "/" });
+    return resultToRpc(directory);
   }
 
   @callable()
@@ -135,17 +138,9 @@ export class CodingAgent extends Think<Env, CodingAgentState> {
   }
 
   @callable()
-  async refreshRepoState(lastImport?: GitHubImportSummary) {
-    const repo = await new RepoStateController({
-      workspace: this.workspaceSurface(),
-      workspaceName: this.name,
-      workingCopyId: this.state.workingCopyId,
-    }).listRepoState();
-
-    if (lastImport) {
-      this.setState({ ...this.state, lastImport });
-    }
-    return resultToRpc(repo);
+  async recordImportSummary(lastImport: GitHubImportSummary) {
+    this.setState({ ...this.state, lastImport });
+    return { status: "ok" as const, value: { workspaceName: this.name, lastImport } };
   }
 
   private workingCopyController(): RepoWorkingCopyController {

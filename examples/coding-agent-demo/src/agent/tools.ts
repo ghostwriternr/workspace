@@ -12,7 +12,8 @@ export const CODING_TOOLS = [
       "Read the contents of a file, or list a directory. File reads are truncated at 2000 lines or 50KB by default. Use offset and limit to continue through large files.",
     promptSnippet: "Read file contents or list a directory",
     promptGuidelines: [
-      "Use read to look at files. Use it for targeted inspection, not to dump entire directories.",
+      "Use read to look at files. Paths are repository paths such as /README.md or /packages, not workspace names.",
+      "Use read for targeted inspection, not to dump entire directories.",
       "File reads are truncated at 2000 lines or 50KB. Use offset and limit when you need more of a large file.",
     ],
   },
@@ -44,27 +45,6 @@ export const CODING_TOOLS = [
       "Use run for anything that's easier in code: searching across files, multi-file refactors, generating content, computing summaries.",
       "When using run, code must default-export an async function that takes env. Files are accessed through env.WORKSPACE, which has readFile, writeFile, list, and stat. These methods return { status: 'ok', value } or { status: 'error', error } — always check status before using the value. Use TextDecoder/TextEncoder for text.",
       "run is not a shell — no subprocesses, no package manager, no native tools. But it runs full JavaScript, so use it freely for anything you can express in code.",
-    ],
-  },
-  {
-    name: "shell",
-    description:
-      "Run a shell command in an isolated Sandbox with the working copy mounted at /workspace. Use this for package managers, test runners, native tools, and process execution. Command execution does not publish changes and does not capture filesystem changes by itself.",
-    promptSnippet: "Run shell commands against the mounted working copy",
-    promptGuidelines: [
-      "Use shell when you need package managers, test runners, native tools, or real process execution.",
-      "shell runs with the working copy mounted at /workspace. Use paths under /workspace in commands.",
-      "After a shell command writes files you want to keep, call capture to update the durable working copy.",
-    ],
-  },
-  {
-    name: "capture",
-    description:
-      "Capture files written under the Sandbox /workspace mount back into the durable working copy. This does not apply or publish the working copy.",
-    promptSnippet: "Capture Sandbox filesystem changes into the working copy",
-    promptGuidelines: [
-      "Use capture after shell commands that create or modify files under /workspace and should become part of the working copy.",
-      "capture updates the durable working copy but does not publish it. The user still decides whether to apply or discard.",
     ],
   },
 ] as const satisfies readonly CodingToolDefinition[];

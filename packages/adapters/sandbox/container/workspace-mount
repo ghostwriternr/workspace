@@ -12,6 +12,14 @@ set -euo pipefail
 
 export ARTIFACT_FS_ROOT
 
+log() {
+  printf 'workspace-mount[%s]: %s\n' "$(date -Iseconds)" "$*" >&2
+}
+
+redacted_remote() {
+  printf '%s' "$WORKSPACE_REMOTE" | sed -E 's#://[^/@]+@#://REDACTED@#'
+}
+
 if [[ "$WORKSPACE_PATH" != /* ]]; then
   echo "workspace-mount: WORKSPACE_PATH must be absolute" >&2
   exit 1
@@ -111,26 +119,38 @@ if [ ! -e /dev/fuse ]; then
   exit 1
 fi
 
+log "starting remote=$(redacted_remote) baseRef=$WORKSPACE_BASE_REF copyRef=$WORKSPACE_COPY_REF path=$WORKSPACE_PATH root=$ARTIFACT_FS_ROOT"
 mkdir -p "$ARTIFACT_FS_ROOT" "$mount_root"
 load_metadata
 ensure_mount_matches_request
 
+log "checking artifact-fs registration for $repo_name"
 if ! artifact-fs status --name "$repo_name" >/dev/null 2>&1; then
+  log "registering artifact-fs repo $repo_name at mount root $mount_root"
   artifact-fs add-repo \
     --name "$repo_name" \
     --remote "$WORKSPACE_REMOTE" \
     --branch "$WORKSPACE_BASE_REF" \
     --mount-root "$mount_root"
+  log "registered artifact-fs repo $repo_name"
+else
+  log "artifact-fs repo $repo_name already registered"
 fi
 
 write_metadata
+log "ensuring artifact-fs daemon"
 ensure_daemon
+log "waiting for mount at $WORKSPACE_PATH"
 wait_for_mount
+log "mount is available"
 
 git config --global --add safe.directory "$WORKSPACE_PATH" >/dev/null 2>&1 || true
 
+log "fetching copy ref $WORKSPACE_COPY_REF"
 git -C "$WORKSPACE_PATH" fetch origin "$WORKSPACE_COPY_REF"
+log "checking out copy ref"
 git -C "$WORKSPACE_PATH" checkout --detach FETCH_HEAD
+log "checkout complete"
 
 printf 'path=%s\n' "$WORKSPACE_PATH"
 printf 'ref=%s\n' "$WORKSPACE_COPY_REF"

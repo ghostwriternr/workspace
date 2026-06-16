@@ -102,7 +102,7 @@ const copy = await workspace.copies.create({ label: "agent-working-copy" });
 if (copy.status === "error") return copy;
 
 const sandbox = getSandbox(env.Sandbox, `${workspaceName}-${copy.value.id}`, {
-  sleepAfter: "60s",
+  sleepAfter: "10m",
 });
 const mount = await attachWorkspaceCopyToSandbox({
   copy: copy.value,

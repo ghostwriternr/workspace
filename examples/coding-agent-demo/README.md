@@ -12,7 +12,8 @@ apply/discard.
 
 - A public GitHub repo can be imported into a Workspace through the GitHub
   source adapter (`@cloudflare/workspace-source-github`).
-- Imported files become the Workspace's current files.
+- Imported files become the Workspace's current files; the browser lists
+  directories on demand instead of eagerly loading the whole repository tree.
 - A coding agent works against one durable working copy that survives chat
   turns, browser reconnects, and runtime failures.
 - The agent has both Worker-native execution (Dynamic Worker) and a real shell

@@ -63,13 +63,13 @@ describe("PhotoDraftController", () => {
     });
     expect(dependencies.driver.file(dependencies.draftEditId!, "/photos/current")).toEqual(draftPng);
     expect(dependencies.sandbox.commands).toEqual([
-      expect.objectContaining({ command: "workspace-mount" }),
+      expect.objectContaining({ command: expect.stringContaining("workspace-mount") }),
       {
         command: "identify /workspace/photos/original.png && convert /workspace/photos/original.png /workspace/photos/current",
         options: { cwd: "/workspace" },
       },
-      expect.objectContaining({ command: "workspace-mount" }),
-      expect.objectContaining({ command: "workspace-capture" }),
+      expect.objectContaining({ command: expect.stringContaining("workspace-mount") }),
+      expect.objectContaining({ command: expect.stringContaining("workspace-capture") }),
     ]);
   });
 
@@ -87,7 +87,7 @@ describe("PhotoDraftController", () => {
     });
 
     expect(dependencies.sandbox.commands).toEqual([
-      expect.objectContaining({ command: "workspace-mount" }),
+      expect.objectContaining({ command: expect.stringContaining("workspace-mount") }),
       {
         command: "convert /workspace/photos/current -resize 512x512^ /workspace/photos/current",
         options: { cwd: "/workspace" },
@@ -292,7 +292,6 @@ class FakeDynamicWorkerRunner {
 
 class FakeSandbox {
   readonly commands: Array<{ command: string; options: { cwd?: string; env?: Record<string, string> } | undefined }> = [];
-
   constructor(
     private readonly workspace: Workspace,
     private readonly getDraftEditId: () => string | undefined,
@@ -302,10 +301,10 @@ class FakeSandbox {
 
   async exec(command: string, options?: { cwd?: string; env?: Record<string, string> }) {
     this.commands.push({ command, options });
-    if (this.error && command === "workspace-mount") {
+    if (this.error && command.includes("workspace-mount")) {
       return { success: false, exitCode: 1, stdout: "", stderr: this.error };
     }
-    if (command === "workspace-capture") {
+    if (command.includes("workspace-capture")) {
       const copy = await this.workspace.copies.get(this.getDraftEditId() ?? "");
       if (Result.isError(copy)) throw new Error("draft not found");
       await copy.value.files.write("/photos/current", this.output);

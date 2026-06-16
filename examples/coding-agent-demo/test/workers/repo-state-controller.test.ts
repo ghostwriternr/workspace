@@ -11,30 +11,41 @@ describe("RepoStateController", () => {
     resetFakeArtifactsWorkspace();
   });
 
-  it("lists current Workspace files recursively for repo state", async () => {
+  it("returns repo metadata without listing repository files", async () => {
+    const { workspace, workspaceName } = createFakeArtifactsWorkspace({
+      "/README.md": encoder.encode("# Repo"),
+      "/src/index.ts": encoder.encode("export {};"),
+    });
+
+    const state = await new RepoStateController({ workspace, workspaceName }).getRepoState();
+
+    expect(Result.isOk(state)).toBe(true);
+    if (Result.isError(state)) throw new Error("repo state failed");
+    expect(state.value).toEqual({ workspaceName });
+  });
+
+  it("lists only direct children for a current Workspace directory", async () => {
     const { workspace, workspaceName } = createFakeArtifactsWorkspace({
       "/README.md": encoder.encode("# Repo"),
       "/src/index.ts": encoder.encode("export {};"),
       "/src/lib/util.ts": encoder.encode("export const util = true;"),
     });
 
-    const state = await new RepoStateController({ workspace, workspaceName }).listRepoState();
+    const listed = await new RepoStateController({ workspace, workspaceName }).listDirectory({ path: "/" });
 
-    expect(Result.isOk(state)).toBe(true);
-    if (Result.isError(state)) throw new Error("repo state failed");
-    expect(state.value).toEqual({
+    expect(Result.isOk(listed)).toBe(true);
+    if (Result.isError(listed)) throw new Error("directory listing failed");
+    expect(listed.value).toEqual({
       workspaceName,
-      files: [
-        { path: "/README.md", type: "file" },
-        { path: "/src", type: "directory" },
-        { path: "/src/index.ts", type: "file" },
-        { path: "/src/lib", type: "directory" },
-        { path: "/src/lib/util.ts", type: "file" },
+      path: "/",
+      entries: [
+        { name: "README.md", path: "/README.md", type: "file" },
+        { name: "src", path: "/src", type: "directory" },
       ],
     });
   });
 
-  it("lists files from an active working copy", async () => {
+  it("lists direct children from an active working copy", async () => {
     const { workspace, workspaceName } = createFakeArtifactsWorkspace({
       "/README.md": encoder.encode("# Repo"),
     });
@@ -42,36 +53,39 @@ describe("RepoStateController", () => {
     const working = await workspace.copies.create({ label: "working" });
     if (Result.isError(working)) throw new Error("working copy failed");
     await working.value.files.write("/notes.md", encoder.encode("draft note"));
+    await working.value.files.write("/src/index.ts", encoder.encode("export {};"));
 
-    const state = await new RepoStateController({
+    const listed = await new RepoStateController({
       workspace,
       workspaceName,
       workingCopyId: working.value.id,
-    }).listRepoState();
+    }).listDirectory({ path: "/" });
 
-    expect(Result.isOk(state)).toBe(true);
-    if (Result.isError(state)) throw new Error("repo state failed");
-    expect(state.value).toEqual({
+    expect(Result.isOk(listed)).toBe(true);
+    if (Result.isError(listed)) throw new Error("directory listing failed");
+    expect(listed.value).toEqual({
       workspaceName,
       workingCopyId: working.value.id,
-      files: [
-        { path: "/README.md", type: "file" },
-        { path: "/notes.md", type: "file" },
+      path: "/",
+      entries: [
+        { name: "README.md", path: "/README.md", type: "file" },
+        { name: "notes.md", path: "/notes.md", type: "file" },
+        { name: "src", path: "/src", type: "directory" },
       ],
     });
   });
 
   it("returns a value error when an active working copy is missing", async () => {
     const { workspace, workspaceName } = createFakeArtifactsWorkspace();
-    const state = await new RepoStateController({
+    const listed = await new RepoStateController({
       workspace,
       workspaceName,
       workingCopyId: "missing-copy",
-    }).listRepoState();
+    }).listDirectory({ path: "/" });
 
-    expect(Result.isError(state)).toBe(true);
-    if (Result.isError(state)) {
-      expect(state.error.tag).toBe("WorkspaceCopyNotFoundError");
+    expect(Result.isError(listed)).toBe(true);
+    if (Result.isError(listed)) {
+      expect(listed.error.tag).toBe("WorkspaceCopyNotFoundError");
     }
   });
 });

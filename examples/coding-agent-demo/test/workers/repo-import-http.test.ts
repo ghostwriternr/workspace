@@ -70,8 +70,8 @@ describe("repo import HTTP", () => {
     });
   });
 
-  it("syncs agent repo state after imports", async () => {
-    const refreshRepoState = vi.fn();
+  it("records import summary without refreshing repository state", async () => {
+    const recordImportSummary = vi.fn();
     const response = await handleRepoImportRequest(
       new Request("http://example.com/api/workspaces/synced/imports/github", {
         method: "POST",
@@ -80,12 +80,12 @@ describe("repo import HTTP", () => {
       }),
       runtimeFor(successfulGitHubSource()),
       {
-        agents: { getByName: () => ({ refreshRepoState }) },
+        agents: { getByName: () => ({ recordImportSummary }) },
       },
     );
 
     expect(response?.status).toBe(200);
-    expect(refreshRepoState).toHaveBeenCalledWith(expect.objectContaining({
+    expect(recordImportSummary).toHaveBeenCalledWith(expect.objectContaining({
       workspaceName: "synced",
       source: expect.objectContaining({ owner: "cloudflare", repo: "example" }),
       importedAt: 1,

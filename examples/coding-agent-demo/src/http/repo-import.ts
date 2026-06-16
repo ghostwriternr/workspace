@@ -11,7 +11,7 @@ type GitHubImportBody = {
 };
 
 type CodingAgentNamespace = {
-  getByName(name: string): { refreshRepoState(lastImport?: GitHubImportSummary): Promise<unknown> };
+  getByName(name: string): { recordImportSummary(lastImport: GitHubImportSummary): Promise<unknown> };
 };
 
 type RepoImportRuntime = {
@@ -56,7 +56,7 @@ export async function handleRepoImportRequest(
   }
 
   if (options.agents) {
-    await options.agents.getByName(result.value.workspaceName).refreshRepoState(result.value);
+    await options.agents.getByName(result.value.workspaceName).recordImportSummary(result.value);
   }
 
   return json({ status: "imported", ...result.value });

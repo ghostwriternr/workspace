@@ -4,11 +4,9 @@ import { buildSystemPrompt } from "../src/agent/prompt";
 import { CODING_TOOLS, CODING_TOOL_NAMES, codingToolDescription } from "../src/agent/tools";
 
 describe("coding agent", () => {
-  it("exposes read, write, edit, run, shell, and capture", () => {
-    expect(CODING_TOOL_NAMES).toEqual(["read", "write", "edit", "run", "shell", "capture"]);
+  it("exposes the stable read, write, edit, and run tools", () => {
+    expect(CODING_TOOL_NAMES).toEqual(["read", "write", "edit", "run"]);
     expect(codingToolDescription("run")).toContain("JavaScript program");
-    expect(codingToolDescription("shell")).toContain("shell command");
-    expect(codingToolDescription("capture")).toContain("Capture files");
   });
 
   it("assembles system prompt from tool snippets and guidelines", () => {
@@ -43,13 +41,21 @@ describe("coding agent", () => {
     expect(prompt).not.toContain("changes are staged");
   });
 
-  it("teaches run as powerful JS and shell as process execution", () => {
+  it("teaches run as powerful JS and hides unavailable Sandbox tools", () => {
     const prompt = buildSystemPrompt("demo", CODING_TOOLS);
 
     expect(prompt).toContain("JavaScript");
     expect(prompt).toContain("env.WORKSPACE");
     expect(prompt).toContain("not a shell");
-    expect(prompt).toContain("shell command");
-    expect(prompt).toContain("package managers, test runners, native tools");
+    expect(prompt).not.toContain("shell command");
+    expect(prompt).not.toContain("package managers, test runners, native tools");
+  });
+
+  it("teaches that the workspace name is not a repository path", () => {
+    const prompt = buildSystemPrompt("coding-demo2222", CODING_TOOLS);
+
+    expect(prompt).toContain("coding-demo2222");
+    expect(prompt).toContain("not a filesystem path");
+    expect(prompt).toContain("repository root is /");
   });
 });

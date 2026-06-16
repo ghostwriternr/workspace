@@ -14,8 +14,14 @@ RUN --mount=type=secret,id=cloudflare_ca,required=false \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
+# Artifacts Git currently does not advertise partial-clone filtering. The
+# upstream artifact-fs prototype asks for blobless clones, which causes Git to
+# keep retrying against Artifacts during Sandbox mounts. Keep this local image
+# on full clones until the Artifacts Git endpoint supports the filter contract
+# or artifact-fs exposes a runtime option for clone mode.
 RUN git clone https://github.com/cloudflare/artifact-fs.git . \
   && git checkout "$ARTIFACT_FS_REF" \
+  && sed -i 's/"--filter=blob:none", //g' internal/gitstore/gitstore.go \
   && go build -o /artifact-fs ./cmd/artifact-fs
 
 FROM docker.io/cloudflare/sandbox:0.10.3
