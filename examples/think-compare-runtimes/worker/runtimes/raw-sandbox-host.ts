@@ -5,7 +5,7 @@ export interface RawSandboxLease {
 }
 
 interface RawSandboxClient {
-  writeFile(path: string, contents: string): Promise<void>;
+  writeFile(path: string, contents: string): Promise<unknown>;
   readFile(path: string): Promise<string>;
   exec(
     command: string,
@@ -25,8 +25,8 @@ export function createRawSandboxHostForLease(
   const sandbox = factory(lease.id, { sleepAfter: "10m" });
 
   return {
-    writeFile(path, contents) {
-      return sandbox.writeFile(path, contents);
+    async writeFile(path, contents) {
+      await sandbox.writeFile(path, contents);
     },
     readFile(path) {
       return sandbox.readFile(path);

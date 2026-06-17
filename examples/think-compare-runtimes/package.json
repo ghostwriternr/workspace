@@ -13,6 +13,7 @@
     "typegen": "wrangler types"
   },
   "dependencies": {
+    "@cloudflare/sandbox": "^0.12.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
