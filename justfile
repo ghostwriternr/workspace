@@ -8,6 +8,7 @@ setup:
     cd packages/sources/github && npm install
     cd examples/photo-agent-demo && npm install
     cd examples/coding-agent-demo && npm install
+    cd examples/think-compare-runtimes && npm install
 
 check:
     cd packages/workspace && npm run check
@@ -16,6 +17,7 @@ check:
     cd packages/sources/github && npm run check
     cd examples/photo-agent-demo && npm run check
     cd examples/coding-agent-demo && npm run check
+    cd examples/think-compare-runtimes && npm run check
 
 knip:
     cd packages/workspace && npm run knip
@@ -24,6 +26,7 @@ knip:
     cd packages/sources/github && npm run knip
     cd examples/photo-agent-demo && npm run knip
     cd examples/coding-agent-demo && npm run knip
+    cd examples/think-compare-runtimes && npm run knip
 
 test:
     node --test tools/*.test.mjs
@@ -33,11 +36,13 @@ test:
     cd packages/sources/github && npm test
     cd examples/photo-agent-demo && npm test
     cd examples/coding-agent-demo && npm test
+    cd examples/think-compare-runtimes && npm test
 
 typegen:
     cd packages/workspace && npm run typegen
     cd examples/photo-agent-demo && npm run typegen
     cd examples/coding-agent-demo && npm run typegen
+    cd examples/think-compare-runtimes && npm run typegen
 
 build-sandbox-base:
     bash -lc 'tmp=$(mktemp); trap "rm -f $tmp" EXIT; if [ -f "$HOME/.config/cloudflare/zero_trust_cert.pem" ]; then cp "$HOME/.config/cloudflare/zero_trust_cert.pem" "$tmp"; fi; docker build --platform linux/amd64 --secret id=cloudflare_ca,src="$tmp" -t workspace-sandbox-base:local -f packages/adapters/sandbox/container/Dockerfile .'

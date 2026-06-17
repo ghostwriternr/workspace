@@ -88,6 +88,8 @@ Per-package and per-example READMEs:
   Think photo agent over one Workspace draft.
 - [`examples/coding-agent-demo`](./examples/coding-agent-demo/README.md) —
   Think coding agent over imported GitHub repos.
+- [`examples/think-compare-runtimes`](./examples/think-compare-runtimes/README.md)
+  — fixed-task comparison of Workspace-backed and raw Sandbox agent runtimes.
 
 ## Status
 

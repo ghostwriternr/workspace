@@ -1,0 +1,9 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["shared/**/*.test.ts", "src/**/*.test.ts", "src/**/*.test.tsx", "worker/**/*.test.ts"],
+  "project": ["shared/**/*.ts", "src/**/*.ts", "src/**/*.tsx", "worker/**/*.ts"],
+  "rules": {
+    "exports": "error",
+    "types": "error"
+  }
+}
