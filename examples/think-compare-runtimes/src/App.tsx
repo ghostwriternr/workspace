@@ -1,22 +1,44 @@
-import { useMemo, useState } from "react";
+import { usePartySocket } from "partysocket/react";
+import { useMemo, useRef, useState } from "react";
 
 import type { RunEvent } from "../shared/events";
 import { compareFixture, fixtureManifest } from "../shared/fixture";
+import { applyRunMessage, type RunMessage } from "../shared/run-messages";
 import { buildDashboardModel } from "./dashboard-model";
 import { startComparisonRunFromApi } from "./run-api";
 import "./styles.css";
 
 export function App() {
+  const [runId, setRunId] = useState<string | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const activeRunIdRef = useRef<string | null>(null);
   const dashboard = useMemo(() => buildDashboardModel(events, new Date().toISOString()), [events]);
 
+  usePartySocket({
+    prefix: "api/runs",
+    party: "compare-run",
+    room: runId ?? "idle",
+    enabled: runId !== null,
+    onMessage(message) {
+      const parsed = JSON.parse(String(message.data)) as RunMessage;
+      const activeRunId = activeRunIdRef.current;
+      if (!activeRunId || !messageBelongsToRun(parsed, activeRunId)) return;
+      setEvents((current) => applyRunMessage(current, parsed));
+    },
+  });
+
   async function startRun() {
+    activeRunIdRef.current = null;
+    setRunId(null);
+    setEvents([]);
     setStarting(true);
     setError(null);
     try {
       const run = await startComparisonRunFromApi();
+      activeRunIdRef.current = run.runId;
+      setRunId(run.runId);
       setEvents(run.events);
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : String(runError));
@@ -37,6 +59,7 @@ export function App() {
         <button className="start-button" type="button" onClick={() => void startRun()} disabled={starting}>
           {starting ? "Starting…" : dashboard.run.actionLabel}
         </button>
+        {runId ? <p className="run-id">Run {runId}</p> : null}
         {error ? <p className="error-banner">{error}</p> : null}
       </header>
 
@@ -110,4 +133,9 @@ function RuntimeWing({ title, subtitle, status, container, bullets }: RuntimeWin
       </ul>
     </article>
   );
+}
+
+function messageBelongsToRun(message: RunMessage, runId: string): boolean {
+  if (message.type === "event") return message.event.runId === runId;
+  return message.events.every((event) => event.runId === runId);
 }

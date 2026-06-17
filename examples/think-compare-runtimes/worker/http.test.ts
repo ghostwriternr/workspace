@@ -10,17 +10,27 @@ describe("handleRequest", () => {
     await expect(response.json()).resolves.toEqual({ ok: true });
   });
 
-  test("starts a fake comparison run", async () => {
-    const response = await handleRequest(new Request("https://example.com/api/runs", { method: "POST" }));
-
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as { id: string; events: unknown[] };
-    expect(body).toMatchObject({ id: expect.stringMatching(/^compare-/) });
-    expect(body.events).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ runtime: "workspace", kind: "runtime_completed" }),
-        expect.objectContaining({ runtime: "sandbox", kind: "runtime_completed" }),
-      ]),
+  test("starts a run session through the run coordinator", async () => {
+    const starts: string[] = [];
+    const response = await handleRequest(
+      new Request("https://example.com/api/runs", { method: "POST" }),
+      {
+        startRun: async (runId) => {
+          starts.push(runId);
+          return {
+            runId,
+            socketPath: `/api/runs/compare-run/${runId}`,
+            events: [{ id: `${runId}:0`, runId, sequence: 0, runtime: "both", kind: "run_started", title: "Started", detail: "", timestamp: "2026-06-17T00:00:00.000Z" }],
+          };
+        },
+      },
     );
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as { runId: string; socketPath: string; events: unknown[] };
+    expect(body.runId).toMatch(/^compare-/);
+    expect(body.socketPath).toBe(`/api/runs/compare-run/${body.runId}`);
+    expect(body.events).toHaveLength(1);
+    expect(starts).toEqual([body.runId]);
   });
 });

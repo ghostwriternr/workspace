@@ -11,7 +11,9 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*", "/health"]
   },
+  "ai": { "binding": "AI" },
   "artifacts": [{ "binding": "ARTIFACTS", "namespace": "workspace-think-compare-runtimes", "remote": true }],
+  "services": [{ "binding": "SELF", "service": "workspace-think-compare-runtimes" }],
   "worker_loaders": [{ "binding": "DYNAMIC_WORKERS" }],
   "containers": [
     {
@@ -24,10 +26,17 @@
   "durable_objects": {
     "bindings": [
       { "name": "Sandbox", "class_name": "Sandbox" },
-      { "name": "WORKSPACE_OBJECTS", "class_name": "WorkspaceObject" }
+      { "name": "WORKSPACE_OBJECTS", "class_name": "WorkspaceObject" },
+      { "name": "CompareRun", "class_name": "CompareRun" },
+      { "name": "WorkspaceRuntimeAgent", "class_name": "WorkspaceRuntimeAgent" },
+      { "name": "SandboxRuntimeAgent", "class_name": "SandboxRuntimeAgent" }
     ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Sandbox", "WorkspaceObject"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Sandbox", "WorkspaceObject"] },
+    { "tag": "v2", "new_sqlite_classes": ["WorkspaceRuntimeAgent", "SandboxRuntimeAgent"] },
+    { "tag": "v3", "new_sqlite_classes": ["CompareRun"] }
+  ],
   "observability": { "enabled": true },
   "upload_source_maps": true
 }

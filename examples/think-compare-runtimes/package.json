@@ -14,12 +14,19 @@
   },
   "dependencies": {
     "@cloudflare/sandbox": "^0.12.1",
+    "@cloudflare/think": "^0.7.3",
     "@cloudflare/workspace": "file:../../packages/workspace",
     "@cloudflare/workspace-adapter-dynamic-worker": "file:../../packages/adapters/dynamic-worker",
     "@cloudflare/workspace-adapter-sandbox": "file:../../packages/adapters/sandbox",
+    "agents": "^0.13.3",
+    "ai": "^6.0.207",
     "better-result": "^2.9.2",
+    "partyserver": "^0.5.8",
+    "partysocket": "^1.2.0",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "workers-ai-provider": "^3.2.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.40.1",

@@ -22,7 +22,7 @@ describe("startComparisonRun", () => {
     );
   });
 
-  test("drives lease-scoped runtimes and releases warm Sandbox leases", async () => {
+  test("drives lease-scoped Think turns and releases warm Sandbox leases", async () => {
     const calls: string[] = [];
     const run = await startComparisonRun({
       now: fixedClock(),
@@ -34,6 +34,16 @@ describe("startComparisonRun", () => {
         calls.push(`sandbox.runtime:${lease.id}`);
         return fakeSandboxRuntime(calls);
       },
+      runWorkspaceTurn: async ({ runtime, recorder }) => {
+        calls.push("workspace.think-turn");
+        await runtime.seedFixture();
+        await recorder.record({ runtime: "workspace", kind: "agent_message", title: "Workspace Think response", detail: "workspace done" });
+      },
+      runSandboxTurn: async ({ runtime, recorder }) => {
+        calls.push("sandbox.think-turn");
+        await runtime.seedFixture();
+        await recorder.record({ runtime: "sandbox", kind: "agent_message", title: "Sandbox Think response", detail: "sandbox done" });
+      },
       workspaceSandboxPool: fakePool("workspace", calls),
       rawSandboxPool: fakePool("raw", calls),
     });
@@ -41,14 +51,13 @@ describe("startComparisonRun", () => {
     expect(calls).toEqual([
       "workspace.lease",
       "workspace.runtime:workspace-lease",
+      "workspace.think-turn",
       "workspace.seed",
-      "workspace.run:module",
-      "workspace.shell:npm run check",
       "workspace.release:workspace-lease",
       "sandbox.lease",
       "sandbox.runtime:raw-lease",
+      "sandbox.think-turn",
       "sandbox.seed",
-      "sandbox.shell:npm run check",
       "sandbox.release:raw-lease",
     ]);
     expect(run.events).toEqual(
@@ -57,8 +66,52 @@ describe("startComparisonRun", () => {
         expect.objectContaining({ runtime: "workspace", kind: "container_released" }),
         expect.objectContaining({ runtime: "sandbox", kind: "container_acquired" }),
         expect.objectContaining({ runtime: "sandbox", kind: "container_released" }),
-        expect.objectContaining({ runtime: "workspace", kind: "tool_result", title: "run result" }),
-        expect.objectContaining({ runtime: "sandbox", kind: "tool_result", title: "shell result" }),
+        expect.objectContaining({ runtime: "workspace", kind: "agent_message", detail: "workspace done" }),
+        expect.objectContaining({ runtime: "sandbox", kind: "agent_message", detail: "sandbox done" }),
+      ]),
+    );
+  });
+
+  test("records failed Think turns without marking the runtime completed", async () => {
+    const run = await startComparisonRun({
+      now: fixedClock(),
+      runWorkspaceTurn: async ({ recorder }) => {
+        recorder.record({ runtime: "workspace", kind: "runtime_failed", title: "Think turn failed", detail: "model failed" });
+      },
+    });
+
+    expect(run.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ runtime: "workspace", kind: "runtime_failed", detail: "model failed" }),
+        expect.objectContaining({ runtime: "sandbox", kind: "runtime_completed" }),
+        expect.objectContaining({ runtime: "both", kind: "run_completed" }),
+      ]),
+    );
+    expect(run.events).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ runtime: "workspace", kind: "runtime_completed" }),
+      ]),
+    );
+  });
+
+  test("turn exceptions become runtime failure events", async () => {
+    const run = await startComparisonRun({
+      now: fixedClock(),
+      runSandboxTurn: async () => {
+        throw new Error("sandbox turn crashed");
+      },
+    });
+
+    expect(run.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ runtime: "workspace", kind: "runtime_completed" }),
+        expect.objectContaining({ runtime: "sandbox", kind: "runtime_failed", detail: "sandbox turn crashed" }),
+        expect.objectContaining({ runtime: "both", kind: "run_completed" }),
+      ]),
+    );
+    expect(run.events).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ runtime: "sandbox", kind: "runtime_completed" }),
       ]),
     );
   });

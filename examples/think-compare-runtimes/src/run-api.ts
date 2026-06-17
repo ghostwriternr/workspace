@@ -1,7 +1,8 @@
 import type { RunEvent } from "../shared/events";
 
 export interface ComparisonRunResponse {
-  id: string;
+  runId: string;
+  socketPath: string;
   events: RunEvent[];
 }
 

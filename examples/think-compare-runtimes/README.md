@@ -21,12 +21,12 @@ This example currently has:
 - a run event shape;
 - dashboard model derivation;
 - a two-column React shell;
-- a `/api/runs` path that drives both runtime wings;
+- a `/api/runs` path that starts a run session and streams events over a run WebSocket;
 - a raw Sandbox runtime wired through the Sandbox SDK;
 - a Workspace-backed runtime wired through `@cloudflare/workspace`, Dynamic
-  Workers, and Workspace Sandbox attachment/capture.
-
-Real Think turns are the next major slice.
+  Workers, and Workspace Sandbox attachment/capture;
+- Think-backed runtime agents for both wings, using Workers AI and the same
+  model-facing coding task.
 
 ## Commands
 
