@@ -42,7 +42,7 @@ describe("startComparisonRun", () => {
       "workspace.lease",
       "workspace.runtime:workspace-lease",
       "workspace.seed",
-      "workspace.run",
+      "workspace.run:module",
       "workspace.shell:npm run check",
       "workspace.release:workspace-lease",
       "sandbox.lease",
@@ -78,8 +78,8 @@ function fakeWorkspaceRuntime(calls: string[]) {
     async edit(input: { path: string }) {
       return { path: input.path, replacements: 1 };
     },
-    async run() {
-      calls.push("workspace.run");
+    async run(input: { code: string }) {
+      calls.push(input.code.includes("export default") ? "workspace.run:module" : "workspace.run:invalid");
       return { executionTarget: "dynamic-worker" as const, result: { ok: true } };
     },
     async shell(input: { command: string }) {

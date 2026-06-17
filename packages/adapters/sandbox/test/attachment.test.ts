@@ -169,7 +169,9 @@ describe("attachWorkspaceCopyToSandbox", () => {
     expect(source).toContain("class WorkspaceSandbox");
     expect(source).toContain("interceptHttps = true");
     expect(source).toContain("workspaceArtifactsGit");
-    expect(source).toContain("WorkspaceContainerProxy");
+    expect(source).toContain("this.constructor as typeof WorkspaceSandbox");
+    expect(source).toContain("class WorkspaceContainerProxy extends BaseContainerProxy");
+    expect(source).toContain("override?.method === \"workspaceArtifactsGit\"");
   });
 });
 

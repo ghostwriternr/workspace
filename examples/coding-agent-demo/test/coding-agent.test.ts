@@ -15,7 +15,7 @@ describe("coding agent", () => {
 
     expect(source).toContain("@cloudflare/workspace-adapter-sandbox/workers");
     expect(source).toContain("extends WorkspaceSandbox<Env>");
-    expect(source).not.toContain("Sandbox.outboundHandlers =");
+    expect(source).not.toContain("static outboundHandlers =");
   });
 
   it("exposes the stable coding tools", () => {

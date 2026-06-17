@@ -11,6 +11,8 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*", "/health"]
   },
+  "artifacts": [{ "binding": "ARTIFACTS", "namespace": "workspace-think-compare-runtimes", "remote": true }],
+  "worker_loaders": [{ "binding": "DYNAMIC_WORKERS" }],
   "containers": [
     {
       "class_name": "Sandbox",
@@ -20,9 +22,12 @@
     }
   ],
   "durable_objects": {
-    "bindings": [{ "name": "Sandbox", "class_name": "Sandbox" }]
+    "bindings": [
+      { "name": "Sandbox", "class_name": "Sandbox" },
+      { "name": "WORKSPACE_OBJECTS", "class_name": "WorkspaceObject" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Sandbox"] }],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Sandbox", "WorkspaceObject"] }],
   "observability": { "enabled": true },
   "upload_source_maps": true
 }

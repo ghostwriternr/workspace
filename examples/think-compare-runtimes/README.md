@@ -21,10 +21,12 @@ This example currently has:
 - a run event shape;
 - dashboard model derivation;
 - a two-column React shell;
-- a fake `/api/runs` path that emits terminal events for both runtime wings.
+- a `/api/runs` path that drives both runtime wings;
+- a raw Sandbox runtime wired through the Sandbox SDK;
+- a Workspace-backed runtime wired through `@cloudflare/workspace`, Dynamic
+  Workers, and Workspace Sandbox attachment/capture.
 
-Real Think turns, warm Sandbox pools, Workspace-backed tools, and raw Sandbox
-tools are the next slices.
+Real Think turns are the next major slice.
 
 ## Commands
 
@@ -34,4 +36,11 @@ npm run check
 npm test
 npm run build
 npm run dev
+```
+
+The Sandbox image extends `workspace-sandbox-base:local`, so local Docker builds
+need the shared base image first:
+
+```bash
+just build-sandbox-base
 ```

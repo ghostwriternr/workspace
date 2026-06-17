@@ -78,13 +78,13 @@ async function recordWorkspaceWing(
       "workspace",
       "tool_call",
       "run",
-      JSON.stringify({ name: "run", executionTarget: "dynamic-worker", code: "Inspect fixture files" }),
+      JSON.stringify({ name: "run", executionTarget: "dynamic-worker", code: inspectFixtureModule }),
     );
     recorder.record(
       "workspace",
       "tool_result",
       "run result",
-      JSON.stringify(await runtime.run({ code: "Inspect fixture files" })),
+      JSON.stringify(await runtime.run({ code: inspectFixtureModule })),
     );
     recorder.record(
       "workspace",
@@ -138,6 +138,19 @@ async function recordSandboxWing(
     recorder.record("sandbox", "container_released", "Raw Sandbox released", JSON.stringify({ sandboxId: lease.id }));
   }
 }
+
+const inspectFixtureModule = `
+export default async function ({ WORKSPACE }) {
+  const root = await WORKSPACE.list("/");
+  if (root.status === "error") return root;
+  const readme = await WORKSPACE.readFile("/README.md");
+  if (readme.status === "error") return readme;
+  return {
+    rootEntries: root.value.map((entry) => entry.name),
+    readmeBytes: readme.value.byteLength,
+  };
+}
+`;
 
 const defaultWorkspaceRuntime: WorkspaceRunRuntime = {
   async seedFixture() {},
