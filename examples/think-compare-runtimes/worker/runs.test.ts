@@ -22,23 +22,31 @@ describe("startComparisonRun", () => {
     );
   });
 
-  test("drives injected runtimes and releases warm Sandbox leases", async () => {
+  test("drives lease-scoped runtimes and releases warm Sandbox leases", async () => {
     const calls: string[] = [];
     const run = await startComparisonRun({
       now: fixedClock(),
-      workspaceRuntime: fakeWorkspaceRuntime(calls),
-      sandboxRuntime: fakeSandboxRuntime(calls),
+      createWorkspaceRuntime: (lease) => {
+        calls.push(`workspace.runtime:${lease.id}`);
+        return fakeWorkspaceRuntime(calls);
+      },
+      createSandboxRuntime: (lease) => {
+        calls.push(`sandbox.runtime:${lease.id}`);
+        return fakeSandboxRuntime(calls);
+      },
       workspaceSandboxPool: fakePool("workspace", calls),
       rawSandboxPool: fakePool("raw", calls),
     });
 
     expect(calls).toEqual([
       "workspace.lease",
+      "workspace.runtime:workspace-lease",
       "workspace.seed",
       "workspace.run",
       "workspace.shell:npm run check",
       "workspace.release:workspace-lease",
       "sandbox.lease",
+      "sandbox.runtime:raw-lease",
       "sandbox.seed",
       "sandbox.shell:npm run check",
       "sandbox.release:raw-lease",

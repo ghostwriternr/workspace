@@ -28,8 +28,8 @@ interface RunSandboxPool {
 
 export interface StartComparisonRunOptions {
   now?: () => string;
-  workspaceRuntime?: WorkspaceRunRuntime;
-  sandboxRuntime?: SandboxRunRuntime;
+  createWorkspaceRuntime?: (lease: SandboxLease) => WorkspaceRunRuntime;
+  createSandboxRuntime?: (lease: SandboxLease) => SandboxRunRuntime;
   workspaceSandboxPool?: RunSandboxPool;
   rawSandboxPool?: RunSandboxPool;
 }
@@ -41,11 +41,11 @@ export async function startComparisonRun(options: StartComparisonRunOptions = {}
 
   recorder.record("both", "run_started", "Run started", compareFixture.task.title);
   await recordWorkspaceWing(recorder, {
-    runtime: options.workspaceRuntime ?? defaultWorkspaceRuntime,
+    createRuntime: options.createWorkspaceRuntime ?? (() => defaultWorkspaceRuntime),
     pool: options.workspaceSandboxPool ?? defaultPool("workspace-default"),
   });
   await recordSandboxWing(recorder, {
-    runtime: options.sandboxRuntime ?? defaultSandboxRuntime,
+    createRuntime: options.createSandboxRuntime ?? (() => defaultSandboxRuntime),
     pool: options.rawSandboxPool ?? defaultPool("sandbox-default"),
   });
   recorder.record("both", "run_completed", "Run completed", "Both runtime wings reached terminal state.");
@@ -55,14 +55,15 @@ export async function startComparisonRun(options: StartComparisonRunOptions = {}
 
 async function recordWorkspaceWing(
   recorder: RunEventRecorder,
-  input: { runtime: WorkspaceRunRuntime; pool: RunSandboxPool },
+  input: { createRuntime: (lease: SandboxLease) => WorkspaceRunRuntime; pool: RunSandboxPool },
 ): Promise<void> {
   recorder.record("workspace", "runtime_started", "Workspace-backed runtime", "Opened Workspace and prepared durable edit surface.");
   const lease = await input.pool.lease();
   recorder.record("workspace", "container_acquired", "Workspace Sandbox acquired", JSON.stringify({ sandboxId: lease.id }));
+  const runtime = input.createRuntime(lease);
 
   try {
-    await input.runtime.seedFixture();
+    await runtime.seedFixture();
     recorder.record("workspace", "runtime_note", "Fixture seeded", "Fixture written to Workspace current files and working copy.");
     recorder.record(
       "workspace",
@@ -74,7 +75,7 @@ async function recordWorkspaceWing(
       "workspace",
       "tool_result",
       "run result",
-      JSON.stringify(await input.runtime.run({ code: "Inspect fixture files" })),
+      JSON.stringify(await runtime.run({ code: "Inspect fixture files" })),
     );
     recorder.record(
       "workspace",
@@ -86,7 +87,7 @@ async function recordWorkspaceWing(
       "workspace",
       "tool_result",
       "shell result",
-      JSON.stringify(await input.runtime.shell({ command: "npm run check" })),
+      JSON.stringify(await runtime.shell({ command: "npm run check" })),
     );
     recorder.record("workspace", "runtime_completed", "Workspace result ready", "Durable Workspace result is ready for review.");
   } finally {
@@ -97,14 +98,15 @@ async function recordWorkspaceWing(
 
 async function recordSandboxWing(
   recorder: RunEventRecorder,
-  input: { runtime: SandboxRunRuntime; pool: RunSandboxPool },
+  input: { createRuntime: (lease: SandboxLease) => SandboxRunRuntime; pool: RunSandboxPool },
 ): Promise<void> {
   recorder.record("sandbox", "runtime_started", "Raw Sandbox runtime", "Warm Sandbox filesystem seeded with the fixture.");
   const lease = await input.pool.lease();
   recorder.record("sandbox", "container_acquired", "Raw Sandbox acquired", JSON.stringify({ sandboxId: lease.id }));
+  const runtime = input.createRuntime(lease);
 
   try {
-    await input.runtime.seedFixture();
+    await runtime.seedFixture();
     recorder.record("sandbox", "runtime_note", "Fixture seeded", "Fixture written directly into the Sandbox filesystem.");
     recorder.record(
       "sandbox",
@@ -116,7 +118,7 @@ async function recordSandboxWing(
       "sandbox",
       "tool_result",
       "shell result",
-      JSON.stringify(await input.runtime.shell({ command: "npm run check" })),
+      JSON.stringify(await runtime.shell({ command: "npm run check" })),
     );
     recorder.record("sandbox", "runtime_completed", "Raw Sandbox result ready", "Runtime-local Sandbox result is ready for review.");
   } finally {
