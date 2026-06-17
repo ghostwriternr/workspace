@@ -26,7 +26,7 @@ describe("createComparisonRunOptions", () => {
 
     const lease = await options.rawSandboxPool?.lease();
     expect(lease).toEqual({ id: "raw-sandbox-0" });
-    const runtime = options.createSandboxRuntime?.(lease!);
+    const runtime = await options.createSandboxRuntime?.(lease!);
     await runtime?.seedFixture();
     await expect(runtime?.shell({ command: "npm run check" })).resolves.toMatchObject({
       command: "npm run check",

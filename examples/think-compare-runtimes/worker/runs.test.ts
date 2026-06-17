@@ -26,7 +26,7 @@ describe("startComparisonRun", () => {
     const calls: string[] = [];
     const run = await startComparisonRun({
       now: fixedClock(),
-      createWorkspaceRuntime: (lease) => {
+      async createWorkspaceRuntime(lease) {
         calls.push(`workspace.runtime:${lease.id}`);
         return fakeWorkspaceRuntime(calls);
       },
@@ -69,6 +69,15 @@ function fakeWorkspaceRuntime(calls: string[]) {
     async seedFixture() {
       calls.push("workspace.seed");
     },
+    async read() {
+      return "";
+    },
+    async write(input: { path: string }) {
+      return { path: input.path };
+    },
+    async edit(input: { path: string }) {
+      return { path: input.path, replacements: 1 };
+    },
     async run() {
       calls.push("workspace.run");
       return { executionTarget: "dynamic-worker" as const, result: { ok: true } };
@@ -84,6 +93,15 @@ function fakeSandboxRuntime(calls: string[]) {
   return {
     async seedFixture() {
       calls.push("sandbox.seed");
+    },
+    async read() {
+      return "";
+    },
+    async write(input: { path: string }) {
+      return { path: input.path };
+    },
+    async edit(input: { path: string }) {
+      return { path: input.path, replacements: 1 };
     },
     async shell(input: { command: string }) {
       calls.push(`sandbox.shell:${input.command}`);

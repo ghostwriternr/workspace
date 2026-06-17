@@ -8,12 +8,18 @@ export interface ComparisonRun {
 
 interface WorkspaceRunRuntime {
   seedFixture(): Promise<void>;
+  read(input: { path: string }): Promise<string>;
+  write(input: { path: string; contents: string }): Promise<{ path: string }>;
+  edit(input: { path: string; oldText: string; newText: string }): Promise<{ path: string; replacements: number }>;
   run(input: { code: string }): Promise<unknown>;
   shell(input: { command: string }): Promise<unknown>;
 }
 
 interface SandboxRunRuntime {
   seedFixture(): Promise<void>;
+  read(input: { path: string }): Promise<string>;
+  write(input: { path: string; contents: string }): Promise<{ path: string }>;
+  edit(input: { path: string; oldText: string; newText: string }): Promise<{ path: string; replacements: number }>;
   shell(input: { command: string }): Promise<unknown>;
 }
 
@@ -28,8 +34,8 @@ interface RunSandboxPool {
 
 export interface StartComparisonRunOptions {
   now?: () => string;
-  createWorkspaceRuntime?: (lease: SandboxLease) => WorkspaceRunRuntime;
-  createSandboxRuntime?: (lease: SandboxLease) => SandboxRunRuntime;
+  createWorkspaceRuntime?: (lease: SandboxLease) => WorkspaceRunRuntime | Promise<WorkspaceRunRuntime>;
+  createSandboxRuntime?: (lease: SandboxLease) => SandboxRunRuntime | Promise<SandboxRunRuntime>;
   workspaceSandboxPool?: RunSandboxPool;
   rawSandboxPool?: RunSandboxPool;
 }
@@ -55,12 +61,15 @@ export async function startComparisonRun(options: StartComparisonRunOptions = {}
 
 async function recordWorkspaceWing(
   recorder: RunEventRecorder,
-  input: { createRuntime: (lease: SandboxLease) => WorkspaceRunRuntime; pool: RunSandboxPool },
+  input: {
+    createRuntime: (lease: SandboxLease) => WorkspaceRunRuntime | Promise<WorkspaceRunRuntime>;
+    pool: RunSandboxPool;
+  },
 ): Promise<void> {
   recorder.record("workspace", "runtime_started", "Workspace-backed runtime", "Opened Workspace and prepared durable edit surface.");
   const lease = await input.pool.lease();
   recorder.record("workspace", "container_acquired", "Workspace Sandbox acquired", JSON.stringify({ sandboxId: lease.id }));
-  const runtime = input.createRuntime(lease);
+  const runtime = await input.createRuntime(lease);
 
   try {
     await runtime.seedFixture();
@@ -98,12 +107,15 @@ async function recordWorkspaceWing(
 
 async function recordSandboxWing(
   recorder: RunEventRecorder,
-  input: { createRuntime: (lease: SandboxLease) => SandboxRunRuntime; pool: RunSandboxPool },
+  input: {
+    createRuntime: (lease: SandboxLease) => SandboxRunRuntime | Promise<SandboxRunRuntime>;
+    pool: RunSandboxPool;
+  },
 ): Promise<void> {
   recorder.record("sandbox", "runtime_started", "Raw Sandbox runtime", "Warm Sandbox filesystem seeded with the fixture.");
   const lease = await input.pool.lease();
   recorder.record("sandbox", "container_acquired", "Raw Sandbox acquired", JSON.stringify({ sandboxId: lease.id }));
-  const runtime = input.createRuntime(lease);
+  const runtime = await input.createRuntime(lease);
 
   try {
     await runtime.seedFixture();
@@ -129,6 +141,15 @@ async function recordSandboxWing(
 
 const defaultWorkspaceRuntime: WorkspaceRunRuntime = {
   async seedFixture() {},
+  async read() {
+    return "";
+  },
+  async write(input) {
+    return { path: input.path };
+  },
+  async edit(input) {
+    return { path: input.path, replacements: 1 };
+  },
   async run() {
     return { executionTarget: "dynamic-worker", summary: "Fixture inspected" };
   },
@@ -139,6 +160,15 @@ const defaultWorkspaceRuntime: WorkspaceRunRuntime = {
 
 const defaultSandboxRuntime: SandboxRunRuntime = {
   async seedFixture() {},
+  async read() {
+    return "";
+  },
+  async write(input) {
+    return { path: input.path };
+  },
+  async edit(input) {
+    return { path: input.path, replacements: 1 };
+  },
   async shell(input) {
     return { executionTarget: "raw-sandbox", command: input.command, exitCode: 0, validationCommand: true };
   },
