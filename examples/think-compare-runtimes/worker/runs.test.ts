@@ -21,7 +21,80 @@ describe("startComparisonRun", () => {
       ]),
     );
   });
+
+  test("drives injected runtimes and releases warm Sandbox leases", async () => {
+    const calls: string[] = [];
+    const run = await startComparisonRun({
+      now: fixedClock(),
+      workspaceRuntime: fakeWorkspaceRuntime(calls),
+      sandboxRuntime: fakeSandboxRuntime(calls),
+      workspaceSandboxPool: fakePool("workspace", calls),
+      rawSandboxPool: fakePool("raw", calls),
+    });
+
+    expect(calls).toEqual([
+      "workspace.lease",
+      "workspace.seed",
+      "workspace.run",
+      "workspace.shell:npm run check",
+      "workspace.release:workspace-lease",
+      "sandbox.lease",
+      "sandbox.seed",
+      "sandbox.shell:npm run check",
+      "sandbox.release:raw-lease",
+    ]);
+    expect(run.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ runtime: "workspace", kind: "container_acquired" }),
+        expect.objectContaining({ runtime: "workspace", kind: "container_released" }),
+        expect.objectContaining({ runtime: "sandbox", kind: "container_acquired" }),
+        expect.objectContaining({ runtime: "sandbox", kind: "container_released" }),
+        expect.objectContaining({ runtime: "workspace", kind: "tool_result", title: "run result" }),
+        expect.objectContaining({ runtime: "sandbox", kind: "tool_result", title: "shell result" }),
+      ]),
+    );
+  });
 });
+
+function fakeWorkspaceRuntime(calls: string[]) {
+  return {
+    async seedFixture() {
+      calls.push("workspace.seed");
+    },
+    async run() {
+      calls.push("workspace.run");
+      return { executionTarget: "dynamic-worker" as const, result: { ok: true } };
+    },
+    async shell(input: { command: string }) {
+      calls.push(`workspace.shell:${input.command}`);
+      return { command: input.command, cwd: "/workspace/repo", exitCode: 0, stdout: "checked\n", stderr: "" };
+    },
+  };
+}
+
+function fakeSandboxRuntime(calls: string[]) {
+  return {
+    async seedFixture() {
+      calls.push("sandbox.seed");
+    },
+    async shell(input: { command: string }) {
+      calls.push(`sandbox.shell:${input.command}`);
+      return { command: input.command, cwd: "/workspace/repo", exitCode: 0, stdout: "checked\n", stderr: "" };
+    },
+  };
+}
+
+function fakePool(prefix: "workspace" | "raw", calls: string[]) {
+  return {
+    async lease() {
+      calls.push(`${prefix === "workspace" ? "workspace" : "sandbox"}.lease`);
+      return { id: `${prefix}-lease` };
+    },
+    async release(lease: { id: string }) {
+      calls.push(`${prefix === "workspace" ? "workspace" : "sandbox"}.release:${lease.id}`);
+    },
+  };
+}
 
 function fixedClock() {
   let tick = 0;
