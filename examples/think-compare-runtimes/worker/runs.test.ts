@@ -35,11 +35,13 @@ describe("startComparisonRun", () => {
         return fakeSandboxRuntime(calls);
       },
       runWorkspaceTurn: async ({ runtime, recorder }) => {
+        if (!runtime) throw new Error("missing workspace runtime");
         calls.push("workspace.think-turn");
         await runtime.seedFixture();
         await recorder.record({ runtime: "workspace", kind: "agent_message", title: "Workspace Think response", detail: "workspace done" });
       },
       runSandboxTurn: async ({ runtime, recorder }) => {
+        if (!runtime) throw new Error("missing sandbox runtime");
         calls.push("sandbox.think-turn");
         await runtime.seedFixture();
         await recorder.record({ runtime: "sandbox", kind: "agent_message", title: "Sandbox Think response", detail: "sandbox done" });
@@ -76,22 +78,12 @@ describe("startComparisonRun", () => {
     const calls: string[] = [];
     const run = await startComparisonRun({
       now: fixedClock(),
-      workspaceTurnOwnsRuntime: true,
-      sandboxTurnOwnsRuntime: true,
-      createWorkspaceRuntime: async () => {
-        calls.push("workspace.runtime");
-        return fakeWorkspaceRuntime(calls);
-      },
-      createSandboxRuntime: async () => {
-        calls.push("sandbox.runtime");
-        return fakeSandboxRuntime(calls);
-      },
-      runWorkspaceTurn: async ({ recorder }) => {
-        calls.push("workspace.turn");
+      runWorkspaceTurn: async ({ runtime, recorder }) => {
+        calls.push(runtime ? "workspace.turn-with-runtime" : "workspace.turn");
         await recorder.record({ runtime: "workspace", kind: "agent_message", title: "Workspace Think response", detail: "workspace done" });
       },
-      runSandboxTurn: async ({ recorder }) => {
-        calls.push("sandbox.turn");
+      runSandboxTurn: async ({ runtime, recorder }) => {
+        calls.push(runtime ? "sandbox.turn-with-runtime" : "sandbox.turn");
         await recorder.record({ runtime: "sandbox", kind: "agent_message", title: "Sandbox Think response", detail: "sandbox done" });
       },
     });

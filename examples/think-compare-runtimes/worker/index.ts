@@ -6,12 +6,11 @@ import { getServerByName, Server } from "partyserver";
 
 import { compareFixture } from "../shared/fixture";
 import { handleRequest } from "./http";
-import { createComparisonRunOptions } from "./run-dependencies";
+import { createLiveComparisonRunOptions } from "./run-dependencies";
 import { RunEventSink, type RunSession } from "./run-session";
 import type { RunEvent } from "../shared/events";
 import { runComparison, type StartComparisonRunOptions } from "./runs";
 import { createRawSandboxFactory } from "./runtimes/cloudflare-sandbox";
-import { createSandboxWarmPool } from "./sandbox-warm-pool";
 import { createWorkspaceRunOptionsFromBindings } from "./workspace-run-dependencies";
 
 export { WorkspaceObject } from "@cloudflare/workspace/workers";
@@ -88,33 +87,18 @@ export class CompareRun extends Server<Env> {
   }
 
   async #runOptions(): Promise<StartComparisonRunOptions> {
-    return {
-      ...createComparisonRunOptions({ rawSandboxFactory: createRawSandboxFactory(this.env.Sandbox) }),
-      ...(await createWorkspaceRunOptionsFromBindings({
+    return createLiveComparisonRunOptions({
+      rawSandboxFactory: createRawSandboxFactory(this.env.Sandbox),
+      workspaceRunOptions: await createWorkspaceRunOptionsFromBindings({
         artifacts: this.env.ARTIFACTS,
         dynamicWorkers: this.env.DYNAMIC_WORKERS,
         objects: this.env.WORKSPACE_OBJECTS,
         sandboxForLease: (lease) => getSandbox(this.env.Sandbox, lease.id, { sleepAfter: "10m" }) as WorkspaceSandboxClient,
         workspaceForWorkingCopy: (workingCopyId) => workspaceFileCapability(this.env.SELF, workingCopyId),
-      })),
-      workspaceSandboxPool: createSandboxWarmPool({ prefix: `workspace-sandbox-${crypto.randomUUID()}`, size: 2 }),
-      rawSandboxPool: createSandboxWarmPool({ prefix: `raw-sandbox-${crypto.randomUUID()}`, size: 2 }),
-      workspaceTurnOwnsRuntime: true,
-      sandboxTurnOwnsRuntime: true,
-      runWorkspaceTurn: async ({ runId, lease, recorder }) => {
-        for (const event of await this.env.WorkspaceRuntimeAgent.getByName(`${runId}:workspace`).runComparison({
-          runId,
-          leaseId: lease.id,
-        })) {
-          await recorder.record(event);
-        }
-      },
-      runSandboxTurn: async ({ runId, lease, recorder }) => {
-        for (const event of await this.env.SandboxRuntimeAgent.getByName(`${runId}:sandbox`).runComparison({ runId, leaseId: lease.id })) {
-          await recorder.record(event);
-        }
-      },
-    };
+      }),
+      workspaceRuntimeAgent: this.env.WorkspaceRuntimeAgent,
+      sandboxRuntimeAgent: this.env.SandboxRuntimeAgent,
+    });
   }
 
   async #load(): Promise<void> {
