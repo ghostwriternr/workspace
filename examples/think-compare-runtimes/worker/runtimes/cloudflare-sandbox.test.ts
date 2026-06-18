@@ -13,24 +13,34 @@ describe("createRawSandboxFactory", () => {
     const factory = createRawSandboxFactory(namespace, (binding, id, options) => {
       calls.push({ binding, id, options });
       return {
-        async writeFile(path: string, contents: string) {
-          calls.push(["writeFile", path, contents]);
-        },
-        async readFile(path: string, options: { encoding: "utf-8" }) {
-          calls.push(["readFile", path, options]);
-          return { content: "contents" };
-        },
-        async exec(command: string, options: { cwd: string }) {
-          calls.push(["exec", command, options]);
-          return { exitCode: 0, stdout: "ok\n", stderr: "" };
+        async createSession(options: { id: string; cwd: string }) {
+          calls.push(["createSession", options]);
+          return {
+            async mkdir(path: string, mkdirOptions: { recursive: boolean }) {
+              calls.push(["mkdir", path, mkdirOptions]);
+              return { success: true, path, recursive: mkdirOptions.recursive, timestamp: "now" };
+            },
+            async writeFile(path: string, contents: string, writeOptions: { encoding: "utf-8" }) {
+              calls.push(["writeFile", path, contents, writeOptions]);
+              return { success: true, path, timestamp: "now" };
+            },
+            async readFile(path: string, readOptions: { encoding: "utf-8" }) {
+              calls.push(["readFile", path, readOptions]);
+              return { success: true, path, content: "contents", timestamp: "now" };
+            },
+            async exec(command: string, execOptions: { cwd: string }) {
+              calls.push(["exec", command, execOptions]);
+              return { exitCode: 0, stdout: "ok\n", stderr: "" };
+            },
+          };
         },
       } as never;
     });
 
     const sandbox = factory("raw-0", { sleepAfter: "10m" });
-    await sandbox.writeFile("/workspace/repo/README.md", "hello");
-    await expect(sandbox.readFile("/workspace/repo/README.md")).resolves.toBe("contents");
-    await expect(sandbox.exec("npm run check", { cwd: "/workspace/repo" })).resolves.toEqual({
+    await sandbox.writeFile("/workspace/README.md", "hello");
+    await expect(sandbox.readFile("/workspace/README.md")).resolves.toBe("contents");
+    await expect(sandbox.exec("npm run check", { cwd: "/workspace" })).resolves.toEqual({
       exitCode: 0,
       stdout: "ok\n",
       stderr: "",
@@ -38,9 +48,38 @@ describe("createRawSandboxFactory", () => {
 
     expect(calls).toEqual([
       { binding: namespace, id: "raw-0", options: { sleepAfter: "10m" } },
-      ["writeFile", "/workspace/repo/README.md", "hello"],
-      ["readFile", "/workspace/repo/README.md", { encoding: "utf-8" }],
-      ["exec", "npm run check", { cwd: "/workspace/repo" }],
+      ["createSession", { id: "raw-0-runtime", cwd: "/" }],
+      ["mkdir", "/workspace", { recursive: true }],
+      ["writeFile", "/workspace/README.md", "hello", { encoding: "utf-8" }],
+      ["readFile", "/workspace/README.md", { encoding: "utf-8" }],
+      ["exec", "npm run check", { cwd: "/workspace" }],
     ]);
+  });
+
+  test("surfaces failed Sandbox file writes", async () => {
+    const namespace = { binding: "Sandbox" } as never;
+    const factory = createRawSandboxFactory(namespace, () => ({
+      async createSession() {
+        return {
+          async mkdir(path: string) {
+            return { success: false, path, recursive: true, timestamp: "now" };
+          },
+          async writeFile(path: string) {
+            return { success: true, path, timestamp: "now" };
+          },
+          async readFile(path: string) {
+            return { success: true, path, content: "", timestamp: "now" };
+          },
+          async exec() {
+            return { exitCode: 0, stdout: "", stderr: "" };
+          },
+        };
+      },
+    }) as never);
+
+    const sandbox = factory("raw-0", { sleepAfter: "10m" });
+    await expect(sandbox.writeFile("/workspace/README.md", "hello")).rejects.toThrow(
+      "Sandbox mkdir failed: /workspace",
+    );
   });
 });

@@ -1,6 +1,6 @@
 import { fixtureFileEntries } from "../../shared/fixture";
 
-const projectRoot = "/workspace/repo";
+const projectRoot = "/workspace";
 
 export interface RawSandboxHost {
   writeFile(path: string, contents: string): Promise<void>;
@@ -26,24 +26,44 @@ export interface RawSandboxRuntime {
 }
 
 export function createRawSandboxRuntime(host: RawSandboxHost): RawSandboxRuntime {
+  async function seedFixture(): Promise<void> {
+    for (const file of fixtureFileEntries()) {
+      await host.writeFile(toProjectPath(file.path), file.contents);
+    }
+
+    try {
+      await host.readFile(`${projectRoot}/package.json`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Fixture seed verification failed at ${projectRoot}: ${message}`);
+    }
+  }
+
+  async function ensureFixtureAvailable(): Promise<void> {
+    try {
+      await host.readFile(`${projectRoot}/package.json`);
+    } catch {
+      await seedFixture();
+    }
+  }
+
   return {
-    async seedFixture() {
-      for (const file of fixtureFileEntries()) {
-        await host.writeFile(toProjectPath(file.path), file.contents);
-      }
-    },
+    seedFixture,
 
     async read(input) {
+      await ensureFixtureAvailable();
       return host.readFile(toProjectPath(input.path));
     },
 
     async write(input) {
+      await ensureFixtureAvailable();
       const path = toProjectPath(input.path);
       await host.writeFile(path, input.contents);
       return { path };
     },
 
     async edit(input) {
+      await ensureFixtureAvailable();
       const path = toProjectPath(input.path);
       const contents = await host.readFile(path);
       const matches = countMatches(contents, input.oldText);
@@ -57,6 +77,7 @@ export function createRawSandboxRuntime(host: RawSandboxHost): RawSandboxRuntime
     },
 
     async shell(input) {
+      await ensureFixtureAvailable();
       const result = await host.exec(input.command, { cwd: projectRoot });
       return { command: input.command, cwd: projectRoot, ...result };
     },
@@ -68,7 +89,7 @@ function toProjectPath(path: string): string {
   const parts = normalized.split("/").filter(Boolean);
 
   if (parts.some((part) => part === "..")) {
-    throw new Error("Paths must stay inside /workspace/repo");
+    throw new Error("Paths must stay inside /workspace");
   }
 
   if (normalized === projectRoot || normalized.startsWith(`${projectRoot}/`)) return normalized;

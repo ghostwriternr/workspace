@@ -4,7 +4,7 @@ export interface FixtureFile {
 }
 
 export interface ComparisonFixture {
-  projectRoot: "/workspace/repo";
+  projectRoot: "/workspace";
   task: {
     title: string;
     brief: string;
@@ -14,7 +14,7 @@ export interface ComparisonFixture {
 }
 
 export const compareFixture: ComparisonFixture = {
-  projectRoot: "/workspace/repo",
+  projectRoot: "/workspace",
   task: {
     title: "Document Smart Request Policies",
     brief:

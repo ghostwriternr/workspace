@@ -31,22 +31,23 @@ export function createRuntimeThinkTools({
   runtimeTools,
   recorder,
 }: RuntimeThinkToolsOptions): ToolSet {
+  const queue = new RuntimeToolQueue();
   const tools: ToolSet = {
     read: runtimeTool({
       runtime,
       recorder,
       name: "read",
-      description: "Read a UTF-8 project file. Paths are rooted at /workspace/repo.",
+      description: "Read a UTF-8 project file. Paths are rooted at /workspace.",
       inputSchema: pathInput,
-      execute: (input) => runtimeTools.read(input),
+      execute: (input) => queue.run(() => runtimeTools.read(input)),
     }),
     write: runtimeTool({
       runtime,
       recorder,
       name: "write",
-      description: "Create or overwrite a project file. Paths are rooted at /workspace/repo.",
+      description: "Create or overwrite a project file. Paths are rooted at /workspace.",
       inputSchema: writeInput,
-      execute: (input) => runtimeTools.write(input),
+      execute: (input) => queue.run(() => runtimeTools.write(input)),
     }),
     edit: runtimeTool({
       runtime,
@@ -54,15 +55,15 @@ export function createRuntimeThinkTools({
       name: "edit",
       description: "Replace exact text in a project file. oldText must match exactly once.",
       inputSchema: editInput,
-      execute: (input) => runtimeTools.edit(input),
+      execute: (input) => queue.run(() => runtimeTools.edit(input)),
     }),
     shell: runtimeTool({
       runtime,
       recorder,
       name: "shell",
-      description: "Run a shell command from /workspace/repo.",
+      description: "Run a shell command from /workspace.",
       inputSchema: shellInput,
-      execute: (input) => runtimeTools.shell(input),
+      execute: (input) => queue.run(() => runtimeTools.shell(input)),
     }),
   };
 
@@ -73,7 +74,7 @@ export function createRuntimeThinkTools({
       name: "run",
       description: "Run JavaScript in a Dynamic Worker with scoped Workspace file access.",
       inputSchema: runInput,
-      execute: (input) => runtimeTools.run(input),
+      execute: (input) => queue.run(() => runtimeTools.run(input)),
     });
   }
 
@@ -130,6 +131,16 @@ function runtimeTool<Schema extends z.ZodType>({
       }
     },
   });
+}
+
+class RuntimeToolQueue {
+  #tail: Promise<unknown> = Promise.resolve();
+
+  run<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.#tail.then(operation, operation);
+    this.#tail = next.catch(() => undefined);
+    return next;
+  }
 }
 
 function stringifyEventDetail(value: unknown): string {

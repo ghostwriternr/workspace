@@ -1,6 +1,6 @@
 import { fixtureFileEntries } from "../../shared/fixture";
 
-const sandboxProjectRoot = "/workspace/repo";
+const sandboxProjectRoot = "/workspace";
 
 export interface WorkspaceBackedRuntimeHost {
   writeFile(path: string, contents: string): Promise<void>;

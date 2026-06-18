@@ -4,7 +4,7 @@ import { compareFixture } from "../../shared/fixture";
 export function runtimeSystemPrompt(runtime: RuntimeId): string {
   const shared = [
     "You are an expert coding agent working on a small documentation repository.",
-    "The project root is /workspace/repo.",
+    "The project root is /workspace.",
     "Inspect the existing files before editing.",
     "Use read for exact file contents, edit for precise replacements, write for new files or full rewrites, and shell to run validation.",
     "Keep changes focused on the task and stop after validation passes.",
@@ -36,7 +36,7 @@ export function runtimeTaskPrompt(): string {
     ...fixture.task.acceptanceCriteria.map((criterion) => `- ${criterion}`),
     "",
     "Before editing, inspect the feature brief, style guide, navigation metadata, README, and example Worker.",
-    "After editing, run npm run check from /workspace/repo and repair any validation failures.",
+    "After editing, run npm run check from /workspace and repair any validation failures.",
     "Finish with a concise summary of changed files and verification.",
   ].join("\n");
 }

@@ -4,6 +4,7 @@ import { WorkspaceSandbox, WorkspaceContainerProxy } from "@cloudflare/workspace
 import type { WorkspaceSandboxClient } from "@cloudflare/workspace-adapter-sandbox";
 import { getServerByName, Server } from "partyserver";
 
+import { compareFixture } from "../shared/fixture";
 import { handleRequest } from "./http";
 import { createComparisonRunOptions } from "./run-dependencies";
 import { RunEventSink, type RunSession } from "./run-session";
@@ -64,10 +65,17 @@ export class CompareRun extends Server<Env> {
 
   async #run(): Promise<void> {
     try {
+      await this.#sink.append({
+        runtime: "both",
+        kind: "run_started",
+        title: "Run started",
+        detail: compareFixture.task.title,
+      });
       await runComparison({
         runId: this.name,
         recorder: this.#sink,
-        options: await this.#runOptions(),
+        options: await withTimeout(this.#runOptions(), 60_000, "Comparison runtime dependency setup timed out."),
+        skipRunStarted: true,
       });
     } catch (error) {
       await this.#sink.append({
@@ -91,6 +99,8 @@ export class CompareRun extends Server<Env> {
       })),
       workspaceSandboxPool: createSandboxWarmPool({ prefix: `workspace-sandbox-${crypto.randomUUID()}`, size: 2 }),
       rawSandboxPool: createSandboxWarmPool({ prefix: `raw-sandbox-${crypto.randomUUID()}`, size: 2 }),
+      workspaceTurnOwnsRuntime: true,
+      sandboxTurnOwnsRuntime: true,
       runWorkspaceTurn: async ({ runId, lease, recorder }) => {
         for (const event of await this.env.WorkspaceRuntimeAgent.getByName(`${runId}:workspace`).runComparison({
           runId,
@@ -133,6 +143,19 @@ function workspaceFileCapability(self: Env["SELF"], workingCopyId: string): Work
   return (self as unknown as WorkspaceFileCapabilityService).getEntrypoint("WorkspaceFileCapability", {
     props: { workspaceName: "think-runtime-comparison", workingCopyId },
   }) as WorkspaceDynamicWorkerFileCapability;
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 async function routeCompareRunRequest(request: Request, env: Env): Promise<Response | null> {

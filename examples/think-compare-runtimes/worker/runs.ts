@@ -60,6 +60,8 @@ export interface StartComparisonRunOptions {
   createSandboxRuntime?: (lease: SandboxLease) => SandboxRunRuntime | Promise<SandboxRunRuntime>;
   runWorkspaceTurn?: (input: WorkspaceRuntimeTurnInput) => Promise<void>;
   runSandboxTurn?: (input: SandboxRuntimeTurnInput) => Promise<void>;
+  workspaceTurnOwnsRuntime?: boolean;
+  sandboxTurnOwnsRuntime?: boolean;
   workspaceSandboxPool?: RunSandboxPool;
   rawSandboxPool?: RunSandboxPool;
 }
@@ -78,20 +80,25 @@ export async function runComparison(input: {
   runId: string;
   recorder: RuntimeTurnRecorder;
   options?: StartComparisonRunOptions;
+  skipRunStarted?: boolean;
 }): Promise<void> {
   const options = input.options ?? {};
   const recorder = input.recorder;
 
-  await recorder.record({ runtime: "both", kind: "run_started", title: "Run started", detail: compareFixture.task.title });
+  if (!input.skipRunStarted) {
+    await recorder.record({ runtime: "both", kind: "run_started", title: "Run started", detail: compareFixture.task.title });
+  }
   await recordWorkspaceWing(recorder, {
     createRuntime: options.createWorkspaceRuntime ?? (() => defaultWorkspaceRuntime),
     runTurn: options.runWorkspaceTurn ?? runScriptedWorkspaceTurn,
     pool: options.workspaceSandboxPool ?? defaultPool("workspace-default"),
+    turnOwnsRuntime: options.workspaceTurnOwnsRuntime ?? false,
   });
   await recordSandboxWing(recorder, {
     createRuntime: options.createSandboxRuntime ?? (() => defaultSandboxRuntime),
     runTurn: options.runSandboxTurn ?? runScriptedSandboxTurn,
     pool: options.rawSandboxPool ?? defaultPool("sandbox-default"),
+    turnOwnsRuntime: options.sandboxTurnOwnsRuntime ?? false,
   });
   await recorder.record({ runtime: "both", kind: "run_completed", title: "Run completed", detail: "Both runtime wings reached terminal state." });
 }
@@ -102,12 +109,13 @@ async function recordWorkspaceWing(
     createRuntime: (lease: SandboxLease) => WorkspaceRunRuntime | Promise<WorkspaceRunRuntime>;
     runTurn: (input: WorkspaceRuntimeTurnInput) => Promise<void>;
     pool: RunSandboxPool;
+    turnOwnsRuntime: boolean;
   },
 ): Promise<void> {
   await recorder.record({ runtime: "workspace", kind: "runtime_started", title: "Workspace-backed runtime", detail: "Opened Workspace and prepared durable edit surface." });
   const lease = await input.pool.lease();
   await recorder.record({ runtime: "workspace", kind: "container_acquired", title: "Workspace Sandbox acquired", detail: JSON.stringify({ sandboxId: lease.id }) });
-  const runtime = await input.createRuntime(lease);
+  const runtime = input.turnOwnsRuntime ? defaultWorkspaceRuntime : await input.createRuntime(lease);
 
   try {
     const firstTurnEvent = recorder.events.length;
@@ -129,12 +137,13 @@ async function recordSandboxWing(
     createRuntime: (lease: SandboxLease) => SandboxRunRuntime | Promise<SandboxRunRuntime>;
     runTurn: (input: SandboxRuntimeTurnInput) => Promise<void>;
     pool: RunSandboxPool;
+    turnOwnsRuntime: boolean;
   },
 ): Promise<void> {
   await recorder.record({ runtime: "sandbox", kind: "runtime_started", title: "Raw Sandbox runtime", detail: "Warm Sandbox filesystem seeded with the fixture." });
   const lease = await input.pool.lease();
   await recorder.record({ runtime: "sandbox", kind: "container_acquired", title: "Raw Sandbox acquired", detail: JSON.stringify({ sandboxId: lease.id }) });
-  const runtime = await input.createRuntime(lease);
+  const runtime = input.turnOwnsRuntime ? defaultSandboxRuntime : await input.createRuntime(lease);
 
   try {
     const firstTurnEvent = recorder.events.length;

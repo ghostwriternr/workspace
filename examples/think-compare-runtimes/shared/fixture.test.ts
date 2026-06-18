@@ -4,7 +4,7 @@ import { compareFixture, fixtureFileEntries, fixtureManifest } from "./fixture";
 
 describe("compareFixture", () => {
   test("defines one fixed docs task with files for validation", () => {
-    expect(compareFixture.projectRoot).toBe("/workspace/repo");
+    expect(compareFixture.projectRoot).toBe("/workspace");
     expect(compareFixture.task.title).toBe("Document Smart Request Policies");
     expect(compareFixture.task.acceptanceCriteria).toContain("Create docs/smart-request-policies.md");
 

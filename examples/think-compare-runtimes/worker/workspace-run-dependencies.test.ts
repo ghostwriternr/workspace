@@ -120,10 +120,22 @@ describe("createWorkspaceRunOptions", () => {
     expect(loaderCalls[0]).toMatchObject({ mainModule: "harness.js" });
     expect(loaderCalls[1]).toMatchObject({ capabilityFor: expect.stringMatching(/^compare-live-copy-/) });
     expect(sandbox.outboundHosts).toHaveLength(1);
-    expect(sandbox.commands.map((call) => call.command)).toEqual([
-      "timeout 115s workspace-mount",
-      "npm run check",
-      "timeout 115s workspace-capture",
+    expect(sandbox.commands).toEqual([
+      {
+        command: "timeout 115s workspace-mount",
+        options: expect.objectContaining({
+          cwd: "/",
+          env: expect.objectContaining({ WORKSPACE_PATH: "/workspace" }),
+        }),
+      },
+      { command: "npm run check", options: { cwd: "/workspace" } },
+      {
+        command: "timeout 115s workspace-capture",
+        options: expect.objectContaining({
+          cwd: "/",
+          env: expect.objectContaining({ WORKSPACE_PATH: "/workspace" }),
+        }),
+      },
     ]);
   });
 });

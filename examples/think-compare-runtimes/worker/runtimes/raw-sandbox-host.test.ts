@@ -24,11 +24,11 @@ describe("createRawSandboxHostForLease", () => {
 
     const host = createRawSandboxHostForLease(factory, { id: "raw-0" });
 
-    await host.writeFile("/workspace/repo/README.md", "hello");
-    await expect(host.readFile("/workspace/repo/README.md")).resolves.toBe(
-      "contents:/workspace/repo/README.md",
+    await host.writeFile("/workspace/README.md", "hello");
+    await expect(host.readFile("/workspace/README.md")).resolves.toBe(
+      "contents:/workspace/README.md",
     );
-    await expect(host.exec("npm run check", { cwd: "/workspace/repo" })).resolves.toEqual({
+    await expect(host.exec("npm run check", { cwd: "/workspace" })).resolves.toEqual({
       exitCode: 0,
       stdout: "ok\n",
       stderr: "",
@@ -36,9 +36,9 @@ describe("createRawSandboxHostForLease", () => {
 
     expect(calls).toEqual([
       { id: "raw-0", options: { sleepAfter: "10m" } },
-      ["writeFile", "/workspace/repo/README.md", "hello"],
-      ["readFile", "/workspace/repo/README.md"],
-      ["exec", "npm run check", { cwd: "/workspace/repo" }],
+      ["writeFile", "/workspace/README.md", "hello"],
+      ["readFile", "/workspace/README.md"],
+      ["exec", "npm run check", { cwd: "/workspace" }],
     ]);
   });
 });

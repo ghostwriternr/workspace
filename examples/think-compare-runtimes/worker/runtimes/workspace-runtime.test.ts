@@ -34,7 +34,7 @@ describe("createWorkspaceBackedRuntime", () => {
 
     await expect(runtime.shell({ command: "npm run check" })).resolves.toEqual({
       command: "npm run check",
-      cwd: "/workspace/repo",
+      cwd: "/workspace",
       exitCode: 0,
       stdout: "checked\n",
       stderr: "",
@@ -67,7 +67,7 @@ class FakeWorkspaceHost implements WorkspaceBackedRuntimeHost {
 
   async runSandboxCommand(command: string, options: { cwd: string }): Promise<{ exitCode: number; stdout: string; stderr: string }> {
     this.attached += 1;
-    expect(options.cwd).toBe("/workspace/repo");
+    expect(options.cwd).toBe("/workspace");
     return { exitCode: command === "npm run check" ? 0 : 1, stdout: "checked\n", stderr: "" };
   }
 

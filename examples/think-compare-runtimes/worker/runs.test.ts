@@ -72,6 +72,39 @@ describe("startComparisonRun", () => {
     );
   });
 
+  test("lets injected Think turns own runtime construction", async () => {
+    const calls: string[] = [];
+    const run = await startComparisonRun({
+      now: fixedClock(),
+      workspaceTurnOwnsRuntime: true,
+      sandboxTurnOwnsRuntime: true,
+      createWorkspaceRuntime: async () => {
+        calls.push("workspace.runtime");
+        return fakeWorkspaceRuntime(calls);
+      },
+      createSandboxRuntime: async () => {
+        calls.push("sandbox.runtime");
+        return fakeSandboxRuntime(calls);
+      },
+      runWorkspaceTurn: async ({ recorder }) => {
+        calls.push("workspace.turn");
+        await recorder.record({ runtime: "workspace", kind: "agent_message", title: "Workspace Think response", detail: "workspace done" });
+      },
+      runSandboxTurn: async ({ recorder }) => {
+        calls.push("sandbox.turn");
+        await recorder.record({ runtime: "sandbox", kind: "agent_message", title: "Sandbox Think response", detail: "sandbox done" });
+      },
+    });
+
+    expect(calls).toEqual(["workspace.turn", "sandbox.turn"]);
+    expect(run.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ runtime: "workspace", kind: "runtime_completed" }),
+        expect.objectContaining({ runtime: "sandbox", kind: "runtime_completed" }),
+      ]),
+    );
+  });
+
   test("records failed Think turns without marking the runtime completed", async () => {
     const run = await startComparisonRun({
       now: fixedClock(),
@@ -137,7 +170,7 @@ function fakeWorkspaceRuntime(calls: string[]) {
     },
     async shell(input: { command: string }) {
       calls.push(`workspace.shell:${input.command}`);
-      return { command: input.command, cwd: "/workspace/repo", exitCode: 0, stdout: "checked\n", stderr: "" };
+      return { command: input.command, cwd: "/workspace", exitCode: 0, stdout: "checked\n", stderr: "" };
     },
   };
 }
@@ -158,7 +191,7 @@ function fakeSandboxRuntime(calls: string[]) {
     },
     async shell(input: { command: string }) {
       calls.push(`sandbox.shell:${input.command}`);
-      return { command: input.command, cwd: "/workspace/repo", exitCode: 0, stdout: "checked\n", stderr: "" };
+      return { command: input.command, cwd: "/workspace", exitCode: 0, stdout: "checked\n", stderr: "" };
     },
   };
 }

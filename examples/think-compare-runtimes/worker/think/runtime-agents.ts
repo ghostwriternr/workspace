@@ -5,6 +5,7 @@ import { getSandbox } from "@cloudflare/sandbox";
 
 import { createRuntimeThinkTools, type RuntimeThinkToolRecorder } from "./runtime-tools";
 import { runtimeSystemPrompt, runtimeTaskPrompt } from "./prompts";
+import { KIMI_TURN_MAX_ATTEMPTS, isRetryableThinkTurnError, thinkTurnRetryDelayMs, withRuntimeSetupTimeout } from "./runtime-retry";
 import type { RuntimeId } from "../../shared/events";
 import type { RunEventInput } from "../runs";
 import { createWorkspaceRunOptionsFromBindings } from "../workspace-run-dependencies";
@@ -56,7 +57,11 @@ abstract class RuntimeComparisonAgent extends Think<RuntimeThinkEnv> {
   ): Promise<RunEventInput[]> {
     await this.__unsafe_ensureInitialized();
     const recorder = new RuntimeAgentRecorder(this.runtime);
-    await runtimeTools.seedFixture();
+    await withRuntimeSetupTimeout(
+      runtimeTools.seedFixture(),
+      60_000,
+      `${this.runtime} runtime fixture setup timed out.`,
+    );
     recorder.record({
       runtime: this.runtime,
       kind: "runtime_note",
@@ -81,16 +86,9 @@ abstract class RuntimeComparisonAgent extends Think<RuntimeThinkEnv> {
         runtime: this.runtime,
         kind: "agent_message",
         title: "Think turn started",
-        detail: `Model-backed Think agent is running against the ${this.runtime} runtime.`,
+        detail: `Kimi-backed Think agent is running against the ${this.runtime} runtime.`,
       });
-      const submission = await this.submitMessages([
-        {
-          id: crypto.randomUUID(),
-          role: "user",
-          parts: [{ type: "text", text: runtimeTaskPrompt() }],
-        },
-      ]);
-      const text = await this.awaitAssistantText(submission.submissionId);
+      const text = await this.runThinkSubmissionWithRetries(recorder);
       await this.flushStreamingDeltas();
       recorder.record({
         runtime: this.runtime,
@@ -138,6 +136,36 @@ abstract class RuntimeComparisonAgent extends Think<RuntimeThinkEnv> {
 
   override async onStepFinish(_ctx: StepContext): Promise<void> {
     await this.flushStreamingDeltas();
+  }
+
+  private async runThinkSubmissionWithRetries(recorder: RuntimeAgentRecorder): Promise<string> {
+    for (let attempt = 1; attempt <= KIMI_TURN_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        const submission = await this.submitMessages([
+          {
+            id: crypto.randomUUID(),
+            role: "user",
+            parts: [{ type: "text", text: runtimeTaskPrompt() }],
+          },
+        ]);
+        return await this.awaitAssistantText(submission.submissionId);
+      } catch (error) {
+        if (attempt >= KIMI_TURN_MAX_ATTEMPTS || !isRetryableThinkTurnError(error)) {
+          throw error;
+        }
+
+        await recorder.record({
+          runtime: this.runtime,
+          kind: "agent_message",
+          title: "Retrying Kimi turn",
+          detail: `Attempt ${attempt} failed with ${errorMessage(error)}. Retrying with Kimi.`,
+        });
+        await this.clearMessages();
+        await scheduler.wait(thinkTurnRetryDelayMs(attempt));
+      }
+    }
+
+    throw new Error("Kimi turn retry loop exited unexpectedly.");
   }
 
   private async awaitAssistantText(submissionId: string): Promise<string> {

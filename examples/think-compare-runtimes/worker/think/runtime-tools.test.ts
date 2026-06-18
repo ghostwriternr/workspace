@@ -29,6 +29,42 @@ describe("createRuntimeThinkTools", () => {
     ]);
   });
 
+  test("serializes runtime tool execution", async () => {
+    const order: string[] = [];
+    let releaseFirst: (() => void) | undefined;
+    const firstStarted = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    const tools = createRuntimeThinkTools({
+      runtime: "sandbox",
+      recorder: { record: () => undefined },
+      runtimeTools: {
+        async seedFixture() {},
+        async read(input) {
+          order.push(`start:${input.path}`);
+          if (input.path === "/first") {
+            await firstStarted;
+          }
+          order.push(`finish:${input.path}`);
+          return input.path;
+        },
+        async write(input) { return { path: input.path }; },
+        async edit(input) { return { path: input.path, replacements: 1 }; },
+        async shell(input) { return { command: input.command, exitCode: 0, stdout: "", stderr: "" }; },
+      },
+    });
+
+    const first = tools.read.execute?.({ path: "/first" }, toolExecutionOptions());
+    const second = tools.read.execute?.({ path: "/second" }, toolExecutionOptions());
+
+    await waitForMicrotasks();
+    expect(order).toEqual(["start:/first"]);
+    releaseFirst?.();
+    await expect(Promise.all([first, second])).resolves.toEqual(["/first", "/second"]);
+    expect(order).toEqual(["start:/first", "finish:/first", "start:/second", "finish:/second"]);
+  });
+
   test("wraps raw Sandbox tools without a Dynamic Worker run tool", () => {
     const tools = createRuntimeThinkTools({
       runtime: "sandbox",
@@ -45,6 +81,10 @@ describe("createRuntimeThinkTools", () => {
     expect(Object.keys(tools).sort()).toEqual(["edit", "read", "shell", "write"]);
   });
 });
+
+function waitForMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 function toolExecutionOptions() {
   return { toolCallId: "test", messages: [], abortSignal: undefined } as never;
