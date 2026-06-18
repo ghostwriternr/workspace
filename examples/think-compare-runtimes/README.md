@@ -28,6 +28,11 @@ This example currently has:
 - Think-backed runtime agents for both wings, using Workers AI and the same
   model-facing coding task.
 
+Runtime-specific wiring lives under `worker/runtime-harness/`. That local
+harness is intentionally not a package API yet: it gives this example one
+coherent coding-runtime seam while the reusable Workspace, Dynamic Worker, and
+Sandbox packages keep their narrower product boundaries.
+
 ## Commands
 
 ```bash

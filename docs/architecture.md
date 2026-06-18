@@ -57,6 +57,11 @@ examples/photo-agent-demo/
 examples/coding-agent-demo/
   Think coding agent importing public GitHub repos, then editing them via
   Dynamic Worker (`run`) and Sandbox (`shell`) over one working copy
+
+examples/think-compare-runtimes/
+  Fixed-task comparison of Workspace-backed and raw Sandbox agent runtimes.
+  Its `worker/runtime-harness/` directory is an example-local composition
+  layer, not a Workspace package API.
 ```
 
 ## WorkspaceObject
