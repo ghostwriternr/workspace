@@ -5,7 +5,7 @@ import { getSandbox } from "@cloudflare/sandbox";
 
 import { createRuntimeThinkTools, type RuntimeThinkToolRecorder } from "./runtime-tools";
 import { runtimeSystemPrompt, runtimeTaskPrompt } from "./prompts";
-import { KIMI_TURN_MAX_ATTEMPTS, isRetryableThinkTurnError, thinkTurnRetryDelayMs, withRuntimeSetupTimeout } from "./runtime-retry";
+import { KIMI_TURN_ATTEMPT_TIMEOUT_MS, KIMI_TURN_MAX_ATTEMPTS, isRetryableThinkTurnError, thinkTurnRetryDelayMs, withRuntimeSetupTimeout } from "./runtime-retry";
 import type { RuntimeId } from "../../shared/events";
 import type { RunEventInput } from "../runs";
 import { createWorkspaceRunOptionsFromBindings } from "../workspace-run-dependencies";
@@ -169,6 +169,7 @@ abstract class RuntimeComparisonAgent extends Think<RuntimeThinkEnv> {
   }
 
   private async awaitAssistantText(submissionId: string): Promise<string> {
+    const deadline = Date.now() + KIMI_TURN_ATTEMPT_TIMEOUT_MS;
     for (;;) {
       const inspection = await this.inspectSubmission(submissionId);
       if (!inspection) throw new Error(`Submission ${submissionId} vanished.`);
@@ -179,6 +180,9 @@ abstract class RuntimeComparisonAgent extends Think<RuntimeThinkEnv> {
       }
       if (inspection.status === "error" || inspection.status === "aborted" || inspection.status === "skipped") {
         throw new Error(`Think turn ended in status=${inspection.status}${inspection.error ? `: ${inspection.error}` : ""}`);
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(`Kimi turn timed out waiting for submission ${submissionId}.`);
       }
       await scheduler.wait(500);
     }

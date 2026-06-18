@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { isRetryableThinkTurnError, thinkTurnRetryDelayMs, withRuntimeSetupTimeout } from "./runtime-retry";
+import { KIMI_TURN_ATTEMPT_TIMEOUT_MS, isRetryableThinkTurnError, thinkTurnRetryDelayMs, withRuntimeSetupTimeout } from "./runtime-retry";
 
 describe("runtime Think agent retry classification", () => {
   test("retries generic Kimi stream failures", () => {
@@ -9,6 +9,11 @@ describe("runtime Think agent retry classification", () => {
 
   test("retries explicit Kimi capacity failures", () => {
     expect(isRetryableThinkTurnError(new Error("Capacity temporarily exceeded, please try again."))).toBe(true);
+  });
+
+  test("retries Kimi submissions that remain running too long", () => {
+    expect(isRetryableThinkTurnError(new Error("Kimi turn timed out waiting for submission abc."))).toBe(true);
+    expect(KIMI_TURN_ATTEMPT_TIMEOUT_MS).toBeGreaterThan(60_000);
   });
 
   test("does not retry deterministic application failures", () => {
