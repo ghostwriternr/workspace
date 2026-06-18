@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { createRawSandboxRuntime, type RawSandboxHost } from "./sandbox-runtime";
+import { createRawSandboxRuntime, type RawSandboxHost } from "./raw-sandbox-runtime";
 
 describe("createRawSandboxRuntime", () => {
   test("seeds the fixed fixture under the shared project path", async () => {

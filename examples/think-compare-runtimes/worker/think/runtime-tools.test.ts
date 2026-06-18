@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { createRuntimeThinkTools } from "./runtime-tools";
+import type { SandboxComparisonRuntime, WorkspaceComparisonRuntime } from "../runtime-harness/coding-runtime";
 
 describe("createRuntimeThinkTools", () => {
   test("wraps Workspace runtime tools with event recording", async () => {
@@ -15,7 +16,7 @@ describe("createRuntimeThinkTools", () => {
         async edit(input) { return { path: input.path, replacements: input.oldText === "old" ? 1 : 0 }; },
         async run(input) { return { ran: input.code.includes("WORKSPACE") }; },
         async shell(input) { return { command: input.command, exitCode: 0, stdout: "ok\n", stderr: "" }; },
-      },
+      } satisfies WorkspaceComparisonRuntime,
     });
 
     await expect(tools.read.execute?.({ path: "/README.md" }, toolExecutionOptions())).resolves.toBe("read:/README.md");
@@ -52,7 +53,7 @@ describe("createRuntimeThinkTools", () => {
         async write(input) { return { path: input.path }; },
         async edit(input) { return { path: input.path, replacements: 1 }; },
         async shell(input) { return { command: input.command, exitCode: 0, stdout: "", stderr: "" }; },
-      },
+      } satisfies SandboxComparisonRuntime,
     });
 
     const first = tools.read.execute?.({ path: "/first" }, toolExecutionOptions());
@@ -75,7 +76,7 @@ describe("createRuntimeThinkTools", () => {
         async write(input) { return { path: input.path }; },
         async edit(input) { return { path: input.path, replacements: 1 }; },
         async shell(input) { return { command: input.command, exitCode: 0, stdout: "", stderr: "" }; },
-      },
+      } satisfies SandboxComparisonRuntime,
     });
 
     expect(Object.keys(tools).sort()).toEqual(["edit", "read", "shell", "write"]);

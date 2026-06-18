@@ -1,4 +1,5 @@
 import { fixtureFileEntries } from "../../shared/fixture";
+import type { SandboxComparisonRuntime } from "./coding-runtime";
 
 const projectRoot = "/workspace";
 
@@ -11,7 +12,7 @@ export interface RawSandboxHost {
   ): Promise<{ exitCode: number; stdout: string; stderr: string }>;
 }
 
-export interface RawSandboxRuntime {
+export interface RawSandboxRuntime extends SandboxComparisonRuntime {
   seedFixture(): Promise<void>;
   read(input: { path: string }): Promise<string>;
   write(input: { path: string; contents: string }): Promise<{ path: string }>;

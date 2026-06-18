@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { Workspace } from "@cloudflare/workspace";
 import { createFakeArtifacts, resetFakeArtifacts } from "@cloudflare/workspace/testing";
 
-import { createWorkspaceRunOptions, createWorkspaceRunOptionsFromBindings } from "./workspace-run-dependencies";
+import { createWorkspaceRunOptions, createWorkspaceRunOptionsFromBindings } from "./workspace-run-options";
 
 describe("createWorkspaceRunOptions", () => {
   afterEach(() => {

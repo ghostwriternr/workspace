@@ -1,26 +1,10 @@
 import type { RunEvent } from "../shared/events";
 import { compareFixture } from "../shared/fixture";
+import type { SandboxComparisonRuntime, WorkspaceComparisonRuntime } from "./runtime-harness/coding-runtime";
 
 export interface ComparisonRun {
   id: string;
   events: RunEvent[];
-}
-
-export interface WorkspaceRunRuntime {
-  seedFixture(): Promise<void>;
-  read(input: { path: string }): Promise<string>;
-  write(input: { path: string; contents: string }): Promise<{ path: string }>;
-  edit(input: { path: string; oldText: string; newText: string }): Promise<{ path: string; replacements: number }>;
-  run(input: { code: string }): Promise<unknown>;
-  shell(input: { command: string }): Promise<unknown>;
-}
-
-export interface SandboxRunRuntime {
-  seedFixture(): Promise<void>;
-  read(input: { path: string }): Promise<string>;
-  write(input: { path: string; contents: string }): Promise<{ path: string }>;
-  edit(input: { path: string; oldText: string; newText: string }): Promise<{ path: string; replacements: number }>;
-  shell(input: { command: string }): Promise<unknown>;
 }
 
 interface SandboxLease {
@@ -38,14 +22,14 @@ export interface RuntimeTurnRecorder {
 interface WorkspaceRuntimeTurnInput {
   runId: string;
   lease: SandboxLease;
-  runtime?: WorkspaceRunRuntime;
+  runtime?: WorkspaceComparisonRuntime;
   recorder: RuntimeTurnRecorder;
 }
 
 interface SandboxRuntimeTurnInput {
   runId: string;
   lease: SandboxLease;
-  runtime?: SandboxRunRuntime;
+  runtime?: SandboxComparisonRuntime;
   recorder: RuntimeTurnRecorder;
 }
 
@@ -56,8 +40,8 @@ interface RunSandboxPool {
 
 export interface StartComparisonRunOptions {
   now?: () => string;
-  createWorkspaceRuntime?: (lease: SandboxLease) => WorkspaceRunRuntime | Promise<WorkspaceRunRuntime>;
-  createSandboxRuntime?: (lease: SandboxLease) => SandboxRunRuntime | Promise<SandboxRunRuntime>;
+  createWorkspaceRuntime?: (lease: SandboxLease) => WorkspaceComparisonRuntime | Promise<WorkspaceComparisonRuntime>;
+  createSandboxRuntime?: (lease: SandboxLease) => SandboxComparisonRuntime | Promise<SandboxComparisonRuntime>;
   runWorkspaceTurn?: (input: WorkspaceRuntimeTurnInput) => Promise<void>;
   runSandboxTurn?: (input: SandboxRuntimeTurnInput) => Promise<void>;
   workspaceSandboxPool?: RunSandboxPool;
@@ -102,7 +86,7 @@ export async function runComparison(input: {
 async function recordWorkspaceWing(
   recorder: RuntimeTurnRecorder,
   input: {
-    createRuntime?: (lease: SandboxLease) => WorkspaceRunRuntime | Promise<WorkspaceRunRuntime>;
+    createRuntime?: (lease: SandboxLease) => WorkspaceComparisonRuntime | Promise<WorkspaceComparisonRuntime>;
     runTurn: (input: WorkspaceRuntimeTurnInput) => Promise<void>;
     pool: RunSandboxPool;
   },
@@ -129,7 +113,7 @@ async function recordWorkspaceWing(
 async function recordSandboxWing(
   recorder: RuntimeTurnRecorder,
   input: {
-    createRuntime?: (lease: SandboxLease) => SandboxRunRuntime | Promise<SandboxRunRuntime>;
+    createRuntime?: (lease: SandboxLease) => SandboxComparisonRuntime | Promise<SandboxComparisonRuntime>;
     runTurn: (input: SandboxRuntimeTurnInput) => Promise<void>;
     pool: RunSandboxPool;
   },
@@ -214,7 +198,7 @@ export default async function ({ WORKSPACE }) {
 }
 `;
 
-const defaultWorkspaceRuntime: WorkspaceRunRuntime = {
+const defaultWorkspaceRuntime: WorkspaceComparisonRuntime = {
   async seedFixture() {},
   async read() {
     return "";
@@ -233,7 +217,7 @@ const defaultWorkspaceRuntime: WorkspaceRunRuntime = {
   },
 };
 
-const defaultSandboxRuntime: SandboxRunRuntime = {
+const defaultSandboxRuntime: SandboxComparisonRuntime = {
   async seedFixture() {},
   async read() {
     return "";

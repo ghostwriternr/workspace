@@ -1,4 +1,5 @@
 import { fixtureFileEntries } from "../../shared/fixture";
+import type { WorkspaceComparisonRuntime } from "./coding-runtime";
 
 const sandboxProjectRoot = "/workspace";
 
@@ -13,7 +14,7 @@ export interface WorkspaceBackedRuntimeHost {
   captureSandboxChanges(): Promise<void>;
 }
 
-export interface WorkspaceBackedRuntime {
+export interface WorkspaceBackedRuntime extends WorkspaceComparisonRuntime {
   seedFixture(): Promise<void>;
   read(input: { path: string }): Promise<string>;
   write(input: { path: string; contents: string }): Promise<{ path: string }>;

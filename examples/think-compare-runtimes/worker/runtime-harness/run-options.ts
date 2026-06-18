@@ -1,8 +1,8 @@
-import type { RunEventInput, StartComparisonRunOptions } from "./runs";
-import { createSandboxWarmPool } from "./sandbox-warm-pool";
-import { createThinkRuntimeTurnOptions } from "./think/runtime-turn-options";
-import { createRawSandboxHostForLease, type RawSandboxFactory } from "./runtimes/raw-sandbox-host";
-import { createRawSandboxRuntime } from "./runtimes/sandbox-runtime";
+import type { RunEventInput, StartComparisonRunOptions } from "../runs";
+import { createSandboxWarmPool } from "../sandbox-warm-pool";
+import { createThinkRuntimeTurnOptions } from "../think/runtime-turn-options";
+import { createRawSandboxHostForLease, type RawSandboxFactory } from "./raw-sandbox-host";
+import { createRawSandboxRuntime } from "./raw-sandbox-runtime";
 
 interface RuntimeAgentNamespace {
   getByName(name: string): {
@@ -14,8 +14,7 @@ export interface ComparisonRunDependencyOptions {
   rawSandboxFactory: RawSandboxFactory;
 }
 
-export interface LiveComparisonRunDependencyOptions extends ComparisonRunDependencyOptions {
-  workspaceRunOptions: Pick<StartComparisonRunOptions, "createWorkspaceRuntime" | "workspaceSandboxPool">;
+export interface LiveComparisonRunDependencyOptions {
   workspaceRuntimeAgent: RuntimeAgentNamespace;
   sandboxRuntimeAgent: RuntimeAgentNamespace;
   createId?: () => string;
@@ -32,16 +31,12 @@ export function createComparisonRunOptions(
 }
 
 export function createLiveComparisonRunOptions({
-  workspaceRunOptions,
   workspaceRuntimeAgent,
   sandboxRuntimeAgent,
-  rawSandboxFactory,
   createId = () => crypto.randomUUID(),
 }: LiveComparisonRunDependencyOptions): StartComparisonRunOptions {
   const id = createId();
   return {
-    ...createComparisonRunOptions({ rawSandboxFactory }),
-    ...workspaceRunOptions,
     workspaceSandboxPool: createSandboxWarmPool({ prefix: `workspace-sandbox-${id}`, size: 2 }),
     rawSandboxPool: createSandboxWarmPool({ prefix: `raw-sandbox-${id}`, size: 2 }),
     ...createThinkRuntimeTurnOptions({ workspaceRuntimeAgent, sandboxRuntimeAgent }),

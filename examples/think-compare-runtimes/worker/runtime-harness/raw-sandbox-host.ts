@@ -1,4 +1,4 @@
-import type { RawSandboxHost } from "./sandbox-runtime";
+import type { RawSandboxHost } from "./raw-sandbox-runtime";
 
 export interface RawSandboxLease {
   id: string;

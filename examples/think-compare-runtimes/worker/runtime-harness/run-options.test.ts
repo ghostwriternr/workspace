@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { createComparisonRunOptions, createLiveComparisonRunOptions } from "./run-dependencies";
+import { createComparisonRunOptions, createLiveComparisonRunOptions } from "./run-options";
 
 describe("createComparisonRunOptions", () => {
   test("builds raw Sandbox runtime from a leased Sandbox client", async () => {
@@ -39,29 +39,6 @@ describe("createComparisonRunOptions", () => {
 
   test("combines raw Sandbox, Workspace, and Think runtime options", async () => {
     const options = createLiveComparisonRunOptions({
-      rawSandboxFactory() {
-        return {
-          async writeFile() {},
-          async readFile() {
-            return "contents";
-          },
-          async exec() {
-            return { exitCode: 0, stdout: "", stderr: "" };
-          },
-        };
-      },
-      workspaceRunOptions: {
-        createWorkspaceRuntime: async () => ({
-          async seedFixture() {},
-          async read() { return ""; },
-          async write(input: { path: string }) { return { path: input.path }; },
-          async edit(input: { path: string }) { return { path: input.path, replacements: 1 }; },
-          async run() { return { ok: true }; },
-          async shell(input: { command: string }) {
-            return { command: input.command, cwd: "/workspace", exitCode: 0, stdout: "", stderr: "" };
-          },
-        }),
-      },
       workspaceRuntimeAgent: fakeRuntimeAgent("workspace"),
       sandboxRuntimeAgent: fakeRuntimeAgent("sandbox"),
       createId: () => "fixed",
@@ -69,8 +46,8 @@ describe("createComparisonRunOptions", () => {
 
     expect((await options.workspaceSandboxPool?.lease())?.id).toBe("workspace-sandbox-fixed-0");
     expect((await options.rawSandboxPool?.lease())?.id).toBe("raw-sandbox-fixed-0");
-    expect(options.createWorkspaceRuntime).toBeDefined();
-    expect(options.createSandboxRuntime).toBeDefined();
+    expect(options.createWorkspaceRuntime).toBeUndefined();
+    expect(options.createSandboxRuntime).toBeUndefined();
     expect(options.runWorkspaceTurn).toBeDefined();
     expect(options.runSandboxTurn).toBeDefined();
   });

@@ -8,10 +8,10 @@ import { runtimeSystemPrompt, runtimeTaskPrompt } from "./prompts";
 import { KIMI_TURN_ATTEMPT_TIMEOUT_MS, KIMI_TURN_MAX_ATTEMPTS, isRetryableThinkTurnError, thinkTurnRetryDelayMs, withRuntimeSetupTimeout } from "./runtime-retry";
 import type { RuntimeId } from "../../shared/events";
 import type { RunEventInput } from "../runs";
-import { createWorkspaceRunOptionsFromBindings } from "../workspace-run-dependencies";
-import { createRawSandboxFactory } from "../runtimes/cloudflare-sandbox";
-import { createRawSandboxHostForLease } from "../runtimes/raw-sandbox-host";
-import { createRawSandboxRuntime } from "../runtimes/sandbox-runtime";
+import { createWorkspaceRunOptionsFromBindings } from "../runtime-harness/workspace-run-options";
+import { createRawSandboxFactory } from "../runtime-harness/cloudflare-sandbox";
+import { createRawSandboxHostForLease } from "../runtime-harness/raw-sandbox-host";
+import { createRawSandboxRuntime } from "../runtime-harness/raw-sandbox-runtime";
 import type { WorkspaceSandboxClient } from "@cloudflare/workspace-adapter-sandbox";
 import type { WorkspaceDynamicWorkerFileCapability } from "@cloudflare/workspace-adapter-dynamic-worker";
 

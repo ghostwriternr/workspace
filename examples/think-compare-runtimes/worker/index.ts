@@ -1,17 +1,12 @@
-import { getSandbox } from "@cloudflare/sandbox";
-import type { WorkspaceDynamicWorkerFileCapability } from "@cloudflare/workspace-adapter-dynamic-worker";
 import { WorkspaceSandbox, WorkspaceContainerProxy } from "@cloudflare/workspace-adapter-sandbox/workers";
-import type { WorkspaceSandboxClient } from "@cloudflare/workspace-adapter-sandbox";
 import { getServerByName, Server } from "partyserver";
 
 import { compareFixture } from "../shared/fixture";
 import { handleRequest } from "./http";
-import { createLiveComparisonRunOptions } from "./run-dependencies";
+import { createLiveComparisonRunOptions } from "./runtime-harness/run-options";
 import { RunEventSink, type RunSession } from "./run-session";
 import type { RunEvent } from "../shared/events";
 import { runComparison, type StartComparisonRunOptions } from "./runs";
-import { createRawSandboxFactory } from "./runtimes/cloudflare-sandbox";
-import { createWorkspaceRunOptionsFromBindings } from "./workspace-run-dependencies";
 
 export { WorkspaceObject } from "@cloudflare/workspace/workers";
 export { WorkspaceFileCapability } from "./workspace-file-capability";
@@ -73,7 +68,7 @@ export class CompareRun extends Server<Env> {
       await runComparison({
         runId: this.name,
         recorder: this.#sink,
-        options: await withTimeout(this.#runOptions(), 60_000, "Comparison runtime dependency setup timed out."),
+        options: this.#runOptions(),
         skipRunStarted: true,
       });
     } catch (error) {
@@ -86,16 +81,8 @@ export class CompareRun extends Server<Env> {
     }
   }
 
-  async #runOptions(): Promise<StartComparisonRunOptions> {
+  #runOptions(): StartComparisonRunOptions {
     return createLiveComparisonRunOptions({
-      rawSandboxFactory: createRawSandboxFactory(this.env.Sandbox),
-      workspaceRunOptions: await createWorkspaceRunOptionsFromBindings({
-        artifacts: this.env.ARTIFACTS,
-        dynamicWorkers: this.env.DYNAMIC_WORKERS,
-        objects: this.env.WORKSPACE_OBJECTS,
-        sandboxForLease: (lease) => getSandbox(this.env.Sandbox, lease.id, { sleepAfter: "10m" }) as WorkspaceSandboxClient,
-        workspaceForWorkingCopy: (workingCopyId) => workspaceFileCapability(this.env.SELF, workingCopyId),
-      }),
       workspaceRuntimeAgent: this.env.WorkspaceRuntimeAgent,
       sandboxRuntimeAgent: this.env.SandboxRuntimeAgent,
     });
@@ -113,32 +100,6 @@ export class CompareRun extends Server<Env> {
       },
       broadcast: (message) => this.broadcast(message),
     });
-  }
-}
-
-interface WorkspaceFileCapabilityService {
-  getEntrypoint(
-    name: "WorkspaceFileCapability",
-    options: { props: { workspaceName: string; workingCopyId: string } },
-  ): unknown;
-}
-
-function workspaceFileCapability(self: Env["SELF"], workingCopyId: string): WorkspaceDynamicWorkerFileCapability {
-  return (self as unknown as WorkspaceFileCapabilityService).getEntrypoint("WorkspaceFileCapability", {
-    props: { workspaceName: "think-runtime-comparison", workingCopyId },
-  }) as WorkspaceDynamicWorkerFileCapability;
-}
-
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
-  });
-
-  try {
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
   }
 }
 

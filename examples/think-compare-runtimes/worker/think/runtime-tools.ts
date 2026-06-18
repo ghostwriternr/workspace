@@ -2,7 +2,8 @@ import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 
 import type { RuntimeId } from "../../shared/events";
-import type { RunEventInput, SandboxRunRuntime, WorkspaceRunRuntime } from "../runs";
+import type { SandboxComparisonRuntime, WorkspaceComparisonRuntime } from "../runtime-harness/coding-runtime";
+import type { RunEventInput } from "../runs";
 
 export interface RuntimeThinkToolRecorder {
   record(input: RunEventInput): unknown | Promise<unknown>;
@@ -10,7 +11,7 @@ export interface RuntimeThinkToolRecorder {
 
 interface RuntimeThinkToolsOptions {
   runtime: RuntimeId;
-  runtimeTools: WorkspaceRunRuntime | SandboxRunRuntime;
+  runtimeTools: WorkspaceComparisonRuntime | SandboxComparisonRuntime;
   recorder: RuntimeThinkToolRecorder;
 }
 
