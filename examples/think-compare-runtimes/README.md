@@ -25,6 +25,8 @@ This example currently has:
 - a raw Sandbox runtime wired through the Sandbox SDK;
 - a Workspace-backed runtime wired through `@cloudflare/workspace`, Dynamic
   Workers, and Workspace Sandbox attachment/capture;
+- Durable Object-backed warm pools for both Sandbox runtimes, refreshed by DO
+  alarms and a cron trigger;
 - Think-backed runtime agents for both wings, using Workers AI and the same
   model-facing coding task.
 
@@ -43,8 +45,9 @@ npm run build
 npm run dev
 ```
 
-The Sandbox image extends `workspace-sandbox-base:local`, so local Docker builds
-need the shared base image first:
+The Workspace Sandbox image extends `workspace-sandbox-base:local`, so local
+Docker builds need the shared base image first. The raw Sandbox wing uses the
+plain Sandbox SDK base image.
 
 ```bash
 just build-sandbox-base

@@ -60,8 +60,8 @@ examples/coding-agent-demo/
 
 examples/think-compare-runtimes/
   Fixed-task comparison of Workspace-backed and raw Sandbox agent runtimes.
-  Its `worker/runtime-harness/` directory is an example-local composition
-  layer, not a Workspace package API.
+  Its `worker/runtime-harness/` and DO-backed Sandbox warm pools are
+  example-local composition layers, not Workspace package APIs.
 ```
 
 ## WorkspaceObject

@@ -5,7 +5,7 @@ import { createWorkspaceDynamicWorkerRunner, type WorkspaceDynamicWorkerFileCapa
 import { attachWorkspaceCopyToSandbox, type WorkspaceSandboxClient, type WorkspaceSandboxMount } from "@cloudflare/workspace-adapter-sandbox";
 
 import { fixtureFileEntries } from "../../shared/fixture";
-import { createSandboxWarmPool } from "../sandbox-warm-pool";
+import { createDurableSandboxWarmPool, type SandboxWarmPoolNamespace } from "../sandbox-warm-pool";
 import type { StartComparisonRunOptions } from "../runs";
 import { createWorkspaceRuntimeFactory, type WorkspaceRunLease, type WorkspaceRuntimeFactoryOptions } from "./workspace-runtime-factory";
 
@@ -23,6 +23,7 @@ export type WorkspaceRunBindingOptions = {
   dynamicWorkers: WorkspaceDynamicWorkerLoader;
   workspaceName?: string;
   sandboxPoolPrefix?: string;
+  workspaceSandboxWarmPool?: SandboxWarmPoolNamespace;
   sandboxForLease(lease: WorkspaceRunLease): WorkspaceSandboxClient;
   workspaceForWorkingCopy?(workingCopyId: string): WorkspaceDynamicWorkerFileCapability;
 };
@@ -96,10 +97,12 @@ export async function createWorkspaceRunOptionsFromBindings(
         throw new Error(captured.error.message);
       }
     },
-    workspaceSandboxPool: createSandboxWarmPool({
-      prefix: options.sandboxPoolPrefix ?? `workspace-sandbox-${crypto.randomUUID()}`,
-      size: 2,
-    }),
+    workspaceSandboxPool: options.workspaceSandboxWarmPool
+      ? createDurableSandboxWarmPool(
+          options.workspaceSandboxWarmPool,
+          options.sandboxPoolPrefix ?? `workspace-sandbox-${crypto.randomUUID()}`,
+        )
+      : createStaticSandboxPool(options.sandboxPoolPrefix ?? `workspace-sandbox-${crypto.randomUUID()}`, 2),
   });
 }
 
@@ -107,7 +110,7 @@ export function createWorkspaceRunOptions(
   options: WorkspaceRunDependencyOptions,
 ): Pick<StartComparisonRunOptions, "createWorkspaceRuntime" | "workspaceSandboxPool"> {
   return {
-    workspaceSandboxPool: options.workspaceSandboxPool ?? createSandboxWarmPool({ prefix: "workspace-sandbox", size: 2 }),
+    workspaceSandboxPool: options.workspaceSandboxPool ?? createStaticSandboxPool("workspace-sandbox", 2),
     createWorkspaceRuntime: createWorkspaceRuntimeFactory(options),
   };
 }
@@ -171,4 +174,22 @@ function isArtifactsNotFound(error: unknown): boolean {
 
 function toAbsolutePath(path: string): string {
   return path.startsWith("/") ? path : `/${path}`;
+}
+
+function createStaticSandboxPool(prefix: string, size: number): NonNullable<StartComparisonRunOptions["workspaceSandboxPool"]> {
+  const available = Array.from({ length: size }, (_, index) => `${prefix}-${index}`);
+  const leased = new Set<string>();
+
+  return {
+    async lease() {
+      const id = available.shift();
+      if (!id) throw new Error(`No warm sandboxes available for ${prefix}`);
+      leased.add(id);
+      return { id };
+    },
+    async release(lease) {
+      if (!leased.delete(lease.id)) return;
+      available.unshift(lease.id);
+    },
+  };
 }

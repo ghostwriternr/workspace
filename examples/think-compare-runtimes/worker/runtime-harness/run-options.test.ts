@@ -1,4 +1,7 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+
+vi.mock("cloudflare:workers", () => ({ DurableObject: class {} }));
+vi.mock("@cloudflare/sandbox", () => ({ getSandbox: vi.fn() }));
 
 import { createComparisonRunOptions, createLiveComparisonRunOptions } from "./run-options";
 
@@ -37,15 +40,36 @@ describe("createComparisonRunOptions", () => {
     expect(calls).toContainEqual(["exec", "npm run check", { cwd: "/workspace" }]);
   });
 
-  test("combines raw Sandbox, Workspace, and Think runtime options", async () => {
+  test("combines raw Sandbox, Workspace, Think, and durable warm pool options", async () => {
+    const workspacePool = fakeWarmPool("workspace-container");
+    const sandboxPool = fakeWarmPool("sandbox-container");
     const options = createLiveComparisonRunOptions({
       workspaceRuntimeAgent: fakeRuntimeAgent("workspace"),
       sandboxRuntimeAgent: fakeRuntimeAgent("sandbox"),
+      workspaceSandboxWarmPool: workspacePool.namespace,
+      rawSandboxWarmPool: sandboxPool.namespace,
       createId: () => "fixed",
     });
 
-    expect((await options.workspaceSandboxPool?.lease())?.id).toBe("workspace-sandbox-fixed-0");
-    expect((await options.rawSandboxPool?.lease())?.id).toBe("raw-sandbox-fixed-0");
+    const workspaceLease = await options.workspaceSandboxPool?.lease();
+    const sandboxLease = await options.rawSandboxPool?.lease();
+
+    expect(workspaceLease).toEqual({ id: "workspace-container", logicalId: "fixed:workspace:0" });
+    expect(sandboxLease).toEqual({ id: "sandbox-container", logicalId: "fixed:sandbox:0" });
+
+    await options.workspaceSandboxPool?.release(workspaceLease!);
+    await options.rawSandboxPool?.release(sandboxLease!);
+
+    expect(workspacePool.calls).toEqual([
+      ["getByName", "default"],
+      ["getContainer", "fixed:workspace:0"],
+      ["releaseContainer", "fixed:workspace:0"],
+    ]);
+    expect(sandboxPool.calls).toEqual([
+      ["getByName", "default"],
+      ["getContainer", "fixed:sandbox:0"],
+      ["releaseContainer", "fixed:sandbox:0"],
+    ]);
     expect(options.createWorkspaceRuntime).toBeUndefined();
     expect(options.createSandboxRuntime).toBeUndefined();
     expect(options.runWorkspaceTurn).toBeDefined();
@@ -61,6 +85,27 @@ function fakeRuntimeAgent(runtime: "workspace" | "sandbox") {
           return [{ runtime, kind: "agent_message", title: name, detail: "ok" } as const];
         },
       };
+    },
+  };
+}
+
+function fakeWarmPool(containerId: string) {
+  const calls: unknown[] = [];
+  return {
+    calls,
+    namespace: {
+      getByName(name: string) {
+        calls.push(["getByName", name]);
+        return {
+          async getContainer(logicalId: string) {
+            calls.push(["getContainer", logicalId]);
+            return containerId;
+          },
+          async releaseContainer(logicalId: string) {
+            calls.push(["releaseContainer", logicalId]);
+          },
+        };
+      },
     },
   };
 }

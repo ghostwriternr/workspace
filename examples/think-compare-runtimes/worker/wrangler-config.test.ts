@@ -10,7 +10,10 @@ describe("wrangler config", () => {
     expect(config.vars).toMatchObject({
       CONTAINER_SLEEP_AFTER: "2m",
       SANDBOX_TRANSPORT: "rpc",
+      WARM_POOL_REFRESH_INTERVAL: "10000",
+      WARM_POOL_TARGET: "2",
     });
+    expect(config.triggers).toEqual({ crons: ["*/1 * * * *"] });
     expect(config.containers).toEqual([
       expect.objectContaining({
         class_name: "WorkspaceSandbox",
@@ -39,6 +42,8 @@ describe("wrangler config", () => {
         expect.objectContaining({ name: "CompareRun", class_name: "CompareRun" }),
         expect.objectContaining({ name: "WorkspaceRuntimeAgent", class_name: "WorkspaceRuntimeAgent" }),
         expect.objectContaining({ name: "SandboxRuntimeAgent", class_name: "SandboxRuntimeAgent" }),
+        expect.objectContaining({ name: "WorkspaceSandboxWarmPool", class_name: "WorkspaceSandboxWarmPool" }),
+        expect.objectContaining({ name: "RawSandboxWarmPool", class_name: "RawSandboxWarmPool" }),
       ]),
     );
     expect(config.migrations).toEqual([
@@ -58,8 +63,14 @@ describe("wrangler config", () => {
         tag: "v4",
         new_sqlite_classes: expect.arrayContaining(["WorkspaceSandbox"]),
       }),
+      expect.objectContaining({
+        tag: "v5",
+        new_sqlite_classes: expect.arrayContaining(["WorkspaceSandboxWarmPool", "RawSandboxWarmPool"]),
+      }),
     ]);
     expect(workerSource).toContain("class WorkspaceSandbox extends BaseWorkspaceSandbox");
     expect(workerSource).toContain("class Sandbox extends RawSandbox");
+    expect(workerSource).toContain("export { RawSandboxWarmPool, WorkspaceSandboxWarmPool }");
+    expect(workerSource).toContain("async scheduled");
   });
 });

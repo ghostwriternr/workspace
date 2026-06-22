@@ -1,5 +1,8 @@
 import { Result } from "better-result";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+
+vi.mock("cloudflare:workers", () => ({ DurableObject: class {} }));
+vi.mock("@cloudflare/sandbox", () => ({ getSandbox: vi.fn() }));
 import { Workspace } from "@cloudflare/workspace";
 import { createFakeArtifacts, resetFakeArtifacts } from "@cloudflare/workspace/testing";
 

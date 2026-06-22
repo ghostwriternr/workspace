@@ -6,12 +6,15 @@
   "compatibility_flags": ["nodejs_compat", "experimental"],
   "vars": {
     "CONTAINER_SLEEP_AFTER": "2m",
-    "SANDBOX_TRANSPORT": "rpc"
+    "SANDBOX_TRANSPORT": "rpc",
+    "WARM_POOL_REFRESH_INTERVAL": "10000",
+    "WARM_POOL_TARGET": "2"
   },
   "assets": {
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*", "/health"]
   },
+  "triggers": { "crons": ["*/1 * * * *"] },
   "ai": { "binding": "AI" },
   "artifacts": [{ "binding": "ARTIFACTS", "namespace": "workspace-think-compare-runtimes", "remote": true }],
   "services": [{ "binding": "SELF", "service": "workspace-think-compare-runtimes" }],
@@ -37,14 +40,17 @@
       { "name": "WORKSPACE_OBJECTS", "class_name": "WorkspaceObject" },
       { "name": "CompareRun", "class_name": "CompareRun" },
       { "name": "WorkspaceRuntimeAgent", "class_name": "WorkspaceRuntimeAgent" },
-      { "name": "SandboxRuntimeAgent", "class_name": "SandboxRuntimeAgent" }
+      { "name": "SandboxRuntimeAgent", "class_name": "SandboxRuntimeAgent" },
+      { "name": "WorkspaceSandboxWarmPool", "class_name": "WorkspaceSandboxWarmPool" },
+      { "name": "RawSandboxWarmPool", "class_name": "RawSandboxWarmPool" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Sandbox", "WorkspaceObject"] },
     { "tag": "v2", "new_sqlite_classes": ["WorkspaceRuntimeAgent", "SandboxRuntimeAgent"] },
     { "tag": "v3", "new_sqlite_classes": ["CompareRun"] },
-    { "tag": "v4", "new_sqlite_classes": ["WorkspaceSandbox"] }
+    { "tag": "v4", "new_sqlite_classes": ["WorkspaceSandbox"] },
+    { "tag": "v5", "new_sqlite_classes": ["WorkspaceSandboxWarmPool", "RawSandboxWarmPool"] }
   ],
   "observability": { "enabled": true },
   "upload_source_maps": true

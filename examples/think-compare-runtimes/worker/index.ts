@@ -5,6 +5,7 @@ import { getServerByName, Server } from "partyserver";
 import { compareFixture } from "../shared/fixture";
 import { handleRequest } from "./http";
 import { createLiveComparisonRunOptions } from "./runtime-harness/run-options";
+import { RawSandboxWarmPool, refreshSandboxWarmPools, WorkspaceSandboxWarmPool } from "./sandbox-warm-pool";
 import { RunEventSink, type RunSession } from "./run-session";
 import type { RunEvent } from "../shared/events";
 import { runComparison, type RunEventInput, type StartComparisonRunOptions } from "./runs";
@@ -19,6 +20,8 @@ const EVENTS_KEY = "events";
 export class WorkspaceSandbox extends BaseWorkspaceSandbox<Env> {}
 
 export class Sandbox extends RawSandbox<Env> {}
+
+export { RawSandboxWarmPool, WorkspaceSandboxWarmPool };
 
 export class CompareRun extends Server<Env> {
   static override options = { hibernate: true };
@@ -93,6 +96,8 @@ export class CompareRun extends Server<Env> {
     return createLiveComparisonRunOptions({
       workspaceRuntimeAgent: this.env.WorkspaceRuntimeAgent,
       sandboxRuntimeAgent: this.env.SandboxRuntimeAgent,
+      workspaceSandboxWarmPool: this.env.WorkspaceSandboxWarmPool,
+      rawSandboxWarmPool: this.env.RawSandboxWarmPool,
     });
   }
 
@@ -139,5 +144,9 @@ export default {
         return run.startComparison();
       },
     });
+  },
+
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(refreshSandboxWarmPools(env));
   },
 };

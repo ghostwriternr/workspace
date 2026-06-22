@@ -1,29 +1,42 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
-import { createSandboxWarmPool } from "./sandbox-warm-pool";
+vi.mock("cloudflare:workers", () => ({
+  DurableObject: class {},
+}));
 
-describe("createSandboxWarmPool", () => {
-  test("leases and releases warm sandbox identifiers", async () => {
-    const pool = createSandboxWarmPool({ prefix: "workspace", size: 2 });
+vi.mock("@cloudflare/sandbox", () => ({
+  getSandbox: vi.fn(),
+}));
 
-    const first = await pool.lease();
-    const second = await pool.lease();
+import { createDurableSandboxWarmPool } from "./sandbox-warm-pool";
 
-    expect(first).toEqual({ id: "workspace-0" });
-    expect(second).toEqual({ id: "workspace-1" });
-    expect(pool.status()).toEqual({ size: 2, available: 0, leased: 2 });
+describe("createDurableSandboxWarmPool", () => {
+  test("leases and releases containers through the durable pool handle", async () => {
+    const calls: unknown[] = [];
+    const namespace = {
+      getByName(name: string) {
+        calls.push(["getByName", name]);
+        return {
+          async getContainer(logicalId: string) {
+            calls.push(["getContainer", logicalId]);
+            return "container-1";
+          },
+          async releaseContainer(logicalId: string) {
+            calls.push(["releaseContainer", logicalId]);
+          },
+        };
+      },
+    };
 
-    await pool.release(first);
+    const pool = createDurableSandboxWarmPool(namespace as never, "run-1:workspace");
+    const lease = await pool.lease();
+    await pool.release(lease);
 
-    expect(pool.status()).toEqual({ size: 2, available: 1, leased: 1 });
-    await expect(pool.lease()).resolves.toEqual({ id: "workspace-0" });
-  });
-
-  test("reports capacity exhaustion as a normal error", async () => {
-    const pool = createSandboxWarmPool({ prefix: "raw", size: 1 });
-
-    await pool.lease();
-
-    await expect(pool.lease()).rejects.toThrow("No warm sandboxes available for raw");
+    expect(lease).toEqual({ id: "container-1", logicalId: "run-1:workspace:0" });
+    expect(calls).toEqual([
+      ["getByName", "default"],
+      ["getContainer", "run-1:workspace:0"],
+      ["releaseContainer", "run-1:workspace:0"],
+    ]);
   });
 });
