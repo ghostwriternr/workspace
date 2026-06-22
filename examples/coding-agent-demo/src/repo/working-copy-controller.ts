@@ -2,14 +2,14 @@ import { Result, type Result as BetterResult } from "better-result";
 import {
   Workspace,
   type WorkspaceApplyError,
-  type WorkspaceCopyError,
+  type WorkspaceCopyCreateError,
   type WorkspaceCopyFileError,
+  type WorkspaceCopyLookupError,
   type WorkspaceCurrentFileError,
   type WorkspaceDiscardError,
   type WorkspaceEntry,
-  type WorkspaceFileCopy,
+  type WorkspaceCopy,
   type WorkspaceFileWriteTreeError,
-  type WorkspaceNamespace,
   type WorkspaceStat,
 } from "@cloudflare/workspace";
 import type {
@@ -18,18 +18,20 @@ import type {
   WorkspaceDynamicWorkerResult,
   WorkspaceDynamicWorkerRunner,
 } from "@cloudflare/workspace-adapter-dynamic-worker";
-import type {
-  WorkspaceSandboxCommandError,
-  WorkspaceSandboxCommandRunner,
-  WorkspaceSandboxCommandResult,
+import {
+  attachWorkspaceCopyToSandbox,
+  type WorkspaceSandboxAttachError,
+  type WorkspaceSandboxCaptureError,
+  type WorkspaceSandboxCaptureSummary,
+  type WorkspaceSandboxClient,
 } from "@cloudflare/workspace-adapter-sandbox";
 import { normalizeAgentPath } from "../agent/path";
 
 export type RepoWorkingCopyControllerDependencies = {
   workspaceName: string;
-  workspaces: WorkspaceNamespace;
+  workspace: Workspace;
   dynamicWorkerRunner: WorkspaceDynamicWorkerRunner;
-  shellRunner: WorkspaceSandboxCommandRunner;
+  sandboxForWorkingCopy(workingCopyId: string): WorkspaceSandboxClient;
   workspaceForWorkingCopy(workingCopyId: string): WorkspaceDynamicWorkerFileCapability;
   getWorkingCopyId(): string | undefined;
   setWorkingCopyId(workingCopyId: string | undefined): void;
@@ -69,8 +71,17 @@ export type RepoRunResult = {
   result: WorkspaceDynamicWorkerResult;
 };
 
-export type RepoShellResult = WorkspaceSandboxCommandResult & {
+export type RepoShellResult = {
   status: "shell-completed";
+  command: string;
+  root: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+};
+
+export type RepoCaptureResult = WorkspaceSandboxCaptureSummary & {
+  status: "workspace-captured";
 };
 
 export type RepoApplyWorkingCopyResult = {
@@ -111,13 +122,14 @@ type ReadOffsetOutOfRangeError = {
   totalLines: number;
 };
 
-export type RepoReadError = ReadOffsetOutOfRangeError | WorkspaceCurrentFileError | WorkspaceCopyError | WorkspaceCopyFileError;
-export type RepoWriteError = WorkspaceCopyError | WorkspaceFileWriteTreeError;
-export type RepoExactEditError = TextNotFoundError | AmbiguousTextEditError | WorkspaceCopyError | WorkspaceCopyFileError | WorkspaceFileWriteTreeError;
-export type RepoRunError = WorkspaceCopyError | WorkspaceDynamicWorkerExecutionError;
-export type RepoShellError = WorkspaceCopyError | WorkspaceSandboxCommandError;
-export type RepoApplyWorkingCopyError = NoActiveWorkingCopyError | WorkspaceCopyError | WorkspaceApplyError;
-export type RepoDiscardWorkingCopyError = NoActiveWorkingCopyError | WorkspaceCopyError | WorkspaceDiscardError;
+export type RepoReadError = ReadOffsetOutOfRangeError | WorkspaceCurrentFileError | WorkspaceCopyLookupError | WorkspaceCopyFileError;
+export type RepoWriteError = WorkspaceCopyCreateError | WorkspaceFileWriteTreeError;
+export type RepoExactEditError = TextNotFoundError | AmbiguousTextEditError | WorkspaceCopyCreateError | WorkspaceCopyFileError | WorkspaceFileWriteTreeError;
+export type RepoRunError = WorkspaceCopyCreateError | WorkspaceDynamicWorkerExecutionError;
+export type RepoShellError = WorkspaceCopyCreateError | WorkspaceSandboxAttachError;
+export type RepoCaptureError = NoActiveWorkingCopyError | WorkspaceCopyLookupError | WorkspaceSandboxAttachError | WorkspaceSandboxCaptureError;
+export type RepoApplyWorkingCopyError = NoActiveWorkingCopyError | WorkspaceCopyLookupError | WorkspaceApplyError;
+export type RepoDiscardWorkingCopyError = NoActiveWorkingCopyError | WorkspaceCopyLookupError | WorkspaceDiscardError;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -237,19 +249,50 @@ export class RepoWorkingCopyController {
       return Result.err(copy.error);
     }
 
-    const result = await this.dependencies.shellRunner.runCommand({
-      files: copy.value.files,
-      sandboxId: copy.value.id,
-      command,
-      root: "/workspace",
+    const attached = await attachWorkspaceCopyToSandbox({
+      copy: copy.value,
+      sandbox: this.dependencies.sandboxForWorkingCopy(copy.value.id),
+      path: "/workspace",
     });
-    if (Result.isError(result)) {
-      return Result.err(result.error);
+    if (Result.isError(attached)) {
+      return Result.err(attached.error);
     }
+
+    const result = await this.dependencies.sandboxForWorkingCopy(copy.value.id).exec(command, { cwd: attached.value.path });
 
     return Result.ok({
       status: "shell-completed",
-      ...result.value,
+      command,
+      root: attached.value.path,
+      exitCode: result.exitCode,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    });
+  }
+
+  async captureWorkingCopy(): Promise<BetterResult<RepoCaptureResult, RepoCaptureError>> {
+    const copy = await this.activeWorkingCopy("capture");
+    if (Result.isError(copy)) {
+      return Result.err(copy.error);
+    }
+
+    const attached = await attachWorkspaceCopyToSandbox({
+      copy: copy.value,
+      sandbox: this.dependencies.sandboxForWorkingCopy(copy.value.id),
+      path: "/workspace",
+    });
+    if (Result.isError(attached)) {
+      return Result.err(attached.error);
+    }
+
+    const captured = await attached.value.capture();
+    if (Result.isError(captured)) {
+      return Result.err(captured.error);
+    }
+
+    return Result.ok({
+      status: "workspace-captured",
+      ...captured.value,
     });
   }
 
@@ -291,14 +334,14 @@ export class RepoWorkingCopyController {
     });
   }
 
-  private async filesForRead(): Promise<BetterResult<RepoReadableFiles, WorkspaceCopyError>> {
-    const workspace = Workspace.get(this.dependencies.workspaces, this.dependencies.workspaceName);
+  private async filesForRead(): Promise<BetterResult<RepoReadableFiles, WorkspaceCopyLookupError>> {
+    const workspace = this.dependencies.workspace;
     const workingCopyId = this.dependencies.getWorkingCopyId();
     if (!workingCopyId) {
       return Result.ok(workspace.files);
     }
 
-    const copy = await workspace.files.getCopy(workingCopyId);
+    const copy = await workspace.copies.get(workingCopyId);
     if (Result.isError(copy)) {
       this.dependencies.setWorkingCopyId(undefined);
       return Result.err(copy.error);
@@ -306,18 +349,18 @@ export class RepoWorkingCopyController {
     return Result.ok(copy.value.files);
   }
 
-  private async workingCopy(): Promise<BetterResult<WorkspaceFileCopy, WorkspaceCopyError>> {
-    const workspace = Workspace.get(this.dependencies.workspaces, this.dependencies.workspaceName);
+  private async workingCopy(): Promise<BetterResult<WorkspaceCopy, WorkspaceCopyCreateError>> {
+    const workspace = this.dependencies.workspace;
     const existing = this.dependencies.getWorkingCopyId();
     if (existing) {
-      const copy = await workspace.files.getCopy(existing);
+      const copy = await workspace.copies.get(existing);
       if (!Result.isError(copy)) {
         return Result.ok(copy.value);
       }
       this.dependencies.setWorkingCopyId(undefined);
     }
 
-    const copy = await workspace.files.copy("coding-working-copy");
+    const copy = await workspace.copies.create({ label: "coding-working-copy" });
     if (Result.isError(copy)) {
       return Result.err(copy.error);
     }
@@ -325,7 +368,7 @@ export class RepoWorkingCopyController {
     return Result.ok(copy.value);
   }
 
-  private async activeWorkingCopy(action: "apply" | "discard"): Promise<BetterResult<WorkspaceFileCopy, NoActiveWorkingCopyError | WorkspaceCopyError>> {
+  private async activeWorkingCopy(action: "apply" | "discard" | "capture"): Promise<BetterResult<WorkspaceCopy, NoActiveWorkingCopyError | WorkspaceCopyLookupError>> {
     const workingCopyId = this.dependencies.getWorkingCopyId();
     if (!workingCopyId) {
       return Result.err({
@@ -334,8 +377,8 @@ export class RepoWorkingCopyController {
       });
     }
 
-    const workspace = Workspace.get(this.dependencies.workspaces, this.dependencies.workspaceName);
-    const copy = await workspace.files.getCopy(workingCopyId);
+    const workspace = this.dependencies.workspace;
+    const copy = await workspace.copies.get(workingCopyId);
     if (Result.isError(copy)) {
       this.dependencies.setWorkingCopyId(undefined);
       return Result.err(copy.error);

@@ -1,18 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
+import type { FakeWorkspaceObject } from "@cloudflare/workspace/testing";
 import { handlePhotoReadRequest } from "../src/http/photo-read";
+import { createFakeArtifactsWorkspace, resetFakeArtifactsWorkspace } from "./fake-artifacts-workspace";
 
 const originalPng = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
 const currentJpg = new Uint8Array([0xff, 0xd8, 0xff, 1]);
 const draftJpg = new Uint8Array([0xff, 0xd8, 0xff, 2]);
 
 describe("photo read HTTP route", () => {
-  it("serves uploaded original image bytes", async () => {
-    const workspaces = new FakeWorkspaces({ "/photos/original.png": originalPng });
+  afterEach(() => resetFakeArtifactsWorkspace());
+
+  it("serves uploaded original image bytes from an Artifacts-backed Workspace", async () => {
+    const { artifacts, object } = workspace({ demo: { "/photos/original.png": originalPng } }, "demo");
 
     const response = await handlePhotoReadRequest(
       new Request("http://example.com/api/workspaces/demo/photos/original"),
-      workspaces.asNamespace(),
+      artifacts,
+      workspaceObjects(object),
     );
 
     expect(response?.status).toBe(200);
@@ -21,11 +26,12 @@ describe("photo read HTTP route", () => {
   });
 
   it("serves committed current image bytes", async () => {
-    const workspaces = new FakeWorkspaces({ "/photos/current": currentJpg });
+    const { artifacts, object } = workspace({ demo: { "/photos/current": currentJpg } }, "demo");
 
     const response = await handlePhotoReadRequest(
       new Request("http://example.com/api/workspaces/demo/photos/current"),
-      workspaces.asNamespace(),
+      artifacts,
+      workspaceObjects(object),
     );
 
     expect(response?.status).toBe(200);
@@ -34,9 +40,11 @@ describe("photo read HTTP route", () => {
   });
 
   it("serves draft preview image bytes from the workspace's agent", async () => {
+    const { artifacts, object } = workspace({ demo: {} }, "demo");
     const response = await handlePhotoReadRequest(
       new Request("http://example.com/api/workspaces/demo/photos/draft"),
-      new FakeWorkspaces({}).asNamespace(),
+      artifacts,
+      workspaceObjects(object),
       { getByName: () => new FakePhotoAgent(draftJpg) },
     );
 
@@ -46,9 +54,23 @@ describe("photo read HTTP route", () => {
   });
 
   it("returns 404 when the requested image is missing", async () => {
+    const { artifacts, object } = workspace({ demo: {} }, "demo");
     const response = await handlePhotoReadRequest(
       new Request("http://example.com/api/workspaces/demo/photos/current"),
-      new FakeWorkspaces({}).asNamespace(),
+      artifacts,
+      workspaceObjects(object),
+    );
+
+    expect(response?.status).toBe(404);
+    await expect(response?.json()).resolves.toEqual({ error: "Photo not found" });
+  });
+
+  it("returns 404 when the workspace repository is missing", async () => {
+    const { artifacts, object } = createFakeArtifactsWorkspace();
+    const response = await handlePhotoReadRequest(
+      new Request("http://example.com/api/workspaces/demo/photos/current"),
+      artifacts,
+      workspaceObjects(object),
     );
 
     expect(response?.status).toBe(404);
@@ -56,36 +78,35 @@ describe("photo read HTTP route", () => {
   });
 
   it("ignores non-photo-read routes", async () => {
+    const { artifacts, object } = createFakeArtifactsWorkspace();
     const response = await handlePhotoReadRequest(
       new Request("http://example.com/api/demo-capabilities"),
-      new FakeWorkspaces({}).asNamespace(),
+      artifacts,
+      workspaceObjects(object),
     );
 
     expect(response).toBeUndefined();
   });
 });
 
+function workspace(initial: Record<string, Record<string, Uint8Array>>, name: string) {
+  const fake = createFakeArtifactsWorkspace(initial);
+  void fake.object.recordCurrentRepository({
+    repository: name,
+    remote: `https://git.example/${name}.git`,
+    defaultBranch: "main",
+  });
+  return fake;
+}
+
+function workspaceObjects(object: FakeWorkspaceObject) {
+  return { getByName: () => object };
+}
+
 class FakePhotoAgent {
   constructor(private readonly draft: Uint8Array) {}
 
   async readDraftImage() {
     return { status: "ok" as const, value: this.draft };
-  }
-}
-
-class FakeWorkspaces {
-  constructor(private readonly files: Record<string, Uint8Array>) {}
-
-  asNamespace() {
-    return {
-      getByName: () => ({
-        readFile: async (path: string) => {
-          const value = this.files[path];
-          return value
-            ? { status: "ok" as const, value }
-            : { status: "error" as const, error: { tag: "PathNotFoundError" } };
-        },
-      }),
-    };
   }
 }

@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${WORKSPACE_COPY_REF:?WORKSPACE_COPY_REF is required}"
+: "${WORKSPACE_PATH:=/workspace}"
+: "${WORKSPACE_CAPTURE_MESSAGE:=Capture Workspace changes}"
+
+if [[ "$WORKSPACE_PATH" != /* ]]; then
+  echo "workspace-capture: WORKSPACE_PATH must be absolute" >&2
+  exit 1
+fi
+
+if [ ! -d "$WORKSPACE_PATH" ]; then
+  echo "workspace-capture: WORKSPACE_PATH does not exist: $WORKSPACE_PATH" >&2
+  exit 1
+fi
+
+if [ ! -e "$WORKSPACE_PATH/.git" ]; then
+  echo "workspace-capture: WORKSPACE_PATH is not an artifact-fs git mount: $WORKSPACE_PATH" >&2
+  exit 1
+fi
+
+git config --global --add safe.directory "$WORKSPACE_PATH" >/dev/null 2>&1 || true
+
+if [ -z "$(git -C "$WORKSPACE_PATH" status --porcelain --untracked-files=all)" ]; then
+  printf 'captured=false\n'
+  printf 'head=%s\n' "$(git -C "$WORKSPACE_PATH" rev-parse HEAD)"
+  exit 0
+fi
+
+git -C "$WORKSPACE_PATH" add -A
+
+if git -C "$WORKSPACE_PATH" diff --cached --quiet; then
+  printf 'captured=false\n'
+  printf 'head=%s\n' "$(git -C "$WORKSPACE_PATH" rev-parse HEAD)"
+  exit 0
+fi
+
+git -C "$WORKSPACE_PATH" \
+  -c user.name="Workspace Sandbox" \
+  -c user.email="workspace-sandbox@example.invalid" \
+  commit -m "$WORKSPACE_CAPTURE_MESSAGE"
+
+git -C "$WORKSPACE_PATH" push origin "HEAD:$WORKSPACE_COPY_REF"
+
+printf 'captured=true\n'
+printf 'head=%s\n' "$(git -C "$WORKSPACE_PATH" rev-parse HEAD)"
+printf 'ref=%s\n' "$WORKSPACE_COPY_REF"

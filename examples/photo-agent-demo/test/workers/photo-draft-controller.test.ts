@@ -1,8 +1,10 @@
 import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
-import type { WorkspaceFileCopyFiles } from "@cloudflare/workspace";
+import { Workspace, type WorkspaceCopyFiles } from "@cloudflare/workspace";
+import type { WorkspaceDynamicWorkerFileCapability } from "@cloudflare/workspace-adapter-dynamic-worker";
 
 import { PhotoDraftController } from "../../src/photo/draft-controller";
+import { createFakeArtifactsWorkspace, type FakeArtifactsWorkspaceDriver } from "../fake-artifacts-workspace";
 
 const originalPng = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1]);
 const currentPng = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 2]);
@@ -20,19 +22,19 @@ describe("PhotoDraftController", () => {
 
     expect(draft).toEqual({
       status: "draft-ready",
-      draftEditId: "session-1",
+      draftEditId: dependencies.draftEditId,
       message: "Draft edit is ready.",
     });
     expect(state).toMatchObject({
       workspaceName: "demo",
       original: { exists: true, path: "/photos/original.png", bytes: originalPng.byteLength },
       current: { exists: false },
-      draft: { exists: false, draftEditId: "session-1" },
+      draft: { exists: false, draftEditId: dependencies.draftEditId },
     });
     expect(state.files.map((file) => file.path)).toEqual(["/notes/edit-summary.md", "/photos/original.png"]);
   });
 
-  it("runs commands with the draft mounted at /workspace and reconciles changes into the draft", async () => {
+  it("runs commands with the draft mounted and captures changes explicitly", async () => {
     const dependencies = createDependencies({
       head: { "/photos/original.png": originalPng },
       commandOutput: draftPng,
@@ -50,29 +52,32 @@ describe("PhotoDraftController", () => {
       stdout: "ok",
       stderr: "",
       exitCode: 0,
-      reconcile: {
-        created: [],
-        modified: ["/photos/current"],
-        deleted: [],
-        unchanged: 1,
-      },
     });
-    expect(dependencies.workspace.beginSessionCount).toBe(1);
-    expect(dependencies.sessionFiles["/photos/current"]).toEqual(draftPng);
-    expect(dependencies.commandRunner.calls).toEqual([
+    expect(dependencies.driver.file(dependencies.draftEditId!, "/photos/current")).toBeUndefined();
+
+    const captured = await controller.captureDraft();
+
+    expect(captured).toEqual({
+      status: "draft-captured",
+      capture: { path: "/workspace", stdout: "captured", stderr: "" },
+    });
+    expect(dependencies.driver.file(dependencies.draftEditId!, "/photos/current")).toEqual(draftPng);
+    expect(dependencies.sandbox.commands).toEqual([
+      expect.objectContaining({ command: expect.stringContaining("workspace-mount") }),
       {
         command: "identify /workspace/photos/original.png && convert /workspace/photos/original.png /workspace/photos/current",
-        root: "/workspace",
-        sandboxId: "session-1",
+        options: { cwd: "/workspace" },
       },
+      expect.objectContaining({ command: expect.stringContaining("workspace-mount") }),
+      expect.objectContaining({ command: expect.stringContaining("workspace-capture") }),
     ]);
   });
 
   it("reuses the existing draft for follow-up workspace commands", async () => {
     const dependencies = createDependencies({
       head: { "/photos/original.png": originalPng },
-      session: { "/photos/current": currentPng },
-      draftEditId: "session-1",
+      copy: { "/photos/current": currentPng },
+      draftEditId: "copy-1",
       commandOutput: draftPng,
     });
     const controller = new PhotoDraftController(dependencies);
@@ -81,22 +86,21 @@ describe("PhotoDraftController", () => {
       command: "convert /workspace/photos/current -resize 512x512^ /workspace/photos/current",
     });
 
-    expect(dependencies.workspace.beginSessionCount).toBe(0);
-    expect(dependencies.commandRunner.calls).toEqual([
+    expect(dependencies.sandbox.commands).toEqual([
+      expect.objectContaining({ command: expect.stringContaining("workspace-mount") }),
       {
         command: "convert /workspace/photos/current -resize 512x512^ /workspace/photos/current",
-        root: "/workspace",
-        sandboxId: "session-1",
+        options: { cwd: "/workspace" },
       },
     ]);
-    expect(dependencies.sessionFiles["/photos/current"]).toEqual(draftPng);
+    expect(dependencies.driver.file("copy-1", "/photos/current")).toEqual(currentPng);
   });
 
   it("runs Dynamic Worker code against the same draft working copy", async () => {
     const dependencies = createDependencies({
       head: { "/photos/original.png": originalPng },
-      session: { "/photos/current": currentPng },
-      draftEditId: "session-1",
+      copy: { "/photos/current": currentPng },
+      draftEditId: "copy-1",
     });
     const controller = new PhotoDraftController(dependencies);
 
@@ -109,14 +113,13 @@ describe("PhotoDraftController", () => {
       summary: "Dynamic Worker finished.",
       result: { wrote: "/notes/edit-summary.md" },
     });
-    expect(dependencies.workspace.beginSessionCount).toBe(0);
     expect(dependencies.dynamicWorkerRunner.calls).toEqual([
       {
         code: "export default async function(env) { const write = await env.WORKSPACE.writeFile('/notes/edit-summary.md', new TextEncoder().encode('cropped square')); if (write.status === 'error') return write; }",
       },
     ]);
-    expect(dependencies.sessionFiles["/photos/current"]).toEqual(currentPng);
-    expect(dependencies.sessionFiles["/notes/edit-summary.md"]).toEqual(new TextEncoder().encode("cropped square"));
+    expect(dependencies.driver.file("copy-1", "/photos/current")).toEqual(currentPng);
+    expect(dependencies.driver.file("copy-1", "/notes/edit-summary.md")).toEqual(new TextEncoder().encode("cropped square"));
     await expect(controller.listPhotoState()).resolves.toMatchObject({
       files: [{ path: "/notes/edit-summary.md" }, { path: "/photos/current" }],
     });
@@ -125,32 +128,49 @@ describe("PhotoDraftController", () => {
   it("previews, commits, and clears the draft edit", async () => {
     const dependencies = createDependencies({
       head: { "/photos/original.png": originalPng },
-      session: { "/photos/current": draftPng },
-      draftEditId: "session-1",
+      copy: { "/photos/current": draftPng },
+      draftEditId: "copy-1",
     });
     const controller = new PhotoDraftController(dependencies);
 
     await expect(controller.previewDraft()).resolves.toEqual({
       status: "draft-preview-ready",
-      draftEditId: "session-1",
+      draftEditId: "copy-1",
       path: "/photos/current",
       bytes: draftPng.byteLength,
     });
 
     await expect(controller.commitDraft()).resolves.toEqual({
       status: "current-updated",
-      revisionId: "revision-1",
-      createdAt: 2,
+      revisionId: "revision-copy-1",
+      createdAt: 1,
       message: "Draft edit is now the current version.",
     });
     expect(dependencies.draftEditId).toBeUndefined();
+    expect(dependencies.driver.file("demo", "/photos/current")).toEqual(draftPng);
+  });
+
+  it("returns commit errors as values", async () => {
+    const dependencies = createDependencies({
+      head: { "/photos/original.png": originalPng },
+      copy: { "/photos/current": draftPng },
+      draftEditId: "copy-1",
+    });
+    const controller = new PhotoDraftController(dependencies);
+    await dependencies.driver.discardWorkingCopy("demo", "copy-1");
+
+    await expect(controller.commitDraft()).resolves.toMatchObject({
+      status: "error",
+      error: { tag: "WorkspaceCopyNotFoundError" },
+    });
+    expect(dependencies.draftEditId).toBe("copy-1");
   });
 
   it("throws away the draft edit without publishing it", async () => {
     const dependencies = createDependencies({
       head: { "/photos/original.png": originalPng },
-      session: { "/photos/current": draftPng },
-      draftEditId: "session-1",
+      copy: { "/photos/current": draftPng },
+      draftEditId: "copy-1",
     });
     const controller = new PhotoDraftController(dependencies);
 
@@ -158,22 +178,22 @@ describe("PhotoDraftController", () => {
       status: "draft-discarded",
       message: "Draft edit was thrown away.",
     });
-    expect(dependencies.session.discarded).toBe(true);
+    expect(dependencies.driver.hasRepository("copy-1")).toBe(false);
     expect(dependencies.draftEditId).toBeUndefined();
   });
 
-  it("reads draft images through the active file copy", async () => {
+  it("reads draft images through the active working copy", async () => {
     const dependencies = createDependencies({
       head: { "/photos/original.png": originalPng },
-      session: { "/photos/current": draftPng },
-      draftEditId: "session-1",
+      copy: { "/photos/current": draftPng },
+      draftEditId: "copy-1",
     });
     const controller = new PhotoDraftController(dependencies);
 
     await expect(controller.readDraftImage()).resolves.toEqual({ status: "ok", value: draftPng });
   });
 
-  it("passes shell syntax through to the mounted workspace command runner", async () => {
+  it("passes shell syntax through to the mounted workspace", async () => {
     const dependencies = createDependencies({ head: { "/photos/original.png": originalPng } });
     const controller = new PhotoDraftController(dependencies);
 
@@ -190,7 +210,7 @@ describe("PhotoDraftController", () => {
 
     await expect(commandController.runWorkspaceCommand({ command: "identify /workspace/photos/original.png" })).resolves.toMatchObject({
       status: "error",
-      error: { tag: "WorkspaceSandboxMountError", message: "mount failed" },
+      error: { tag: "WorkspaceSandboxAttachError", message: "mount failed" },
     });
 
     const workerDependencies = createDependencies({ head: { "/photos/original.png": originalPng }, dynamicWorkerError: "worker failed" });
@@ -205,231 +225,71 @@ describe("PhotoDraftController", () => {
 
 type CreateDependenciesOptions = {
   head: Record<string, Uint8Array>;
-  session?: Record<string, Uint8Array>;
+  copy?: Record<string, Uint8Array>;
   draftEditId?: string;
   commandOutput?: Uint8Array;
   commandError?: string;
   dynamicWorkerError?: string;
 };
 
-function createDependencies(options: CreateDependenciesOptions) {
-  const workspace = new FakeWorkspace(options.head, options.session ?? {});
-  const commandRunner = new FakeWorkspaceCommandRunner(options.commandOutput ?? draftPng, options.commandError);
-  const dynamicWorkerRunner = new FakeDynamicWorkerRunner(workspace.session, options.dynamicWorkerError);
-  const dependencies = {
+type TestDependencies = ConstructorParameters<typeof PhotoDraftController>[0] & {
+  draftEditId?: string;
+  driver: FakeArtifactsWorkspaceDriver;
+  sandbox: FakeSandbox;
+  dynamicWorkerRunner: FakeDynamicWorkerRunner;
+};
+
+function createDependencies(options: CreateDependenciesOptions): TestDependencies {
+  const { artifacts, driver, object } = createFakeArtifactsWorkspace({ demo: options.head });
+  if (options.draftEditId) {
+    driver.seedWorkingCopy("demo", options.draftEditId, options.copy ?? {});
+  }
+  void object.recordCurrentRepository({
+    repository: "demo",
+    remote: "https://git.example/demo.git",
+    defaultBranch: "main",
+  });
+  if (options.draftEditId) {
+    void object.recordCopy({
+      copyId: options.draftEditId,
+      createdAt: 100,
+      baseRevisionId: "revision-demo-0",
+    });
+  }
+  const workspace = Workspace.bind({ artifacts, objects: { getByName: () => object } }).get("demo");
+  let draftEditId = options.draftEditId;
+  const sandbox = new FakeSandbox(workspace, () => draftEditId, options.commandOutput ?? draftPng, options.commandError);
+
+  return {
     workspaceName: "demo",
-    workspaces: { getByName: () => workspace },
-    commandRunner,
-    dynamicWorkerRunner,
-    workspaceForDraft: () => ({}) as never,
-    getDraftEditId: () => dependencies.draftEditId,
-    setDraftEditId: (draftEditId: string | undefined) => {
-      dependencies.draftEditId = draftEditId;
-    },
-    draftEditId: options.draftEditId,
     workspace,
-    session: workspace.session,
-    sessionFiles: workspace.session.files,
-  };
-  return dependencies;
+    sandboxForDraft: () => sandbox,
+    dynamicWorkerRunner: new FakeDynamicWorkerRunner(() => draftFiles(workspace, draftEditId), options.dynamicWorkerError),
+    workspaceForDraft: () => ({}) as WorkspaceDynamicWorkerFileCapability,
+    getDraftEditId: () => draftEditId,
+    setDraftEditId: (nextDraftEditId: string | undefined) => {
+      draftEditId = nextDraftEditId;
+    },
+    get draftEditId() {
+      return draftEditId;
+    },
+    driver,
+    sandbox,
+  } satisfies TestDependencies;
 }
 
-class FakeWorkspace {
-  readonly session: FakeSession;
-  beginSessionCount = 0;
-
-  constructor(
-    private readonly headFiles: Record<string, Uint8Array>,
-    sessionFiles: Record<string, Uint8Array>,
-  ) {
-    this.session = new FakeSession(sessionFiles);
-  }
-
-  async mkdir(_path: string) {
-    return { status: "ok" as const };
-  }
-
-  async writeFile(path: string, contents: Uint8Array) {
-    this.headFiles[path] = contents;
-    return { status: "ok" as const };
-  }
-
-  async readFile(path: string) {
-    return fileResult(this.headFiles[path], path);
-  }
-
-  async delete(path: string) {
-    delete this.headFiles[path];
-    return { status: "ok" as const };
-  }
-
-  async stat(path: string) {
-    const value = this.headFiles[path];
-    return value
-      ? { status: "ok" as const, value: { path, type: "file" as const, size: value.byteLength, createdAt: 1, updatedAt: 1 } }
-      : { status: "error" as const, error: pathNotFound(path) };
-  }
-
-  async list(path: string) {
-    const files = Object.keys(this.headFiles).filter((filePath) => filePath.startsWith(`${path}/`));
-    if (files.length === 0) {
-      return { status: "error" as const, error: pathNotFound(path) };
-    }
-    return {
-      status: "ok" as const,
-      value: files.map((filePath) => ({
-        name: filePath.slice(path.length + 1),
-        path: filePath,
-        type: "file" as const,
-      })),
-    };
-  }
-
-  async beginSession() {
-    this.beginSessionCount += 1;
-    for (const [path, contents] of Object.entries(this.headFiles)) {
-      this.session.files[path] ??= contents;
-    }
-    return { status: "ok" as const, value: { sessionId: "session-1", createdAt: 1 } };
-  }
-
-  async getSession(sessionId: string) {
-    if (sessionId !== "session-1") {
-      return { status: "error" as const, error: { tag: "SessionNotFoundError" as const, sessionId, message: `Session not found: ${sessionId}` } };
-    }
-    return { status: "ok" as const, value: { sessionId: "session-1", createdAt: 1 } };
-  }
-
-  async sessionMkdir(_sessionId: string, path: string) {
-    return this.session.mkdir(path);
-  }
-
-  async sessionWriteFile(_sessionId: string, path: string, contents: Uint8Array) {
-    return this.session.writeFile(path, contents);
-  }
-
-  async sessionWriteTreeBatch(_sessionId: string, root: string, entries: Array<{ path: string; contents: Uint8Array }>) {
-    return this.session.writeTree(root, entries);
-  }
-
-  async sessionReadFile(_sessionId: string, path: string) {
-    return this.session.readFile(path);
-  }
-
-  async sessionList(_sessionId: string, path: string) {
-    return this.session.list(path);
-  }
-
-  async sessionStat(_sessionId: string, path: string) {
-    return this.session.stat(path);
-  }
-
-  async sessionDelete(_sessionId: string, path: string) {
-    return this.session.delete(path);
-  }
-
-  async sessionCommit(_sessionId: string) {
-    return this.session.commit();
-  }
-
-  async sessionDiscard(_sessionId: string) {
-    return this.session.discard();
-  }
-}
-
-class FakeSession {
-  discarded = false;
-  disposeCount = 0;
-  infoCallCount = 0;
-
-  constructor(readonly files: Record<string, Uint8Array>) {}
-
-  async info() {
-    this.infoCallCount += 1;
-    return { status: "ok" as const, value: { sessionId: "session-1", createdAt: 1 } };
-  }
-
-  async readFile(path: string) {
-    return fileResult(this.files[path], path);
-  }
-
-  async writeFile(path: string, contents: Uint8Array) {
-    this.files[path] = contents;
-    return { status: "ok" as const };
-  }
-
-  async writeTree(root: string, entries: Array<{ path: string; contents: Uint8Array }>) {
-    for (const entry of entries) {
-      this.files[joinTreePath(root, entry.path)] = entry.contents;
-    }
-    return { status: "ok" as const };
-  }
-
-  async list(path: string) {
-    const entries: Record<string, { type: "directory" | "file" }> = { "/": { type: "directory" } };
-    for (const filePath of Object.keys(this.files)) {
-      const segments = filePath.split("/").filter(Boolean);
-      let current = "";
-      for (const segment of segments.slice(0, -1)) {
-        current = `${current}/${segment}`;
-        entries[current] = { type: "directory" };
-      }
-      entries[filePath] = { type: "file" };
-    }
-
-    const entry = entries[path];
-    if (!entry) return { status: "error" as const, error: pathNotFound(path) };
-    if (entry.type === "file") return { status: "error" as const, error: { tag: "NotDirectoryError" as const, path, message: `Not a directory: ${path}` } };
-
-    const prefix = path === "/" ? "/" : `${path}/`;
-    return {
-      status: "ok" as const,
-      value: Object.entries(entries)
-        .filter(([childPath]) => childPath !== path && childPath.startsWith(prefix))
-        .filter(([childPath]) => !childPath.slice(prefix.length).includes("/"))
-        .map(([childPath, child]) => ({
-          name: childPath.split("/").at(-1) ?? "",
-          path: childPath,
-          type: child.type,
-        })),
-    };
-  }
-
-  async mkdir(_path: string) {
-    return { status: "ok" as const };
-  }
-
-  async delete(path: string) {
-    delete this.files[path];
-    return { status: "ok" as const };
-  }
-
-  async stat(path: string) {
-    const value = this.files[path];
-    return value
-      ? { status: "ok" as const, value: { path, type: "file" as const, size: value.byteLength, createdAt: 1, updatedAt: 1 } }
-      : { status: "error" as const, error: pathNotFound(path) };
-  }
-
-  async commit() {
-    return { status: "ok" as const, value: { revisionId: "revision-1", createdAt: 2 } };
-  }
-
-  async discard() {
-    this.discarded = true;
-    return { status: "ok" as const };
-  }
-
-  [Symbol.dispose]() {
-    this.disposeCount += 1;
-  }
+async function draftFiles(workspace: Workspace, draftEditId: string | undefined): Promise<WorkspaceCopyFiles> {
+  if (!draftEditId) throw new Error("No draft edit exists.");
+  const copy = await workspace.copies.get(draftEditId);
+  if (Result.isError(copy)) throw new Error(`Draft edit not found: ${draftEditId}`);
+  return copy.value.files;
 }
 
 class FakeDynamicWorkerRunner {
   readonly calls: Array<{ code: string }> = [];
 
   constructor(
-    private readonly session: FakeSession,
+    private readonly getFiles: () => Promise<WorkspaceCopyFiles>,
     private readonly error?: string,
   ) {}
 
@@ -438,66 +298,40 @@ class FakeDynamicWorkerRunner {
     if (this.error) {
       return Result.err({ tag: "WorkspaceDynamicWorkerExecutionError" as const, message: this.error });
     }
-    await this.session.mkdir("/notes");
-    await this.session.writeFile("/notes/edit-summary.md", new TextEncoder().encode("cropped square"));
+
+    const files = await this.getFiles();
+    await files.mkdir("/notes");
+    await files.write("/notes/edit-summary.md", new TextEncoder().encode("cropped square"));
     return Result.ok({ wrote: "/notes/edit-summary.md" });
   }
 }
 
-class FakeWorkspaceCommandRunner {
-  readonly calls: Array<{ command: string; root: string; sandboxId: string }> = [];
+class FakeSandbox {
+  readonly commands: Array<{ command: string; options: { cwd?: string; env?: Record<string, string>; timeout?: number } | undefined }> = [];
+  readonly outboundHosts: Array<{ hostname: string; methodName: string; params: unknown }> = [];
 
   constructor(
+    private readonly workspace: Workspace,
+    private readonly getDraftEditId: () => string | undefined,
     private readonly output: Uint8Array,
     private readonly error?: string,
   ) {}
 
-  async runCommand(options: { files: WorkspaceFileCopyFiles; command: string; root?: string; sandboxId: string }) {
-    this.calls.push({ command: options.command, root: options.root ?? "/workspace", sandboxId: options.sandboxId });
-    if (this.error) {
-      return Result.err({
-        tag: "WorkspaceSandboxMountError" as const,
-        operation: "attach" as const,
-        message: this.error,
-        error: {
-          tag: "WorkspaceFileMountOperationError" as const,
-          operation: "attach",
-          errorTag: "TestError",
-          message: this.error,
-        },
-      });
-    }
-    await options.files.write("/photos/current", this.output);
-    return Result.ok({
-      command: options.command,
-      root: options.root ?? "/workspace",
-      exitCode: 0,
-      stdout: "ok",
-      stderr: "",
-      reconcile: {
-        created: [],
-        modified: ["/photos/current"],
-        deleted: [],
-        unchanged: 1,
-      },
-    });
+  async setOutboundByHost(hostname: string, methodName: string, params: unknown) {
+    this.outboundHosts.push({ hostname, methodName, params });
   }
-}
 
-function joinTreePath(root: string, path: string): string {
-  return root === "/" ? `/${path}` : `${root}/${path}`;
-}
-
-function fileResult(value: Uint8Array | undefined, path: string) {
-  return value
-    ? { status: "ok" as const, value }
-    : { status: "error" as const, error: pathNotFound(path) };
-}
-
-function pathNotFound(path: string) {
-  return {
-    tag: "PathNotFoundError" as const,
-    path,
-    message: `Path not found: ${path}`,
-  };
+  async exec(command: string, options?: { cwd?: string; env?: Record<string, string>; timeout?: number }) {
+    this.commands.push({ command, options });
+    if (this.error && command.includes("workspace-mount")) {
+      return { success: false, exitCode: 1, stdout: "", stderr: this.error };
+    }
+    if (command.includes("workspace-capture")) {
+      const copy = await this.workspace.copies.get(this.getDraftEditId() ?? "");
+      if (Result.isError(copy)) throw new Error("draft not found");
+      await copy.value.files.write("/photos/current", this.output);
+      return { success: true, exitCode: 0, stdout: "captured", stderr: "" };
+    }
+    return { success: true, exitCode: 0, stdout: "ok", stderr: "" };
+  }
 }

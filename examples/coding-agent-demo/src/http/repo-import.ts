@@ -1,6 +1,6 @@
 import { Result, type Result as BetterResult } from "better-result";
-import type { WorkspaceNamespace } from "@cloudflare/workspace";
-import { RepoImportController, type GitHubSourceResolver, type RepoImportSummary } from "../repo/import-controller";
+import type { WorkspaceBinding } from "@cloudflare/workspace";
+import type { GitHubImportSummary, GitHubSource } from "@cloudflare/workspace-source-github";
 
 const importPathPattern = /^\/api\/workspaces\/([^/]+)\/imports\/github$/;
 
@@ -11,16 +11,15 @@ type GitHubImportBody = {
 };
 
 type CodingAgentNamespace = {
-  getByName(name: string): { refreshRepoState(lastImport?: RepoImportSummary): Promise<unknown> };
+  getByName(name: string): { recordImportSummary(lastImport: GitHubImportSummary): Promise<unknown> };
 };
 
 type RepoImportRuntime = {
-  workspaces: WorkspaceNamespace;
-  githubToken?: string;
+  github: GitHubSource;
+  workspaces: WorkspaceBinding;
 };
 
 export type RepoImportRequestOptions = {
-  resolveSource?: GitHubSourceResolver;
   agents?: CodingAgentNamespace;
 };
 
@@ -44,16 +43,12 @@ export async function handleRepoImportRequest(
     return json({ status: "error", message: body.error }, { status: 400 });
   }
 
-  const controller = new RepoImportController({
-    workspaces: runtime.workspaces,
-    resolveSource: options.resolveSource,
-    githubToken: runtime.githubToken,
-  });
-  const result = await controller.importGitHubRepo({
-    workspaceName: decodeURIComponent(match[1] ?? ""),
+  const workspaceName = decodeURIComponent(match[1] ?? "");
+  const result = await runtime.github.importRepository({
+    workspace: runtime.workspaces.get(workspaceName),
     owner: body.value.owner,
     repo: body.value.repo,
-    ref: body.value.ref,
+    ...(body.value.ref ? { ref: body.value.ref } : {}),
   });
 
   if (Result.isError(result)) {
@@ -61,7 +56,7 @@ export async function handleRepoImportRequest(
   }
 
   if (options.agents) {
-    await options.agents.getByName(result.value.workspaceName).refreshRepoState(result.value);
+    await options.agents.getByName(result.value.workspaceName).recordImportSummary(result.value);
   }
 
   return json({ status: "imported", ...result.value });
@@ -97,17 +92,11 @@ function isImportBody(value: unknown): value is GitHubImportBody {
 }
 
 function statusForError(error: { tag: string }): number {
-  if (error.tag === "InvalidGitHubSourceError" || error.tag === "InvalidPathError") {
-    return 400;
-  }
-  if (error.tag === "GitHubAuthenticationError") {
-    return 401;
-  }
-  if (error.tag === "GitHubSourceNotFoundError") {
-    return 404;
-  }
-  if (error.tag === "GitHubUpstreamError" || error.tag === "GitHubTreeTruncatedError") {
+  if (error.tag === "GitHubSourceImportError") {
     return 502;
+  }
+  if (error.tag === "InvalidGitHubRepositoryError") {
+    return 400;
   }
   return 409;
 }

@@ -1,58 +1,55 @@
-import { env } from "cloudflare:workers";
 import { Result } from "better-result";
 import { describe, expect, it, vi } from "vitest";
-import { Workspace } from "@cloudflare/workspace";
 
+import { Workspace } from "@cloudflare/workspace";
+import { FakeWorkspaceObject } from "@cloudflare/workspace/testing";
+import type { GitHubSource } from "@cloudflare/workspace-source-github";
 import { handleRepoImportRequest } from "../../src/http/repo-import";
 
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-
 describe("repo import HTTP", () => {
-  it("imports a public GitHub repo into current Workspace files", async () => {
+  it("imports a public GitHub repo through the GitHub source", async () => {
     const workspaceName = `repo-import-http-${crypto.randomUUID()}`;
+    const importRepository = vi.fn(async ({ workspace, owner, repo, ref }) => Result.ok({
+      workspaceName: workspace.name,
+      importedAt: 1,
+      source: {
+        adapter: "github" as const,
+        host: "github.com" as const,
+        owner,
+        repo,
+        requestedRef: ref,
+      },
+    }));
+
     const response = await handleRepoImportRequest(
       new Request(`http://example.com/api/workspaces/${workspaceName}/imports/github`, {
         method: "POST",
         body: JSON.stringify({ owner: "cloudflare", repo: "example", ref: "main" }),
         headers: { "content-type": "application/json" },
       }),
-      { workspaces: env.WORKSPACES },
-      {
-        resolveSource: async (options) => Result.ok({
-          snapshot: {
-            type: "github",
-            owner: options.owner,
-            repo: options.repo,
-            ref: options.ref ?? "main",
-            commitSha: "def456",
-          },
-          async *entries() {
-            yield { path: "README.md", contents: encoder.encode("# HTTP import") };
-          },
-        }),
-      },
+      runtimeFor({ importRepository }),
     );
 
+    expect(importRepository).toHaveBeenCalledWith({
+      workspace: expect.objectContaining({ name: workspaceName }),
+      owner: "cloudflare",
+      repo: "example",
+      ref: "main",
+    });
     expect(response).toBeDefined();
     expect(response?.status).toBe(200);
-    await expect(response?.json()).resolves.toMatchObject({
+    await expect(response?.json()).resolves.toEqual({
       status: "imported",
       workspaceName,
+      importedAt: 1,
       source: {
-        type: "github",
+        adapter: "github",
+        host: "github.com",
         owner: "cloudflare",
         repo: "example",
-        ref: "main",
-        commitSha: "def456",
+        requestedRef: "main",
       },
     });
-
-    const readme = await Workspace.get(env.WORKSPACES, workspaceName).files.read("/README.md");
-    expect(Result.isOk(readme)).toBe(true);
-    if (Result.isOk(readme)) {
-      expect(decoder.decode(readme.value)).toBe("# HTTP import");
-    }
   });
 
   it("returns a client error for non-object import JSON", async () => {
@@ -62,7 +59,7 @@ describe("repo import HTTP", () => {
         body: "null",
         headers: { "content-type": "application/json" },
       }),
-      { workspaces: env.WORKSPACES },
+      runtimeFor(successfulGitHubSource()),
     );
 
     expect(response).toBeDefined();
@@ -73,77 +70,91 @@ describe("repo import HTTP", () => {
     });
   });
 
-  it("passes an optional GitHub token to the source resolver", async () => {
-    const resolveSource = vi.fn(async (options) => Result.ok({
-      snapshot: {
-        type: "github" as const,
-        owner: options.owner,
-        repo: options.repo,
-        ref: "main",
-        commitSha: "abc123",
-      },
-      async *entries() {
-        yield { path: "README.md", contents: encoder.encode("# Token import") };
-      },
-    }));
-
-    const response = await handleRepoImportRequest(
-      new Request("http://example.com/api/workspaces/tokened/imports/github", {
-        method: "POST",
-        body: JSON.stringify({ owner: "cloudflare", repo: "example" }),
-        headers: { "content-type": "application/json" },
-      }),
-      { workspaces: env.WORKSPACES, githubToken: "github-token" },
-      { resolveSource },
-    );
-
-    expect(response?.status).toBe(200);
-    expect(resolveSource).toHaveBeenCalledWith(expect.objectContaining({
-      owner: "cloudflare",
-      repo: "example",
-      token: "github-token",
-    }));
-  });
-
-  it("syncs agent repo state after imports", async () => {
-    const refreshRepoState = vi.fn();
+  it("records import summary without refreshing repository state", async () => {
+    const recordImportSummary = vi.fn();
     const response = await handleRepoImportRequest(
       new Request("http://example.com/api/workspaces/synced/imports/github", {
         method: "POST",
         body: JSON.stringify({ owner: "cloudflare", repo: "example" }),
         headers: { "content-type": "application/json" },
       }),
-      { workspaces: env.WORKSPACES },
+      runtimeFor(successfulGitHubSource()),
       {
-        resolveSource: async (options) => Result.ok({
-          snapshot: {
-            type: "github",
-            owner: options.owner,
-            repo: options.repo,
-            ref: "main",
-            commitSha: "abc123",
-          },
-          async *entries() {
-            yield { path: "README.md", contents: encoder.encode("# Synced") };
-          },
-        }),
-        agents: { getByName: () => ({ refreshRepoState }) },
+        agents: { getByName: () => ({ recordImportSummary }) },
       },
     );
 
     expect(response?.status).toBe(200);
-    expect(refreshRepoState).toHaveBeenCalledWith(expect.objectContaining({
+    expect(recordImportSummary).toHaveBeenCalledWith(expect.objectContaining({
       workspaceName: "synced",
       source: expect.objectContaining({ owner: "cloudflare", repo: "example" }),
+      importedAt: 1,
     }));
+  });
+
+  it("returns GitHub source import errors", async () => {
+    const response = await handleRepoImportRequest(
+      new Request("http://example.com/api/workspaces/failed/imports/github", {
+        method: "POST",
+        body: JSON.stringify({ owner: "cloudflare", repo: "example" }),
+        headers: { "content-type": "application/json" },
+      }),
+      runtimeFor({
+        importRepository: async () => Result.err({
+          tag: "GitHubSourceImportError" as const,
+          message: "upstream unavailable",
+          code: "UPSTREAM_UNAVAILABLE",
+        }),
+      }),
+    );
+
+    expect(response?.status).toBe(502);
+    await expect(response?.json()).resolves.toEqual({
+      status: "error",
+      error: {
+        tag: "GitHubSourceImportError",
+        message: "upstream unavailable",
+        code: "UPSTREAM_UNAVAILABLE",
+      },
+    });
   });
 
   it("leaves unrelated routes for the next router", async () => {
     await expect(
       handleRepoImportRequest(
         new Request("http://example.com/api/other", { method: "POST" }),
-        { workspaces: env.WORKSPACES },
+        runtimeFor(successfulGitHubSource()),
       ),
     ).resolves.toBeUndefined();
   });
 });
+
+function runtimeFor(github: GitHubSource) {
+  const workspaceObject = new FakeWorkspaceObject();
+  return {
+    github,
+    workspaces: Workspace.bind({
+      artifacts: {
+        get: async () => { throw new Error("not used"); },
+        delete: async () => false,
+      },
+      objects: { getByName: () => workspaceObject },
+    }),
+  };
+}
+
+function successfulGitHubSource(): GitHubSource {
+  return {
+    importRepository: async ({ workspace, owner, repo, ref }) => Result.ok({
+      workspaceName: workspace.name,
+      importedAt: 1,
+      source: {
+        adapter: "github",
+        host: "github.com",
+        owner,
+        repo,
+        ...(ref ? { requestedRef: ref } : {}),
+      },
+    }),
+  };
+}

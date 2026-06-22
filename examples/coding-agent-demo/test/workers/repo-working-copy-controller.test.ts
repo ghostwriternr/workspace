@@ -1,14 +1,17 @@
-import { env } from "cloudflare:workers";
 import { Result, type Result as BetterResult } from "better-result";
-import { describe, expect, it } from "vitest";
-import { Workspace } from "@cloudflare/workspace";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { RepoWorkingCopyController } from "../../src/repo/working-copy-controller";
+import { createFakeArtifactsWorkspace, resetFakeArtifactsWorkspace } from "./fake-artifacts-workspace";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 describe("RepoWorkingCopyController", () => {
+  afterEach(() => {
+    resetFakeArtifactsWorkspace();
+  });
+
   it("reads current files and directories without opening a working copy", async () => {
     const { controller, getWorkingCopyId } = await setupWorkingCopyController();
 
@@ -31,7 +34,7 @@ describe("RepoWorkingCopyController", () => {
 
   it("truncates large reads and supports offset and limit", async () => {
     const { controller, workspace } = await setupWorkingCopyController();
-    const large = unwrap(await workspace.files.copy("large"));
+    const large = unwrap(await workspace.copies.create({ label: "large" }));
     await large.files.writeTree("/", [
       { path: "large.md", contents: encoder.encode(numberedLines(2001)) },
     ]);
@@ -73,7 +76,7 @@ describe("RepoWorkingCopyController", () => {
 
   it("caps read output by bytes without splitting lines", async () => {
     const { controller, workspace } = await setupWorkingCopyController();
-    const large = unwrap(await workspace.files.copy("large-bytes"));
+    const large = unwrap(await workspace.copies.create({ label: "large-bytes" }));
     const lines = Array.from({ length: 200 }, () => "x".repeat(512)).join("\n");
     await large.files.writeTree("/", [
       { path: "wide.md", contents: encoder.encode(lines) },
@@ -120,7 +123,7 @@ describe("RepoWorkingCopyController", () => {
     });
 
     const current = await workspace.files.read("/notes/todo.md");
-    const copy = unwrap(await workspace.files.getCopy(getWorkingCopyId()!));
+    const copy = unwrap(await workspace.copies.get(getWorkingCopyId()!));
     const edited = unwrap(await copy.files.read("/notes/todo.md"));
 
     expect(Result.isError(current)).toBe(true);
@@ -133,7 +136,7 @@ describe("RepoWorkingCopyController", () => {
 
     await expectOk(controller.edit({ path: "/scripts/example.sh", oldText: "old", newText: "$HOME and $&" }));
 
-    const copy = unwrap(await workspace.files.getCopy(getWorkingCopyId()!));
+    const copy = unwrap(await workspace.copies.get(getWorkingCopyId()!));
     expect(decoder.decode(unwrap(await copy.files.read("/scripts/example.sh")))).toBe("echo $HOME and $&\n");
   });
 
@@ -162,7 +165,7 @@ describe("RepoWorkingCopyController", () => {
     expect(getWorkingCopyId()).toEqual(expect.any(String));
 
     const current = await workspace.files.read("/notes/edit.md");
-    const copy = unwrap(await workspace.files.getCopy(getWorkingCopyId()!));
+    const copy = unwrap(await workspace.copies.get(getWorkingCopyId()!));
     const edited = unwrap(await copy.files.read("/notes/edit.md"));
 
     expect(runner.calls).toEqual([{ code: "export default async function(env) {}" }]);
@@ -170,8 +173,8 @@ describe("RepoWorkingCopyController", () => {
     expect(decoder.decode(edited)).toBe("read # Repo");
   });
 
-  it("runs shell commands against the active working copy and reconciles changes", async () => {
-    const { controller, workspace, shellRunner, getWorkingCopyId } = await setupWorkingCopyController();
+  it("runs shell commands and captures Sandbox changes explicitly", async () => {
+    const { controller, workspace, sandbox, getWorkingCopyId } = await setupWorkingCopyController();
 
     const result = await expectOk(controller.shell({ command: "npm test" }));
 
@@ -182,15 +185,29 @@ describe("RepoWorkingCopyController", () => {
       exitCode: 1,
       stdout: "",
       stderr: "tests failed",
-      reconcile: { created: ["/notes/shell.md"], modified: [], deleted: [], unchanged: 1 },
     });
     expect(getWorkingCopyId()).toEqual(expect.any(String));
 
+    const beforeCapture = unwrap(await workspace.copies.get(getWorkingCopyId()!));
+    expect(Result.isError(await beforeCapture.files.read("/notes/shell.md"))).toBe(true);
+
+    const captured = await expectOk(controller.captureWorkingCopy());
     const current = await workspace.files.read("/notes/shell.md");
-    const copy = unwrap(await workspace.files.getCopy(getWorkingCopyId()!));
+    const copy = unwrap(await workspace.copies.get(getWorkingCopyId()!));
     const edited = unwrap(await copy.files.read("/notes/shell.md"));
 
-    expect(shellRunner.calls).toEqual([{ command: "npm test", workingCopyId: getWorkingCopyId() }]);
+    expect(captured).toEqual({
+      status: "workspace-captured",
+      path: "/workspace",
+      stdout: "captured",
+      stderr: "",
+    });
+    expect(sandbox.commands).toEqual([
+      expect.objectContaining({ command: expect.stringContaining("workspace-mount") }),
+      { command: "npm test", options: { cwd: "/workspace" } },
+      expect.objectContaining({ command: expect.stringContaining("workspace-mount") }),
+      expect.objectContaining({ command: expect.stringContaining("workspace-capture") }),
+    ]);
     expect(Result.isError(current)).toBe(true);
     expect(decoder.decode(edited)).toBe("shell wrote this");
   });
@@ -225,20 +242,16 @@ describe("RepoWorkingCopyController", () => {
 });
 
 async function setupWorkingCopyController() {
-  const workspaceName = `repo-working-${crypto.randomUUID()}`;
-  const workspace = Workspace.get(env.WORKSPACES, workspaceName);
-  const seed = unwrap(await workspace.files.copy("seed"));
-  await seed.files.writeTree("/", [
-    { path: "README.md", contents: encoder.encode("# Repo") },
-  ]);
-  await seed.apply();
+  const { workspaceName, workspace } = createFakeArtifactsWorkspace({
+    "/README.md": encoder.encode("# Repo"),
+  });
 
   let workingCopyId: string | undefined;
   const runner = {
     calls: [] as Array<{ code: string }>,
     async run(options: { code: string }) {
       this.calls.push({ code: options.code });
-      const copy = unwrap(await workspace.files.getCopy(workingCopyId!));
+      const copy = unwrap(await workspace.copies.get(workingCopyId!));
       const readme = unwrap(await copy.files.read("/README.md"));
       await copy.files.writeTree("/", [
         { path: "notes/edit.md", contents: encoder.encode(`read ${decoder.decode(readme)}`) },
@@ -246,29 +259,32 @@ async function setupWorkingCopyController() {
       return Result.ok({ wrote: "/notes/edit.md" });
     },
   };
-  const shellRunner = {
-    calls: [] as Array<{ command: string; workingCopyId: string | undefined }>,
-    async runCommand(options: { command: string; sandboxId: string }) {
-      this.calls.push({ command: options.command, workingCopyId: options.sandboxId });
-      const copy = unwrap(await workspace.files.getCopy(options.sandboxId));
-      await copy.files.writeTree("/", [
-        { path: "notes/shell.md", contents: encoder.encode("shell wrote this") },
-      ]);
-      return Result.ok({
-        command: options.command,
-        root: "/workspace",
-        exitCode: 1,
-        stdout: "",
-        stderr: "tests failed",
-        reconcile: { created: ["/notes/shell.md"], modified: [], deleted: [], unchanged: 1 },
-      });
+  const sandbox = {
+    commands: [] as Array<{ command: string; options: { cwd?: string; env?: Record<string, string>; timeout?: number } | undefined }>,
+    outboundHosts: [] as Array<{ hostname: string; methodName: string; params: unknown }>,
+    async setOutboundByHost(hostname: string, methodName: string, params: unknown) {
+      this.outboundHosts.push({ hostname, methodName, params });
+    },
+    async exec(command: string, options?: { cwd?: string; env?: Record<string, string>; timeout?: number }) {
+      this.commands.push({ command, options });
+      if (command.includes("workspace-capture")) {
+        const copy = unwrap(await workspace.copies.get(workingCopyId!));
+        await copy.files.writeTree("/", [
+          { path: "notes/shell.md", contents: encoder.encode("shell wrote this") },
+        ]);
+        return { success: true, exitCode: 0, stdout: "captured", stderr: "" };
+      }
+      if (command === "npm test") {
+        return { success: false, exitCode: 1, stdout: "", stderr: "tests failed" };
+      }
+      return { success: true, exitCode: 0, stdout: "", stderr: "" };
     },
   };
   const controller = new RepoWorkingCopyController({
-    workspaces: env.WORKSPACES,
+    workspace,
     workspaceName,
     dynamicWorkerRunner: runner,
-    shellRunner,
+    sandboxForWorkingCopy: () => sandbox,
     workspaceForWorkingCopy: () => ({}) as never,
     getWorkingCopyId: () => workingCopyId,
     setWorkingCopyId: (next) => { workingCopyId = next; },
@@ -278,7 +294,7 @@ async function setupWorkingCopyController() {
     controller,
     workspace,
     runner,
-    shellRunner,
+    sandbox,
     getWorkingCopyId: () => workingCopyId,
   };
 }

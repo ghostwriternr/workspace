@@ -1,0 +1,23 @@
+{
+  "name": "@cloudflare/workspace-source-github",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit && npm run knip",
+    "knip": "knip",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cloudflare/workspace": "file:../../workspace",
+    "better-result": "^2.9.2"
+  },
+  "devDependencies": {
+    "knip": "^6.14.2",
+    "typescript": "^5.5.2",
+    "vitest": "^4.1.7"
+  }
+}

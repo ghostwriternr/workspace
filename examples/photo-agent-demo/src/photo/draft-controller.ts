@@ -1,11 +1,16 @@
 import { Result, type Result as BetterResult } from "better-result";
 import {
-  Workspace,
-  type WorkspaceFileCopy,
-  type WorkspaceNamespace,
+  type WorkspaceCopies,
+  type WorkspaceCurrentFiles,
+  type WorkspaceCopyFiles,
 } from "@cloudflare/workspace";
-import type { WorkspaceFileReconcileSummary } from "@cloudflare/workspace";
-import type { WorkspaceSandboxCommandError, WorkspaceSandboxCommandRunner } from "@cloudflare/workspace-adapter-sandbox";
+import {
+  attachWorkspaceCopyToSandbox,
+  type WorkspaceSandboxAttachError,
+  type WorkspaceSandboxCaptureError,
+  type WorkspaceSandboxCaptureSummary,
+  type WorkspaceSandboxClient,
+} from "@cloudflare/workspace-adapter-sandbox";
 import type {
   WorkspaceDynamicWorkerExecutionError,
   WorkspaceDynamicWorkerFileCapability,
@@ -45,6 +50,18 @@ type RevisionInfo = {
 
 type WorkspaceOperationError = { tag: string };
 
+type PhotoFileCopy = {
+  id: string;
+  files: WorkspaceCopyFiles;
+  apply(): Promise<BetterResult<RevisionInfo, WorkspaceOperationError>>;
+  discard(): Promise<BetterResult<void, WorkspaceOperationError>>;
+};
+
+type PhotoWorkspace = {
+  files: WorkspaceCurrentFiles;
+  copies: WorkspaceCopies;
+};
+
 type WorkspaceReadableFiles = {
   read(path: string): Promise<BetterResult<Uint8Array, WorkspaceOperationError>>;
   list(path: string): Promise<BetterResult<WorkspaceEntry[], WorkspaceOperationError>>;
@@ -69,8 +86,8 @@ export type PhotoState = {
 
 export type PhotoDraftControllerDependencies = {
   workspaceName: string;
-  workspaces: WorkspaceNamespace;
-  commandRunner: WorkspaceSandboxCommandRunner;
+  workspace: PhotoWorkspace;
+  sandboxForDraft(draftEditId: string): WorkspaceSandboxClient;
   dynamicWorkerRunner: WorkspaceDynamicWorkerRunner;
   workspaceForDraft(draftEditId: string): WorkspaceDynamicWorkerFileCapability;
   getDraftEditId(): string | undefined;
@@ -113,7 +130,7 @@ export class PhotoDraftController {
       };
     }
 
-    const copy = await expectOkResult(this.workspace().files.copy("photo-draft"), "start draft edit");
+    const copy = await expectOkResult(this.workspace().copies.create({ label: "photo-draft" }), "start draft edit");
     this.dependencies.setDraftEditId(copy.id);
 
     return {
@@ -130,27 +147,52 @@ export class PhotoDraftController {
     stdout: string;
     stderr: string;
     exitCode: number;
-    reconcile: WorkspaceFileReconcileSummary;
-  } | { status: "error"; error: WorkspaceSandboxCommandError }> {
+  } | { status: "error"; error: WorkspaceSandboxAttachError }> {
     return this.withDraftCopy(async (copy, draftEditId) => {
-      const result = await this.dependencies.commandRunner.runCommand({
-        files: copy.files,
-        command,
-        root: WORKSPACE_ROOT,
-        sandboxId: draftEditId,
+      const attached = await attachWorkspaceCopyToSandbox({
+        copy,
+        sandbox: this.dependencies.sandboxForDraft(draftEditId),
+        path: WORKSPACE_ROOT,
       });
-      if (Result.isError(result)) {
-        return { status: "error", error: result.error };
+      if (Result.isError(attached)) {
+        return { status: "error", error: attached.error };
       }
+
+      const result = await this.dependencies.sandboxForDraft(draftEditId).exec(command, { cwd: attached.value.path });
 
       return {
         status: "command-completed",
-        root: result.value.root,
-        command: result.value.command,
-        stdout: result.value.stdout,
-        stderr: result.value.stderr,
-        exitCode: result.value.exitCode,
-        reconcile: result.value.reconcile,
+        root: attached.value.path,
+        command,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+      };
+    });
+  }
+
+  async captureDraft(): Promise<{
+    status: "draft-captured";
+    capture: WorkspaceSandboxCaptureSummary;
+  } | { status: "error"; error: WorkspaceSandboxAttachError | WorkspaceSandboxCaptureError }> {
+    return this.withDraftCopy(async (copy, draftEditId) => {
+      const attached = await attachWorkspaceCopyToSandbox({
+        copy,
+        sandbox: this.dependencies.sandboxForDraft(draftEditId),
+        path: WORKSPACE_ROOT,
+      });
+      if (Result.isError(attached)) {
+        return { status: "error", error: attached.error };
+      }
+
+      const captured = await attached.value.capture();
+      if (Result.isError(captured)) {
+        return { status: "error", error: captured.error };
+      }
+
+      return {
+        status: "draft-captured",
+        capture: captured.value,
       };
     });
   }
@@ -206,7 +248,7 @@ export class PhotoDraftController {
       return { status: "error", error: { tag: "PathNotFoundError" } };
     }
 
-    const copy = await this.workspace().files.getCopy(draftEditId);
+    const copy = await this.workspace().copies.get(draftEditId);
     if (Result.isError(copy)) {
       this.dependencies.setDraftEditId(undefined);
       return { status: "error", error: { tag: "PathNotFoundError" } };
@@ -220,15 +262,18 @@ export class PhotoDraftController {
     revisionId: string;
     createdAt: number;
     message: string;
-  }> {
+  } | { status: "error"; error: WorkspaceOperationError }> {
     return this.withDraftCopy(async (copy) => {
-      const revision = await expectOkResult(copy.apply(), "make draft edit current") as RevisionInfo;
+      const revision = await copy.apply();
+      if (Result.isError(revision)) {
+        return { status: "error", error: revision.error };
+      }
       this.dependencies.setDraftEditId(undefined);
 
       return {
         status: "current-updated",
-        revisionId: revision.revisionId,
-        createdAt: revision.createdAt,
+        revisionId: revision.value.revisionId,
+        createdAt: revision.value.createdAt,
         message: "Draft edit is now the current version.",
       };
     });
@@ -237,9 +282,12 @@ export class PhotoDraftController {
   async discardDraft(): Promise<{
     status: "draft-discarded";
     message: string;
-  }> {
+  } | { status: "error"; error: WorkspaceOperationError }> {
     return this.withDraftCopy(async (copy) => {
-      await expectOkResult(copy.discard(), "throw away draft edit");
+      const discarded = await copy.discard();
+      if (Result.isError(discarded)) {
+        return { status: "error", error: discarded.error };
+      }
       this.dependencies.setDraftEditId(undefined);
 
       return {
@@ -255,7 +303,7 @@ export class PhotoDraftController {
       return this.listWorkspaceRoots(this.workspace().files);
     }
 
-    const copy = await this.workspace().files.getCopy(draftEditId);
+    const copy = await this.workspace().copies.get(draftEditId);
     if (Result.isError(copy)) {
       this.dependencies.setDraftEditId(undefined);
       return this.listWorkspaceRoots(this.workspace().files);
@@ -281,13 +329,13 @@ export class PhotoDraftController {
     return result.value;
   }
 
-  private workspace(): Workspace {
-    return Workspace.get(this.dependencies.workspaces, this.dependencies.workspaceName);
+  private workspace(): PhotoWorkspace {
+    return this.dependencies.workspace;
   }
 
-  private async withDraftCopy<T>(useCopy: (copy: WorkspaceFileCopy, draftEditId: string) => Promise<T>): Promise<T> {
+  private async withDraftCopy<T>(useCopy: (copy: PhotoFileCopy, draftEditId: string) => Promise<T>): Promise<T> {
     const started = await this.startDraft();
-    const copy = await this.workspace().files.getCopy(started.draftEditId);
+    const copy = await this.workspace().copies.get(started.draftEditId);
     if (Result.isError(copy)) {
       this.dependencies.setDraftEditId(undefined);
       throw new Error(`draft edit not found: ${copy.error.tag}`);
@@ -336,7 +384,7 @@ export class PhotoDraftController {
       return { exists: false };
     }
 
-    const copy = await this.workspace().files.getCopy(draftEditId);
+    const copy = await this.workspace().copies.get(draftEditId);
     if (Result.isError(copy)) {
       this.dependencies.setDraftEditId(undefined);
       return { exists: false };

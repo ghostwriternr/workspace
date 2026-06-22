@@ -1,217 +1,149 @@
 # Product model
 
-This doc describes what Workspace is conceptually and the principles we keep coming back to when designing it. For the in/out test, see [`product-boundaries.md`](./product-boundaries.md). For the target user-facing API, see [`product-api.md`](./product-api.md). For the emerging runtime vocabulary, see [`runtime-projections.md`](./runtime-projections.md). For how it's actually built, see [`architecture.md`](./architecture.md).
+Workspace is an agent-friendly work surface over Artifacts-backed durable file
+state.
 
-## What Workspace is
+It gives products a named place to keep files, create isolated working copies,
+hand those copies to runtimes, and decide when proposed work becomes current.
+Artifacts owns the versioned file authority underneath. Workspace owns the
+work-surface semantics above it.
 
-A Workspace is a durable file tree. You can:
+For the target API, see [`product-api.md`](./product-api.md). For the current
+implementation, see [`architecture.md`](./architecture.md). For boundaries, see
+[`product-boundaries.md`](./product-boundaries.md).
 
-- read and write its current files directly,
-- branch the current files into an isolated working copy, edit that copy, and publish or throw away the result,
-- hand that working copy to a Sandbox, container, or Dynamic Worker through a runtime-appropriate projection,
-- snapshot the current files into an immutable revision.
+## Core idea
 
-The unit of "publish" is explicit. The unit of "isolate" is explicit. Everything between those two is durable but not yet live.
+A Workspace has:
 
-## Principles
+- **current files** — the accepted file tree for the work surface;
+- **working copies** — durable, isolated file authorities for proposed work;
+- **apply** — publish one working copy as current;
+- **discard** — throw away one working copy;
+- **runtime projections** — ways to expose a working copy to runtimes such as
+  Dynamic Workers and Sandboxes.
 
-### Workspace is file state, not execution
+A working copy is durable but not published. It can survive requests, browser
+reconnects, agent turns, and runtime failures. Nothing changes current files
+until trusted product code applies the copy.
 
-It owns the Workspace-owned file tree: files, directories, metadata, working copies, the publish boundary, the discard boundary, and revisions.
+That is the main semantic Workspace provides:
 
-It does not own command execution, Dynamic Worker loading, container or Sandbox lifecycle, agent orchestration, scheduling, policy, or Git remotes. Those belong to the products built on top.
-
-### Adapters depend on Workspace; Workspace doesn't depend on adapters
-
-Workspace defines its semantics once. Runtime adapters consume those semantics and project Workspace-owned authorities, or mounted views containing them, into runtime-native shapes: `/workspace` for a Sandbox, scoped `env.WORKSPACE` for a Dynamic Worker, direct RPC for a trusted Worker.
-
-Workspace doesn't become Sandbox-shaped, Dynamic-Worker-shaped, or container-shaped. Runtime mechanics live in adapters and projection layers.
-
-### Capabilities are the boundary
-
-What a caller can do with a Workspace depends on the capability it received, not on which runtime is calling.
-
-Trusted product code can receive full control: identity, file copies, apply, discard, revisions. Delegated code (Dynamic Worker, plugin, generated code) should usually receive a scoped file capability: read or write under specific paths, no apply authority, no Workspace identity.
-
-A Sandbox or container sees a filesystem; the publish decision stays with the parent.
-
-### Durable doesn't mean published
-
-A working copy is durable. It survives crashes, reconnects, and agent turns. That's deliberate — agent and human workflows want to step away and come back to in-progress work.
-
-But durable isn't the same as live. The current files don't change until apply. This matters for previews, drafts, multi-turn agent work, and Dynamic Worker test runs.
-
-### Apply and discard are explicit
-
-Workspace never publishes implicitly. Not when a process writes a file. Not when a command exits. Not when a Dynamic Worker returns. Not when a Sandbox shuts down. Not because execution succeeded.
-
-The publish operation is `apply`. The escape hatch is `discard`. A product can call them "make current" and "throw away", but the semantic is the same.
-
-### Product concepts stay above Workspace
-
-Workspace doesn't know about original photos, draft edits, code artifacts, agent tasks, or approval rules. Products express those through their own controllers and domain language. Workspace gives them the durable file substrate to do it on.
-
-### Sources are not Workspace
-
-Files in a Workspace might have come from a GitHub repo, a Hugging Face model, an S3 bucket, an Artifacts ref, or a user upload. If a product imports those bytes, Workspace owns the imported file state. If a product mounts a stable source snapshot beside a Workspace-owned overlay, the source still owns unchanged source bytes. Bridging those systems is product/source-adapter work — see [`sources.md`](./sources.md).
-
-Workspace can record where imported files came from as metadata. It does not watch the source for changes.
-
-## Semantic model
-
-### Durable tree
-
-A Workspace contains a tree of Workspace-owned files and directories. Each entry has path, type, size, and timestamps. A product may compose that tree with external source authorities in a mounted view, but those source-owned files are not automatically Workspace entries. Two categories of metadata are part of the long-term model:
-
-- **Generic file metadata** — content type, content digest, small string metadata.
-- **Provenance metadata** — adapter id, source ref, source version, source path — for files imported from an external source. See [`sources.md`](./sources.md).
-
-Directories are explicit. `mkdir` creates one; `writeFile` requires the parent to exist; `delete` removes empty directories only. The cost is a little extra explicit work; the benefit is that reconcile, projections, and any tree comparison products want to build above Workspace are well-defined.
-
-### Working copies (file copies)
-
-A working copy is an isolated, mutable view of Workspace-owned file state, usually initialized from current files.
-
-You can use it directly through a Worker, expose it to a Sandbox through a filesystem projection, or hand it to a Dynamic Worker through a scoped binding. In source-backed project views, a working copy can act as the writable overlay on top of a stable source snapshot. Changes inside the copy don't affect current files until apply, and they don't affect external sources until product export.
-
-Working copies are durable. They can be looked up, listed, resumed, and cleaned up without the calling product having to track their state separately.
-
-File copies are the **isolation atom** of Workspace — the unit you fork, edit, and either publish or throw away. Implementation can vary (today it's tables inside the Workspace Durable Object; long-term it's likely Durable Object facets — see [`architecture.md`](./architecture.md)). The product model doesn't change with the implementation.
-
-### Apply and discard
-
-`apply` publishes a working copy to current files and creates a revision. `discard` abandons it without changing current files.
-
-A working copy that branched from an older head version is rejected at apply (`SessionConflictError`). The product can inspect, retry, or throw it away. There's no merge or rebase yet — see [`known-limitations.md`](./known-limitations.md).
-
-### Revisions
-
-Revisions are immutable recovery points of current files. They carry message, actor, timestamps, and small metadata.
-
-They are not Git commits. Workspace won't grow branches, remotes, or rebase semantics. If you need history that complex, build it above Workspace, not inside it.
-
-### Observability
-
-Products need to know when files change. The current model exposes a head version counter; a working copy can ask whether it's stale. Richer change streams (per-path tokens, subscriptions) can come later.
-
-## Projections
-
-Each current projection is a different shape of access to Workspace-owned durable state. The broader model also allows mounted views that compose Workspace-owned overlays with source snapshots and runtime-local authorities; see [`runtime-projections.md`](./runtime-projections.md).
-
-### Trusted control
-
-Product Workers and Durable Objects use Workspace directly:
-
-```ts
-const workspace = Workspace.get(env.WORKSPACES, name);
-const copyResult = await workspace.files.copy("edit");
-if (Result.isError(copyResult)) return copyResult;
-
-const copy = copyResult.value;
-const write = await copy.files.write("/src/index.ts", source);
-if (Result.isError(write)) return write;
-
-const apply = await copy.apply();
-if (Result.isError(apply)) return apply;
+```text
+current files -> working copy -> runtime work -> apply or discard
 ```
 
-Appropriate for code that owns user intent and decides apply/discard.
+## Artifacts is the file authority
 
-### Scoped file capability
+Artifacts owns durable versioned file state: file trees, commits, refs, bytes,
+and Git-compatible repository mechanics. Workspace does not try to recreate
+that storage layer.
 
-Delegated code gets familiar file methods, but only within the authority granted by the parent:
+Workspace sits above Artifacts and adds the product shape that agents and apps
+need:
 
-```ts
-await env.WORKSPACE.readFile("/data/input.json");
-await env.WORKSPACE.writeFile("/output/result.json", bytes);
-await env.WORKSPACE.list("/data");
+- stable named workspaces;
+- current files and working copies;
+- scoped capabilities for delegated code;
+- filesystem projection boundaries;
+- explicit apply/discard semantics;
+- small coordination metadata through a Durable Object.
+
+The important distinction is:
+
+```text
+Artifacts decides how file trees are stored and versioned.
+Workspace decides how product code works with those trees.
 ```
 
-Bounded by root prefix, read globs, write globs, optional delete, no apply authority, no Workspace identity. This is what Dynamic Workers get.
+Workspace should not grow a parallel path-level overlay store, tombstone table,
+blob store, or Git implementation while Artifacts is the chosen durable file
+authority. Temporary Git plumbing exists only because current Artifacts APIs do
+not yet expose every file mutation primitive Workspace needs.
 
-### Filesystem
+## WorkspaceObject coordinates, not stores
 
-Sandboxes and containers see a working copy, or a mounted view containing a working copy, as a local directory. The product attaches it, runs commands, reconciles Workspace-owned mounted paths back into the working copy, and decides on apply or export:
+Workspace uses a per-workspace Durable Object for coordination metadata that
+Artifacts does not currently expose durably enough across Workers bindings.
+That object may record coarse metadata such as:
 
-```ts
-const copyResult = await workspace.files.copy("photo-edit");
-if (Result.isError(copyResult)) return copyResult;
-const copy = copyResult.value;
+- the current Artifacts repository/ref used by the Workspace;
+- working-copy repository/ref metadata;
+- labels, creation timestamps, and cleanup metadata;
+- base revisions needed for safe apply/conflict checks.
 
-const mountResult = await copy.files.attach(sandbox, "/workspace");
-if (Result.isError(mountResult)) return mountResult;
-const mount = mountResult.value;
+It must not store:
 
-const result = await sandbox.exec(
-  "convert /workspace/photos/original.jpg ... /workspace/photos/current",
-  {
-    cwd: mount.path,
-  },
-);
+- file bytes;
+- Git objects;
+- per-path overlays or tombstones;
+- runtime scratch state;
+- Sandbox or Dynamic Worker state;
+- source-specific lifecycle state such as GitHub branches or pull requests;
+- plaintext tokens.
 
-const reconcile = await mount.reconcile();
-if (Result.isError(reconcile)) return reconcile;
+If the coordination object starts owning path-level file semantics, Workspace is
+sliding back toward a custom file backend. That is the wrong direction.
 
-const apply = await copy.apply();
-if (Result.isError(apply)) return apply;
-```
+## Sources seed or export workspaces
 
-The implementation may be FUSE, a native mount, or a Sandbox-specific mechanism. Workspace is not defined as FUSE and won't chase full distributed POSIX. Unsupported filesystem features should fail clearly.
+External systems such as GitHub, Hugging Face, S3, user uploads, and other
+Artifact repositories are sources. They have their own lifecycle and should
+stay outside Workspace core.
 
-### Dynamic Worker module and asset (planned)
+A source adapter may import, capture, or seed a Workspace from an external
+source. A GitHub adapter, for example, can resolve a repository ref, ask
+Artifacts to capture it, and connect that Artifacts-backed authority to a
+Workspace. The product action might feel like "open this GitHub repo in a
+Workspace", but Workspace core should not become GitHub-aware.
 
-A Workspace tree or revision can provide module sources and asset bindings to a Worker loaded via Worker Loader:
+Likewise, exporting a working copy back to GitHub, Hugging Face, S3, or another
+destination is adapter/product behavior. Workspace exposes file state and
+working-copy boundaries; adapters decide how to talk to external systems.
 
-```ts
-const worker = env.LOADER.load({
-  mainModule: "src/index.js",
-  modules: await modulesFromWorkspace(copy, "/src"),
-  env: {
-    WORKSPACE: scopedBinding,
-    ASSETS: createWorkspaceAssetsBinding({ tree: revision, root: "/dist" }),
-  },
-});
-```
+## Runtime adapters project working copies
 
-Useful for code-mode previews, generated apps, and user-uploaded platforms. Not built yet.
+Execution environments need runtime-native access to files:
 
-## Authority
+- a Dynamic Worker wants a scoped `env.WORKSPACE` binding;
+- a Sandbox wants files under `/workspace`;
+- a future Worker Loader flow may want modules or static assets from a tree.
 
-The distinction that matters is authority, not runtime type.
+Runtime adapters consume Workspace capabilities and expose them in the shape a
+runtime expects. Workspace itself does not run commands, load Dynamic Workers,
+manage containers, install packages, or decide which command should run.
 
-- **Trusted code** can receive Workspace identity and control capabilities. It owns apply and discard.
-- **Delegated code** should usually receive a scoped capability and propose changes within a working copy. The parent decides whether to publish.
-- **Filesystem tools** mutate files naturally inside a working copy. Those mutations stay in the copy until the parent applies it.
+The parent product keeps publication authority. Runtime work can write a
+working copy; only trusted product code applies or discards it.
 
-The safety rule is consistent across all three:
+## Capability boundaries
 
-```
-Execution can propose file-state changes.
-Trusted product code decides whether to publish them.
-```
+Capabilities, not runtime identity, define authority.
 
-## Where we are
+Trusted product code can receive a full Workspace handle. It can create working
+copies, apply them, discard them, and decide source/import/export behavior.
 
-Built:
+Delegated code should receive narrower capabilities:
 
-- Durable head tree with explicit directories.
-- Content-addressed blobs in R2.
-- Durable working copies, recoverable by id.
-- Optimistic conflict detection on apply.
-- Immutable revisions.
-- Product-facing scoped file capabilities (used by the demo's Dynamic Worker).
-- Product-facing filesystem mounts and reconciliation (used by the demo's Sandbox).
-- Streaming bulk tree writes (`writeTree`) on file copies.
+- a scoped file capability with read/write access under specific paths;
+- a mounted filesystem view of one working copy;
+- a read-only module or asset view.
 
-Not built yet — see [`known-limitations.md`](./known-limitations.md):
+Delegated code should not receive Workspace identity or apply/discard authority
+unless a product intentionally grants it.
 
-- Provenance metadata for files imported from external sources.
-- Generic file metadata (content type, digest).
-- File-copy cleanup / orphan recovery.
-- Production filesystem projection (no scan, no rehash).
-- Dynamic Worker module and asset projections.
+## What Workspace is not
 
-Deliberately out of scope:
+Workspace is not:
 
-- Diff, patch, merge, or rebase between trees. Workspace inventories trees; it doesn't compare them.
-- Full POSIX, Git semantics, agent orchestration, Dynamic Worker loading, Sandbox lifecycle, policy systems. See [`product-boundaries.md`](./product-boundaries.md).
+- an execution environment;
+- a Sandbox or container lifecycle manager;
+- a Dynamic Worker loader;
+- a Git porcelain;
+- a source adapter;
+- a diff, patch, merge, or rebase engine;
+- a policy or approval system;
+- a custom replacement for Artifacts file storage.
+
+Workspace should stay small at the center: durable work-surface semantics over
+Artifacts-backed file authorities, with adapters around it.

@@ -12,14 +12,20 @@ Build only what is needed. Don't add inspection methods, convenience helpers, st
 
 ## Repo map
 
-- `packages/workspace/` — the Workspace package. Keep durable file-state primitives here.
-- `packages/source/github/` — GitHub source adapter. Keep GitHub API/import concerns outside Workspace core.
+- `packages/workspace/` — the Workspace package. Keep durable file-state primitives and Artifacts-backed work-surface APIs here.
 - `packages/adapters/dynamic-worker/` — Dynamic Worker adapter. Keep execution integration here, not in Workspace core.
 - `packages/adapters/sandbox/` — Sandbox adapter. Keep container execution integration here, not in Workspace core.
+- `packages/sources/github/` — GitHub source adapter. Keep GitHub import lifecycle here, not in Workspace core or demos.
 - `examples/photo-agent-demo/` — example Worker. Agent/Sandbox/Dynamic Worker concerns live here, not in the package.
 - `examples/coding-agent-demo/` — example Worker for importing public GitHub repos into Workspace before agent edits.
+- `examples/think-compare-runtimes/` — fixed-task comparison of Workspace-backed and raw Sandbox agent runtimes.
+- `docs/product-model.md` — product semantics and authority model.
+- `docs/product-api.md` — the API surface callers see.
 - `docs/architecture.md` — how things actually work in code.
 - `docs/product-boundaries.md` — the in/out-of-scope rules.
+- `docs/runtime-adapters.md` — Dynamic Worker and Sandbox adapter shape.
+- `docs/sources.md` — how source adapters seed/export Workspace state.
+- `docs/known-limitations.md` — current prototype gaps.
 
 ## Commands
 

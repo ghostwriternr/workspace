@@ -2,18 +2,11 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "workspace-coding-agent-demo-test",
   "main": "test/worker.ts",
-  "compatibility_date": "2026-05-26",
+  "compatibility_date": "2026-06-10",
   "compatibility_flags": ["nodejs_compat", "experimental"],
   "durable_objects": {
-    "bindings": [
-      { "name": "WORKSPACES", "class_name": "WorkspaceObject" }
-    ]
+    "bindings": [{ "name": "WORKSPACE_OBJECTS", "class_name": "WorkspaceObject" }]
   },
-  "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["WorkspaceObject"] }
-  ],
-  "r2_buckets": [
-    { "binding": "WORKSPACE_BLOBS", "bucket_name": "workspace-coding-agent-demo-test-blobs" }
-  ],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["WorkspaceObject"] }],
   "observability": { "enabled": true }
 }

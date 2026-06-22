@@ -1,0 +1,124 @@
+import { fixtureFileEntries } from "../../shared/fixture";
+import type { SandboxComparisonRuntime } from "./coding-runtime";
+
+const projectRoot = "/workspace";
+
+export interface RawSandboxHost {
+  writeFile(path: string, contents: string): Promise<void>;
+  readFile(path: string): Promise<string>;
+  exec(
+    command: string,
+    options: { cwd: string },
+  ): Promise<{ exitCode: number; stdout: string; stderr: string }>;
+}
+
+export interface RawSandboxRuntime extends SandboxComparisonRuntime {
+  seedFixture(): Promise<void>;
+  read(input: { path: string }): Promise<string>;
+  write(input: { path: string; contents: string }): Promise<{ path: string }>;
+  edit(input: { path: string; oldText: string; newText: string }): Promise<{ path: string; replacements: number }>;
+  shell(input: { command: string }): Promise<{
+    command: string;
+    cwd: string;
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+  }>;
+}
+
+export function createRawSandboxRuntime(host: RawSandboxHost): RawSandboxRuntime {
+  async function seedFixture(): Promise<void> {
+    for (const file of fixtureFileEntries()) {
+      await host.writeFile(toProjectPath(file.path), file.contents);
+    }
+
+    try {
+      await host.readFile(`${projectRoot}/package.json`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Fixture seed verification failed at ${projectRoot}: ${message}`);
+    }
+  }
+
+  async function ensureFixtureAvailable(): Promise<void> {
+    try {
+      await host.readFile(`${projectRoot}/package.json`);
+    } catch {
+      await seedFixture();
+    }
+  }
+
+  return {
+    seedFixture,
+
+    async read(input) {
+      await ensureFixtureAvailable();
+      return host.readFile(toProjectPath(input.path));
+    },
+
+    async write(input) {
+      await ensureFixtureAvailable();
+      const path = toProjectPath(input.path);
+      await host.writeFile(path, input.contents);
+      await verifyShellCanSeeFile(host, path);
+      return { path };
+    },
+
+    async edit(input) {
+      await ensureFixtureAvailable();
+      const path = toProjectPath(input.path);
+      const contents = await host.readFile(path);
+      const matches = countMatches(contents, input.oldText);
+
+      if (matches !== 1) {
+        throw new Error(`Expected exactly one match for ${JSON.stringify(input.oldText)}, found ${matches}`);
+      }
+
+      await host.writeFile(path, contents.replace(input.oldText, input.newText));
+      await verifyShellCanSeeFile(host, path);
+      return { path, replacements: 1 };
+    },
+
+    async shell(input) {
+      await ensureFixtureAvailable();
+      const result = await host.exec(input.command, { cwd: projectRoot });
+      return { command: input.command, cwd: projectRoot, ...result };
+    },
+  };
+}
+
+function toProjectPath(path: string): string {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  const parts = normalized.split("/").filter(Boolean);
+
+  if (parts.some((part) => part === "..")) {
+    throw new Error("Paths must stay inside /workspace");
+  }
+
+  if (normalized === projectRoot || normalized.startsWith(`${projectRoot}/`)) return normalized;
+  return `${projectRoot}${normalized}`;
+}
+
+async function verifyShellCanSeeFile(host: RawSandboxHost, path: string): Promise<void> {
+  const result = await host.exec(`test -f ${shellQuote(path)}`, { cwd: projectRoot });
+  if (result.exitCode !== 0) {
+    throw new Error(`Sandbox shell could not see written file: ${path}`);
+  }
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function countMatches(contents: string, needle: string): number {
+  if (needle.length === 0) return 0;
+  let count = 0;
+  let index = contents.indexOf(needle);
+
+  while (index !== -1) {
+    count += 1;
+    index = contents.indexOf(needle, index + needle.length);
+  }
+
+  return count;
+}

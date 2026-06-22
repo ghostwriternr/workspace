@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@cloudflare/ai-chat": "^0.7.1",
-    "@cloudflare/sandbox": "^0.10.2",
+    "@cloudflare/sandbox": "^0.12.1",
     "@cloudflare/think": "^0.7.2",
     "@cloudflare/workspace": "file:../../packages/workspace",
     "@cloudflare/workspace-adapter-dynamic-worker": "file:../../packages/adapters/dynamic-worker",
@@ -29,8 +29,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.38.0",
-    "@cloudflare/vitest-pool-workers": "^0.16.9",
+    "@cloudflare/vite-plugin": "^1.40.1",
+    "@cloudflare/vitest-pool-workers": "^0.16.14",
     "@types/node": "^25.9.1",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
@@ -39,6 +39,6 @@
     "typescript": "^5.5.2",
     "vite": "^8.0.14",
     "vitest": "^4.1.7",
-    "wrangler": "^4.94.0"
+    "wrangler": "^4.99.0"
   }
 }

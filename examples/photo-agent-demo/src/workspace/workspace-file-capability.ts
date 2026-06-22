@@ -3,7 +3,7 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import {
   Workspace,
   type ScopedWorkspaceFileCapability,
-  type ScopedWorkspaceRpcResult,
+  type ScopedWorkspaceCapabilityResult,
   type WorkspaceEntry,
   type WorkspaceStat,
 } from "@cloudflare/workspace";
@@ -15,27 +15,27 @@ type WorkspaceFileCapabilityProps = {
 
 export class WorkspaceFileCapability extends WorkerEntrypoint<Env, WorkspaceFileCapabilityProps> implements ScopedWorkspaceFileCapability {
   private capability?: ScopedWorkspaceFileCapability;
-  private capabilityPromise?: Promise<ScopedWorkspaceRpcResult<ScopedWorkspaceFileCapability>>;
+  private capabilityPromise?: Promise<ScopedWorkspaceCapabilityResult<ScopedWorkspaceFileCapability>>;
 
-  async readFile(path: string): Promise<ScopedWorkspaceRpcResult<Uint8Array>> {
+  async readFile(path: string): Promise<ScopedWorkspaceCapabilityResult<Uint8Array>> {
     return this.withCapability((workspace) => workspace.readFile(path));
   }
 
-  async writeFile(path: string, contents: Uint8Array): Promise<ScopedWorkspaceRpcResult> {
+  async writeFile(path: string, contents: Uint8Array): Promise<ScopedWorkspaceCapabilityResult> {
     return this.withCapability((workspace) => workspace.writeFile(path, contents));
   }
 
-  async list(path: string): Promise<ScopedWorkspaceRpcResult<WorkspaceEntry[]>> {
+  async list(path: string): Promise<ScopedWorkspaceCapabilityResult<WorkspaceEntry[]>> {
     return this.withCapability((workspace) => workspace.list(path));
   }
 
-  async stat(path: string): Promise<ScopedWorkspaceRpcResult<WorkspaceStat>> {
+  async stat(path: string): Promise<ScopedWorkspaceCapabilityResult<WorkspaceStat>> {
     return this.withCapability((workspace) => workspace.stat(path));
   }
 
   private async withCapability<T>(
-    useCapability: (workspace: ScopedWorkspaceFileCapability) => Promise<ScopedWorkspaceRpcResult<T>>,
-  ): Promise<ScopedWorkspaceRpcResult<T>> {
+    useCapability: (workspace: ScopedWorkspaceFileCapability) => Promise<ScopedWorkspaceCapabilityResult<T>>,
+  ): Promise<ScopedWorkspaceCapabilityResult<T>> {
     const capability = await this.getWorkspaceFileCapability();
     if (capability.status === "error") {
       return capability;
@@ -44,7 +44,7 @@ export class WorkspaceFileCapability extends WorkerEntrypoint<Env, WorkspaceFile
     return useCapability(capability.value);
   }
 
-  private async getWorkspaceFileCapability(): Promise<ScopedWorkspaceRpcResult<ScopedWorkspaceFileCapability>> {
+  private async getWorkspaceFileCapability(): Promise<ScopedWorkspaceCapabilityResult<ScopedWorkspaceFileCapability>> {
     if (this.capability) {
       return { status: "ok", value: this.capability };
     }
@@ -60,9 +60,12 @@ export class WorkspaceFileCapability extends WorkerEntrypoint<Env, WorkspaceFile
     return capability;
   }
 
-  private async createWorkspaceFileCapability(): Promise<ScopedWorkspaceRpcResult<ScopedWorkspaceFileCapability>> {
-    const workspace = Workspace.get(this.env.WORKSPACES, this.ctx.props.workspaceName);
-    const copy = await workspace.files.getCopy(this.ctx.props.draftEditId);
+  private async createWorkspaceFileCapability(): Promise<ScopedWorkspaceCapabilityResult<ScopedWorkspaceFileCapability>> {
+    const workspace = Workspace.bind({
+      artifacts: this.env.ARTIFACTS,
+      objects: this.env.WORKSPACE_OBJECTS,
+    }).get(this.ctx.props.workspaceName);
+    const copy = await workspace.copies.get(this.ctx.props.draftEditId);
     if (Result.isError(copy)) {
       return {
         status: "error",

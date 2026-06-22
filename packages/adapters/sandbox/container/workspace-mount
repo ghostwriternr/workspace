@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${WORKSPACE_REMOTE:?WORKSPACE_REMOTE is required}"
+: "${WORKSPACE_BASE_REF:?WORKSPACE_BASE_REF is required}"
+: "${WORKSPACE_COPY_REF:?WORKSPACE_COPY_REF is required}"
+: "${WORKSPACE_PATH:=/workspace}"
+: "${ARTIFACT_FS_ROOT:=/tmp/artifact-fs}"
+: "${WORKSPACE_MOUNT_METADATA_FILE:=/tmp/workspace-mount.env}"
+: "${ARTIFACT_FS_DAEMON_LOG:=/tmp/artifact-fs-daemon.log}"
+: "${ARTIFACT_FS_DAEMON_PID_FILE:=/tmp/artifact-fs-daemon.pid}"
+
+export ARTIFACT_FS_ROOT
+
+log() {
+  printf 'workspace-mount[%s]: %s\n' "$(date -Iseconds)" "$*" >&2
+}
+
+redacted_remote() {
+  printf '%s' "$WORKSPACE_REMOTE" | sed -E 's#://[^/@]+@#://REDACTED@#'
+}
+
+if [[ "$WORKSPACE_PATH" != /* ]]; then
+  echo "workspace-mount: WORKSPACE_PATH must be absolute" >&2
+  exit 1
+fi
+
+if [[ "$WORKSPACE_REMOTE" == https://* && "$WORKSPACE_REMOTE" =~ ^https://[^/]*@ ]]; then
+  echo "workspace-mount: HTTPS remotes must not include credentials" >&2
+  exit 1
+fi
+
+repo_name=$(basename "$WORKSPACE_PATH")
+mount_root=$(dirname "$WORKSPACE_PATH")
+if [ -z "$repo_name" ] || [ "$repo_name" = "." ] || [ "$repo_name" = "/" ]; then
+  echo "workspace-mount: could not derive repository name from WORKSPACE_PATH" >&2
+  exit 1
+fi
+
+load_metadata() {
+  if [ ! -f "$WORKSPACE_MOUNT_METADATA_FILE" ]; then
+    return 0
+  fi
+
+  while IFS='=' read -r key value; do
+    case "$key" in
+      MOUNTED_REMOTE) MOUNTED_REMOTE="$value" ;;
+      MOUNTED_BASE_REF) MOUNTED_BASE_REF="$value" ;;
+      MOUNTED_COPY_REF) MOUNTED_COPY_REF="$value" ;;
+      MOUNTED_PATH) MOUNTED_PATH="$value" ;;
+      MOUNTED_REPO_NAME) MOUNTED_REPO_NAME="$value" ;;
+    esac
+  done <"$WORKSPACE_MOUNT_METADATA_FILE"
+}
+
+write_metadata() {
+  cat >"$WORKSPACE_MOUNT_METADATA_FILE" <<EOF
+MOUNTED_REMOTE=$WORKSPACE_REMOTE
+MOUNTED_BASE_REF=$WORKSPACE_BASE_REF
+MOUNTED_COPY_REF=$WORKSPACE_COPY_REF
+MOUNTED_PATH=$WORKSPACE_PATH
+MOUNTED_REPO_NAME=$repo_name
+EOF
+}
+
+ensure_mount_matches_request() {
+  if [ -z "${MOUNTED_REMOTE:-}" ]; then
+    return 0
+  fi
+
+  if [ "$MOUNTED_REMOTE" != "$WORKSPACE_REMOTE" ] \
+    || [ "$MOUNTED_BASE_REF" != "$WORKSPACE_BASE_REF" ] \
+    || [ "$MOUNTED_COPY_REF" != "$WORKSPACE_COPY_REF" ] \
+    || [ "$MOUNTED_PATH" != "$WORKSPACE_PATH" ] \
+    || [ "$MOUNTED_REPO_NAME" != "$repo_name" ]; then
+    echo "workspace-mount: sandbox is already mounted for a different Workspace copy" >&2
+    exit 1
+  fi
+}
+
+ensure_daemon() {
+  if [ -f "$ARTIFACT_FS_DAEMON_PID_FILE" ]; then
+    existing_pid=$(cat "$ARTIFACT_FS_DAEMON_PID_FILE" 2>/dev/null || true)
+    if [ -n "$existing_pid" ] && kill -0 "$existing_pid" 2>/dev/null; then
+      return 0
+    fi
+    rm -f "$ARTIFACT_FS_DAEMON_PID_FILE"
+  fi
+
+  nohup artifact-fs daemon --root "$mount_root" >"$ARTIFACT_FS_DAEMON_LOG" 2>&1 </dev/null &
+  echo "$!" >"$ARTIFACT_FS_DAEMON_PID_FILE"
+}
+
+wait_for_mount() {
+  for _ in $(seq 1 120); do
+    if [ -f "$ARTIFACT_FS_DAEMON_PID_FILE" ]; then
+      daemon_pid=$(cat "$ARTIFACT_FS_DAEMON_PID_FILE" 2>/dev/null || true)
+      if [ -n "$daemon_pid" ] && ! kill -0 "$daemon_pid" 2>/dev/null; then
+        echo "workspace-mount: artifact-fs daemon exited before mount became available" >&2
+        if [ -f "$ARTIFACT_FS_DAEMON_LOG" ]; then
+          cat "$ARTIFACT_FS_DAEMON_LOG" >&2
+        fi
+        exit 1
+      fi
+    fi
+
+    if [ -e "$WORKSPACE_PATH/.git" ] && git -C "$WORKSPACE_PATH" rev-parse HEAD >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.5
+  done
+
+  echo "workspace-mount: mount did not appear at $WORKSPACE_PATH" >&2
+  exit 1
+}
+
+if [ ! -e /dev/fuse ]; then
+  echo "workspace-mount: /dev/fuse is not available in this sandbox" >&2
+  exit 1
+fi
+
+log "starting remote=$(redacted_remote) baseRef=$WORKSPACE_BASE_REF copyRef=$WORKSPACE_COPY_REF path=$WORKSPACE_PATH root=$ARTIFACT_FS_ROOT"
+mkdir -p "$ARTIFACT_FS_ROOT" "$mount_root"
+load_metadata
+ensure_mount_matches_request
+
+log "checking artifact-fs registration for $repo_name"
+if ! artifact-fs status --name "$repo_name" >/dev/null 2>&1; then
+  log "registering artifact-fs repo $repo_name at mount root $mount_root"
+  artifact-fs add-repo \
+    --name "$repo_name" \
+    --remote "$WORKSPACE_REMOTE" \
+    --branch "$WORKSPACE_BASE_REF" \
+    --mount-root "$mount_root"
+  log "registered artifact-fs repo $repo_name"
+else
+  log "artifact-fs repo $repo_name already registered"
+fi
+
+write_metadata
+log "ensuring artifact-fs daemon"
+ensure_daemon
+log "waiting for mount at $WORKSPACE_PATH"
+wait_for_mount
+log "mount is available"
+
+git config --global --add safe.directory "$WORKSPACE_PATH" >/dev/null 2>&1 || true
+
+log "fetching copy ref $WORKSPACE_COPY_REF"
+git -C "$WORKSPACE_PATH" fetch origin "$WORKSPACE_COPY_REF"
+log "checking out copy ref"
+git -C "$WORKSPACE_PATH" checkout --detach FETCH_HEAD
+log "checkout complete"
+
+printf 'path=%s\n' "$WORKSPACE_PATH"
+printf 'ref=%s\n' "$WORKSPACE_COPY_REF"
+printf 'head=%s\n' "$(git -C "$WORKSPACE_PATH" rev-parse HEAD)"

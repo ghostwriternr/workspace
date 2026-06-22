@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["es2024", "dom", "dom.iterable", "esnext.disposable"],
+    "jsx": "react-jsx",
+    "types": ["@cloudflare/vitest-pool-workers/types", "vite/client"]
+  },
+  "include": [
+    "shared/**/*.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "worker/**/*.ts",
+    "test/**/*.ts",
+    "index.html",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "worker-configuration.d.ts"
+  ]
+}

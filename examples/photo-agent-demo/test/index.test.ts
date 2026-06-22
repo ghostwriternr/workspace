@@ -24,6 +24,14 @@ describe("photo agent demo worker", () => {
     expect(agentRouteIndex).toBeGreaterThan(demoRouteIndex);
   });
 
+  it("uses the Workspace Sandbox Worker base", async () => {
+    const source = await readFile(fileURLToPath(new URL("../src/index.ts", import.meta.url)), "utf8");
+
+    expect(source).toContain("@cloudflare/workspace-adapter-sandbox/workers");
+    expect(source).toContain("extends WorkspaceSandbox<Env>");
+    expect(source).not.toContain("static outboundHandlers =");
+  });
+
   it("describes the wired demo capabilities", async () => {
     const response = handleDemoRequest(
       new Request("http://example.com/api/demo-capabilities"),
@@ -46,6 +54,19 @@ describe("photo agent demo worker", () => {
     expect(source).toContain('"runWorkspaceCommand"');
     expect(source).toContain('"runDynamicWorker"');
     expect(source).toContain("this.controller().runDynamicWorker");
+  });
+
+  it("keeps draft publication out of active model tools", async () => {
+    const source = await readFile(fileURLToPath(new URL("../src/agent/photo-agent.ts", import.meta.url)), "utf8");
+    const activeTools = source.slice(
+      source.indexOf("const photoToolNames"),
+      source.indexOf("];") + 2,
+    );
+
+    expect(activeTools).not.toContain('"commitDraft"');
+    expect(activeTools).not.toContain('"discardDraft"');
+    expect(source).toContain("@callable()\n  async commitDraft");
+    expect(source).toContain("@callable()\n  async discardDraft");
   });
 
   it("enables the compatibility flag required by Dynamic Worker loader capabilities", async () => {

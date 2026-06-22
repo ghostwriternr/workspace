@@ -1,19 +1,26 @@
 import { routeAgentRequest } from "agents";
-
-export { Sandbox } from "@cloudflare/sandbox";
+import { Workspace } from "@cloudflare/workspace";
+import { WorkspaceSandbox, WorkspaceContainerProxy } from "@cloudflare/workspace-adapter-sandbox/workers";
+import { createGitHubSource } from "@cloudflare/workspace-source-github";
 
 import { handleDemoRequest } from "./http/demo";
 import { handleRepoImportRequest } from "./http/repo-import";
 
-export { WorkspaceObject } from "@cloudflare/workspace";
+export { WorkspaceObject } from "@cloudflare/workspace/workers";
 export { CodingAgent } from "./agent/coding-agent";
 export { WorkspaceFileCapability } from "./workspace/workspace-file-capability";
+export { WorkspaceContainerProxy as ContainerProxy };
+
+export class Sandbox extends WorkspaceSandbox<Env> {}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const importResponse = await handleRepoImportRequest(
       request,
-      { workspaces: env.WORKSPACES, githubToken: optionalGithubToken(env) },
+      {
+        github: createGitHubSource({ artifacts: env.ARTIFACTS }),
+        workspaces: Workspace.bind({ artifacts: env.ARTIFACTS, objects: env.WORKSPACE_OBJECTS }),
+      },
       { agents: env.CodingAgent },
     );
     if (importResponse) {
@@ -28,8 +35,3 @@ export default {
     return handleDemoRequest(request) ?? new Response("Not found", { status: 404 });
   },
 } satisfies ExportedHandler<Env>;
-
-function optionalGithubToken(env: Env): string | undefined {
-  const token = (env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
-  return token && token.length > 0 ? token : undefined;
-}

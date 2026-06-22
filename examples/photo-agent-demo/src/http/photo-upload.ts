@@ -1,6 +1,8 @@
+import { Workspace } from "@cloudflare/workspace";
 import { uploadOriginalPhoto } from "../photo/upload";
 
-type WorkspaceNamespace = Parameters<typeof uploadOriginalPhoto>[0]["workspaces"];
+type PhotoArtifactsBinding = Parameters<typeof uploadOriginalPhoto>[0]["artifacts"];
+type WorkspaceObjectNamespace = Parameters<typeof Workspace.bind>[0]["objects"];
 
 type PhotoAgentNamespace = {
   getByName(name: string): { refreshPhotoState(): Promise<unknown> };
@@ -10,7 +12,8 @@ const uploadRoutePattern = /^\/api\/workspaces\/([^/]+)\/photos\/original$/;
 
 export async function handlePhotoUploadRequest(
   request: Request,
-  workspaces: WorkspaceNamespace,
+  artifacts: PhotoArtifactsBinding,
+  workspaceObjects: WorkspaceObjectNamespace,
   photoAgents?: PhotoAgentNamespace,
 ): Promise<Response | undefined> {
   const url = new URL(request.url);
@@ -29,12 +32,12 @@ export async function handlePhotoUploadRequest(
 
   try {
     const upload = await uploadOriginalPhoto({
-      workspaces,
+      artifacts,
+      workspaces: Workspace.bind({ artifacts, objects: workspaceObjects }),
       workspaceName,
       contents,
       contentType,
     });
-
     if (photoAgents) {
       await photoAgents.getByName(workspaceName).refreshPhotoState();
     }

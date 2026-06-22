@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./workers": "./src/workers.ts"
   },
   "scripts": {
     "check": "tsc --noEmit && npm run knip",
@@ -12,11 +13,12 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@cloudflare/sandbox": "^0.12.1",
     "@cloudflare/workspace": "file:../../workspace",
     "better-result": "^2.9.2"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260523.0",
+    "@types/node": "^25.9.3",
     "knip": "^6.14.2",
     "typescript": "^5.5.2",
     "vitest": "^4.1.7"

@@ -12,7 +12,8 @@ export const CODING_TOOLS = [
       "Read the contents of a file, or list a directory. File reads are truncated at 2000 lines or 50KB by default. Use offset and limit to continue through large files.",
     promptSnippet: "Read file contents or list a directory",
     promptGuidelines: [
-      "Use read to look at files. Use it for targeted inspection, not to dump entire directories.",
+      "Use read to look at files. Paths are repository paths such as /README.md or /packages, not workspace names.",
+      "Use read for targeted inspection, not to dump entire directories.",
       "File reads are truncated at 2000 lines or 50KB. Use offset and limit when you need more of a large file.",
     ],
   },
@@ -49,12 +50,22 @@ export const CODING_TOOLS = [
   {
     name: "shell",
     description:
-      "Run a shell command against the repository in an isolated Sandbox with the working copy mounted at /workspace. Use this for package managers, test runners, native tools, and process execution. Files written under /workspace are reconciled back into the durable working copy after the command exits, even if the command fails.",
-    promptSnippet: "Run shell commands against the repository",
+      "Run a shell command with the repository mounted at /workspace. Use this for package managers, test runners, native tools, and commands that need a real process environment. File changes made by shell are not visible to Workspace tools until capture runs.",
+    promptSnippet: "Run shell commands in a mounted repository working tree",
     promptGuidelines: [
-      "Use shell when you need package managers, test runners, native tools, or real process execution.",
-      "shell runs with the working copy mounted at /workspace. Use paths under /workspace in commands.",
-      "Files written under /workspace are reconciled back into the durable working copy after the command exits, even when the exit code is nonzero. Failed commands can still teach you about the environment or leave useful files to inspect.",
+      "Use shell only when you need a real process environment: package managers, test runners, build tools, native binaries, or filesystem-heavy commands.",
+      "shell runs with the repository mounted at /workspace. Use /workspace paths in shell commands.",
+      "After a shell command writes files that should become part of the working copy, call capture before reading those files with read or before telling the user the change is in the working copy.",
+    ],
+  },
+  {
+    name: "capture",
+    description:
+      "Capture file changes made by shell commands under /workspace back into the durable working copy. This does not publish changes; the user still decides whether to apply or discard the working copy.",
+    promptSnippet: "Capture shell-written files into the working copy",
+    promptGuidelines: [
+      "Use capture after shell commands that create, modify, or delete repository files under /workspace.",
+      "capture does not publish changes. The user still decides whether to apply or discard the working copy.",
     ],
   },
 ] as const satisfies readonly CodingToolDefinition[];

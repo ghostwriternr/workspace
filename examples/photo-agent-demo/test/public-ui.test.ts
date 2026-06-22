@@ -40,6 +40,16 @@ describe("photo demo browser UI", () => {
     expect(client).not.toContain("operation-button");
   });
 
+  it("publishes or discards drafts through UI callables", async () => {
+    const client = await readProjectFile("src/client/App.tsx");
+
+    expect(client).toContain("Make draft current");
+    expect(client).toContain("Throw away draft");
+    expect(client).toContain('agent.call("commitDraft")');
+    expect(client).toContain('agent.call("discardDraft")');
+    expect(client).toContain('result.status === "error"');
+  });
+
   it("renders streamed message parts as text, tool cards, results, and reasoning", async () => {
     const client = await readProjectFile("src/client/App.tsx");
 

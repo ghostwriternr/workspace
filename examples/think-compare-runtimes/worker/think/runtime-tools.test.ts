@@ -1,0 +1,92 @@
+import { describe, expect, test } from "vitest";
+
+import { createRuntimeThinkTools } from "./runtime-tools";
+import type { SandboxComparisonRuntime, WorkspaceComparisonRuntime } from "../runtime-harness/coding-runtime";
+
+describe("createRuntimeThinkTools", () => {
+  test("wraps Workspace runtime tools with event recording", async () => {
+    const events: unknown[] = [];
+    const tools = createRuntimeThinkTools({
+      runtime: "workspace",
+      recorder: { record: (event) => events.push(event) },
+      runtimeTools: {
+        async seedFixture() {},
+        async read(input) { return `read:${input.path}`; },
+        async write(input) { return { path: input.path, bytes: input.contents.length }; },
+        async edit(input) { return { path: input.path, replacements: input.oldText === "old" ? 1 : 0 }; },
+        async run(input) { return { ran: input.code.includes("WORKSPACE") }; },
+        async shell(input) { return { command: input.command, exitCode: 0, stdout: "ok\n", stderr: "" }; },
+      } satisfies WorkspaceComparisonRuntime,
+    });
+
+    await expect(tools.read.execute?.({ path: "/README.md" }, toolExecutionOptions())).resolves.toBe("read:/README.md");
+    await expect(tools.run.execute?.({ code: "export default ({ WORKSPACE }) => WORKSPACE" }, toolExecutionOptions())).resolves.toEqual({ ran: true });
+
+    expect(events).toEqual([
+      expect.objectContaining({ runtime: "workspace", kind: "agent_tool_call", title: "Think requested read" }),
+      expect.objectContaining({ runtime: "workspace", kind: "agent_tool_result", title: "Think read result" }),
+      expect.objectContaining({ runtime: "workspace", kind: "agent_tool_call", title: "Think requested run" }),
+      expect.objectContaining({ runtime: "workspace", kind: "agent_tool_result", title: "Think run result" }),
+    ]);
+  });
+
+  test("serializes runtime tool execution", async () => {
+    const order: string[] = [];
+    let releaseFirst: (() => void) | undefined;
+    const firstStarted = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    const tools = createRuntimeThinkTools({
+      runtime: "sandbox",
+      recorder: { record: () => undefined },
+      runtimeTools: {
+        async seedFixture() {},
+        async read(input) {
+          order.push(`start:${input.path}`);
+          if (input.path === "/first") {
+            await firstStarted;
+          }
+          order.push(`finish:${input.path}`);
+          return input.path;
+        },
+        async write(input) { return { path: input.path }; },
+        async edit(input) { return { path: input.path, replacements: 1 }; },
+        async shell(input) { return { command: input.command, exitCode: 0, stdout: "", stderr: "" }; },
+      } satisfies SandboxComparisonRuntime,
+    });
+
+    const first = tools.read.execute?.({ path: "/first" }, toolExecutionOptions());
+    const second = tools.read.execute?.({ path: "/second" }, toolExecutionOptions());
+
+    await waitForMicrotasks();
+    expect(order).toEqual(["start:/first"]);
+    releaseFirst?.();
+    await expect(Promise.all([first, second])).resolves.toEqual(["/first", "/second"]);
+    expect(order).toEqual(["start:/first", "finish:/first", "start:/second", "finish:/second"]);
+  });
+
+  test("wraps raw Sandbox tools without a Dynamic Worker run tool", () => {
+    const tools = createRuntimeThinkTools({
+      runtime: "sandbox",
+      recorder: { record: () => undefined },
+      runtimeTools: {
+        async seedFixture() {},
+        async read() { return ""; },
+        async write(input) { return { path: input.path }; },
+        async edit(input) { return { path: input.path, replacements: 1 }; },
+        async shell(input) { return { command: input.command, exitCode: 0, stdout: "", stderr: "" }; },
+      } satisfies SandboxComparisonRuntime,
+    });
+
+    expect(Object.keys(tools).sort()).toEqual(["edit", "read", "shell", "write"]);
+  });
+});
+
+function waitForMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function toolExecutionOptions() {
+  return { toolCallId: "test", messages: [], abortSignal: undefined } as never;
+}

@@ -9,9 +9,9 @@ import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { CodingAgentState } from "../agent/coding-agent";
-import type { RepoState } from "../repo/state-controller";
+import type { RepoDirectoryState, RepoState } from "../repo/state-controller";
 import { UI_COPY } from "./ui-copy";
-import { loadRepoState } from "./repo-state";
+import { loadDirectoryState, loadRepoState } from "./repo-state";
 
 type ToolPart = Parameters<typeof getToolName>[0];
 type CodingAgentClient = ReturnType<typeof useAgent<CodingAgentState>>;
@@ -19,9 +19,11 @@ type CodingAgentClient = ReturnType<typeof useAgent<CodingAgentState>>;
 export function AgentChat({
   agent,
   onRepoState,
+  onDirectoryState,
 }: {
   agent: CodingAgentClient;
   onRepoState(repo: RepoState): void;
+  onDirectoryState(directory: RepoDirectoryState): void;
 }) {
   const [input, setInput] = useState("");
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -37,8 +39,14 @@ export function AgentChat({
       if (status !== "ready" && status !== "error") return;
       try {
         await agent.ready;
-        const repo = await loadRepoState(agent);
-        if (!cancelled) onRepoState(repo);
+        const [repo, directory] = await Promise.all([
+          loadRepoState(agent),
+          loadDirectoryState(agent, "/"),
+        ]);
+        if (!cancelled) {
+          onRepoState(repo);
+          onDirectoryState(directory);
+        }
       } catch {
         // The import panel reports initial connection/import errors; chat state refresh is opportunistic.
       }

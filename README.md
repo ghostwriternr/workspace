@@ -1,53 +1,117 @@
 # Workspace
 
-Workspace is a durable file tree for Cloudflare execution environments. You can branch it into an isolated working copy, edit that copy from a Worker, a Sandbox, or a Dynamic Worker, and then either publish the changes or throw them away.
+Workspace is an agent-friendly work surface over Artifacts-backed durable file
+state on Cloudflare.
 
-It's the missing primitive between "object storage" and "filesystem inside a runtime", aimed at agents, generated apps, and any product that wants a draft → preview → publish loop over files.
+It gives products a named place to keep files, create durable working copies,
+hand those copies to Dynamic Workers or Sandboxes, and decide when proposed work
+becomes current. Artifacts owns the versioned file authority underneath;
+Workspace owns the product semantics above it.
 
 ## What you get
 
-- A durable file tree (`WorkspaceObject`, a Durable Object backed by SQLite + R2).
-- Isolated working copies you can hand to a runtime: a Sandbox sees it at `/workspace`, a Dynamic Worker sees it as `env.WORKSPACE`, a trusted Worker uses it directly.
-- Explicit publish (`apply`) and explicit throwaway (`discard`). Nothing is published implicitly when a command exits or a Worker returns.
-- Immutable revisions of head as recovery points.
+- Current files and durable working copies backed by Artifacts.
+- Explicit publish (`apply`) and throwaway (`discard`) boundaries.
+- Scoped file capabilities for delegated Worker code.
+- Sandbox filesystem access through runtime adapters.
+- A small per-Workspace Durable Object for coordination metadata, not file
+  storage.
 
-Workspace is source-agnostic: product flows might import files from a user upload, a GitHub checkout, a Hugging Face snapshot, an S3 bucket, or mount stable source snapshots beside Workspace-owned working copies. Bridging those systems in is product/source-adapter work (see [`docs/sources.md`](./docs/sources.md)). Runtime adapters, such as the Dynamic Worker and Sandbox adapters, project Workspace file capabilities into a specific execution environment without moving execution into Workspace core.
+Workspace is not an execution engine, Git porcelain, source lifecycle manager,
+or custom blob store. Source adapters seed or export Workspace state. Runtime
+adapters project working copies into execution environments.
+
+## Shape
+
+```ts
+const workspaces = Workspace.bind({
+  artifacts: env.ARTIFACTS,
+  objects: env.WORKSPACE_OBJECTS,
+});
+
+const workspace = workspaces.get("my-project");
+
+const copyResult = await workspace.copies.create({ label: "agent-edit" });
+if (Result.isError(copyResult)) return copyResult;
+
+const copy = copyResult.value;
+await copy.files.write("/README.md", bytes);
+
+const mount = await attachWorkspaceCopyToSandbox({
+  copy,
+  sandbox,
+  path: "/workspace",
+});
+if (Result.isError(mount)) return mount;
+
+await sandbox.exec("npm test", { cwd: mount.value.path });
+await mount.value.capture();
+
+await copy.apply(); // or discard()
+```
+
+See [`docs/product-api.md`](./docs/product-api.md) for the full surface and
+[`docs/known-limitations.md`](./docs/known-limitations.md) for current gaps.
 
 ## Where to look
 
-- [`docs/architecture.md`](./docs/architecture.md) — how the system is actually built and how a demo flow runs end-to-end. **Start here.**
-- [`docs/product-model.md`](./docs/product-model.md) — the conceptual model: working copies, projections, authority.
-- [`docs/product-api.md`](./docs/product-api.md) — the user-facing API we're aiming for.
-- [`docs/runtime-projections.md`](./docs/runtime-projections.md) — the emerging vocabulary for file authorities, mounted views, and runtime adapters.
-- [`docs/product-boundaries.md`](./docs/product-boundaries.md) — what Workspace is and isn't.
-- [`docs/sources.md`](./docs/sources.md) — how external systems (GitHub, Hugging Face, S3, …) relate to a Workspace.
-- [`docs/known-limitations.md`](./docs/known-limitations.md) — honest list of prototype gaps.
-- [`docs/photo-agent-demo.md`](./docs/photo-agent-demo.md) — what the example app proves.
-- [`AGENTS.md`](./AGENTS.md) — guardrails and conventions for anyone (or any agent) modifying the repo.
+Cross-cutting docs (concepts, boundaries, current state):
 
-## Layout
+- [`docs/product-model.md`](./docs/product-model.md) — core concepts and
+  product semantics.
+- [`docs/product-api.md`](./docs/product-api.md) — the API surface callers
+  use.
+- [`docs/architecture.md`](./docs/architecture.md) — current Artifacts-backed
+  implementation.
+- [`docs/runtime-adapters.md`](./docs/runtime-adapters.md) — Dynamic Worker
+  and Sandbox projection model.
+- [`docs/sources.md`](./docs/sources.md) — how external systems seed/export
+  Workspace state.
+- [`docs/product-boundaries.md`](./docs/product-boundaries.md) — what stays
+  out of Workspace core.
+- [`docs/known-limitations.md`](./docs/known-limitations.md) — current
+  prototype gaps.
+- [`AGENTS.md`](./AGENTS.md) — guardrails and commands for agents modifying
+  the repo.
 
-```
-packages/workspace/                 Reusable Workspace package (DO + R2, sessions, projections)
-packages/source/github/             GitHub REST source adapter for streaming repo files
-packages/adapters/dynamic-worker/   Dynamic Worker adapter for scoped Workspace files
-packages/adapters/sandbox/          Sandbox adapter for mounted Workspace file copies
-examples/photo-agent-demo/           Worker app: Think agent edits photos via Sandbox + Dynamic Worker
-                             over one Workspace working copy (called a draft in the UI)
-examples/coding-agent-demo/  Worker app: imports public GitHub repos into Workspace for
-                             agent-oriented coding flows
-```
+Per-package and per-example READMEs:
+
+- [`packages/workspace`](./packages/workspace/README.md) — the Workspace
+  package.
+- [`packages/adapters/dynamic-worker`](./packages/adapters/dynamic-worker/README.md)
+  — Dynamic Worker runtime adapter.
+- [`packages/adapters/sandbox`](./packages/adapters/sandbox/README.md) —
+  Sandbox runtime adapter.
+- [`packages/sources/github`](./packages/sources/github/README.md) — GitHub
+  source adapter.
+- [`examples/photo-agent-demo`](./examples/photo-agent-demo/README.md) —
+  Think photo agent over one Workspace draft.
+- [`examples/coding-agent-demo`](./examples/coding-agent-demo/README.md) —
+  Think coding agent over imported GitHub repos.
+- [`examples/think-compare-runtimes`](./examples/think-compare-runtimes/README.md)
+  — fixed-task comparison of Workspace-backed and raw Sandbox agent runtimes.
 
 ## Status
 
-Prototype. The core durable semantics work (head tree, working copies, revisions, scoped file capabilities, filesystem projection). The first product-facing API layer exists for current files, file copies, streaming bulk tree writes into copies, filesystem mounts, reconcile, scoped file capabilities, apply, and discard. A first GitHub source adapter streams repository files into that import path. See `docs/known-limitations.md` for the full list.
+Prototype. Workspace uses Artifacts as the durable/versioned file authority, a
+`WorkspaceObject` Durable Object for coordination metadata, and a temporary
+internal `isomorphic-git` bridge until Artifacts exposes direct file mutation
+APIs.
 
-The photo agent example is deployed at <https://workspace-photo-agent-demo.ghostwriternr.workers.dev>. The coding agent example imports public GitHub repos and exposes Workspace-backed Dynamic Worker and Sandbox tools. `packages/source/*` packages bridge external file sources into Workspace flows. `packages/adapters/*` packages project Workspace capabilities into runtimes.
+The photo agent example is deployed at
+<https://workspace-photo-agent-demo.ghostwriternr.workers.dev>. The coding
+agent example imports public GitHub repositories through Artifacts and edits
+them through Dynamic Worker (`run`) and Sandbox (`shell`) tools backed by a
+shared working copy.
 
 ## Commands
 
 ```bash
-just check    # typecheck + knip
-just test     # vitest across packages/examples
-just typegen  # regenerate worker-configuration.d.ts files
+just check                 # typecheck + knip
+just test                  # vitest across packages/examples
+just typegen               # regenerate worker-configuration.d.ts files
+just build-sandbox-base    # build local base image for Sandbox examples
+just install-fuse-workerd  # install patched local workerd for FUSE dev
+just dev-coding-fuse       # coding demo with local Sandbox FUSE enabled
+just dev-photo-fuse        # photo demo with local Sandbox FUSE enabled
 ```

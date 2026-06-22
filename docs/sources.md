@@ -1,122 +1,173 @@
 # Sources
 
-A Workspace doesn't own external sources. Uploaded bytes, a checkout of a GitHub repo, a Hugging Face model snapshot, a slice of an S3 bucket — a product may import them into Workspace-owned files, or it may mount a stable source snapshot beside a Workspace-owned writable layer.
+Sources are external systems that can provide or receive files: GitHub,
+GitLab, Hugging Face, S3, user uploads, another Artifacts repository, or a
+product-specific file store.
 
-This doc explains why that matters, what stays out of Workspace, and how products bridge external systems into a Workspace.
+Workspace core does not own source lifecycle. Source adapters translate external
+systems into Workspace work surfaces or export Workspace state back out.
 
-For the conceptual model, see [`product-model.md`](./product-model.md). For boundaries, see [`product-boundaries.md`](./product-boundaries.md).
+For the product model, see [`product-model.md`](./product-model.md). For
+boundaries, see [`product-boundaries.md`](./product-boundaries.md).
 
 ## The split
 
-External systems have their own lifecycle. A GitHub branch moves. An S3 object is overwritten. A Hugging Face revision is reissued. Artifacts versions expire.
+An external source has its own identity, authorization, lifecycle, and version
+model. A GitHub branch can move. An S3 object can be overwritten. A Hugging Face
+revision can be replaced. Workspace should not absorb those lifecycles.
 
-Workspace doesn't track any of that. It owns the file state a product chose to import or write into Workspace-owned layers, and that's it. If `main` moves on GitHub, a previously resolved source snapshot doesn't move. If a model revision is replaced, imported Workspace files don't change.
+Workspace owns a named durable work surface over Artifacts-backed file state.
+Source adapters own the source-specific work needed to seed or export that work
+surface.
 
-That's deliberate. Workspace is meant to provide stable, inspectable, publishable file state. Reasoning about it has to be possible without letting every external lifecycle leak into Workspace core.
-
-## What a "source" is
-
-A source is whatever a product treats as the upstream for some files. Examples:
-
-- A Git ref (GitHub, GitLab, [Artifacts](https://developers.cloudflare.com/artifacts/)).
-- A Hugging Face model or dataset at a specific revision.
-- A prefix in an S3 or R2 bucket.
-- A user upload from a browser.
-- Another Workspace revision.
-
-Sources have:
-
-- An **identity** the product understands (`github:owner/repo`, `hf:org/model`, `s3:bucket/prefix`, …).
-- A **snapshot** if the source supports it: a commit SHA, a revision id, an etag manifest, a content digest. Strongly-versioned sources let products reason about reproducibility; weakly-versioned ones don't.
-- A way to **read** files (and sometimes a way to **list** them).
-
-Workspace itself doesn't need to understand any of that. Products do.
-
-## Source adapters live outside core
-
-The product code that talks to GitHub, Hugging Face, S3, or anywhere else is a **source adapter**. Source adapters are not part of Workspace core. They live in product code or separate packages, in whatever shape fits the source.
-
-The Workspace ecosystem can provide source adapter packages, but the dependency direction stays the same: source adapters consume Workspace concepts; Workspace core does not depend on source-specific lifecycles.
-
-Anyone should be able to write one. The integration surface stays small:
-
-- Workspace core needs source-independent tree write primitives for eager import.
-- The broader Workspace ecosystem needs shared file-authority concepts for products that want source-backed views.
-- Products may record provenance for Workspace-owned bytes, if they care.
-- Source adapters need a way to read source bytes when a view, import, search, or export needs them.
-
-No part of Workspace core depends on a specific adapter, and no adapter needs Workspace's permission to exist.
+```text
+Source adapter         Workspace                 Artifacts
+-------------          ---------                 ---------
+resolve source  --->   work-surface API   --->   durable/versioned files
+export result   <---   working-copy state <---   commits/refs
+```
 
 ## What a source adapter does
 
-For eager import, a source adapter is small. The shape it exposes to product code is roughly:
+A source adapter may:
 
-- **Resolve a snapshot.** Take whatever the user gave you (`github:owner/repo@main`, `s3:bucket/prefix`, …) and return an identity plus a strongly-versioned snapshot — a commit SHA, an etag manifest, a revision id. Strong versioning is what lets a product reason about reproducibility.
-- **List files in that snapshot.** Yield file records — `{ path, contents, metadata? }` — typically as an async iterable so large sources can stream rather than buffer.
-- **Optionally exclude paths.** Skip `.git/`, `node_modules/`, build caches, secrets, anything the product doesn't want imported.
+- resolve a user input such as `owner/repo@main` to a stable source version;
+- ask Artifacts or the source API to capture/import that version;
+- connect the captured authority to a Workspace;
+- stream generated/uploaded files into a working copy when no authority-backed
+  capture exists;
+- record provenance metadata when the product needs it;
+- export a working copy or current files back to the external system.
 
-The product creates a file copy, then hands the adapter's iterable to `copy.files.writeTree(root, entries)` (see [`product-api.md`](./product-api.md)). `root` is the absolute Workspace directory where the source should land; each entry path is relative to that root. If the adapter stream fails, the product discards the copy. If import succeeds, the product decides whether to apply the copy. The adapter itself doesn't call `apply` and doesn't hold Workspace identity.
+A source adapter should not require product code to manually handle Artifacts
+remotes, default branches, tokens, or WorkspaceObject registration.
 
-The first source package, `packages/source/github`, does this for GitHub REST: it resolves a ref to a commit SHA, walks the recursive tree API, and streams blob contents as `WorkspaceTreeEntry` values. If the GitHub stream fails while `writeTree` is consuming it, the operation returns `WorkspaceTreeSourceError`. A trivial S3 or external-R2 source package would do the same against object APIs. Source packages stay small: the cost of supporting a new source is bounded, and the surface a product has to trust stays narrow. Future source-backed mounted views will need an additional read-only file authority shape, but that should stay outside Workspace core for the same dependency-direction reason.
+Product code looks like:
 
-## Provenance, not auto-sync
+```ts
+import { createGitHubSource } from "@cloudflare/workspace-source-github";
 
-Workspace can record where a file came from as part of its metadata — adapter id, source ref, source version, source path. That's useful for products that want to:
+const github = createGitHubSource({ artifacts: env.ARTIFACTS });
+const workspace = workspaces.get(workspaceName);
 
-- Show "this came from `github.com/foo/bar@abc123`" in a UI.
-- Generate an export patch against the original ref.
-- Skip re-importing a file whose source version hasn't changed.
+await github.importRepository({
+  workspace,
+  owner: "cloudflare",
+  repo: "sandbox-sdk",
+  ref: "main",
+});
+```
 
-It does not mean Workspace watches the source. There is no background sync, no rebase-on-import, no automatic refresh. If a product wants those, they're product behavior on top of Workspace primitives.
+not like product logic that parses repository remotes, default branches, or
+Git credentials itself.
 
-The rule is: **provenance is recorded, but lifecycle stays with the source.**
+Adapters bridge into a Workspace through the SPI exported from
+`@cloudflare/workspace/source-adapter`:
 
-## Ways sources participate
+```ts
+import { connectArtifactsRepository } from "@cloudflare/workspace/source-adapter";
 
-Adapters don't have to copy everything into Workspace eagerly.
+await connectArtifactsRepository(workspace, { repository, defaultBranch });
+```
 
-- **Eager import.** Read the source bytes, write them as Workspace-owned files. Simple. Right for small repos, uploads, small datasets, generated outputs. This is what the prototype does today for everything.
-- **Mounted source snapshot.** Resolve the source to a stable snapshot and expose it as a read-only file authority in a mounted view. Right for large repos, model weights, datasets, or sparse access. Workspace does not own unchanged source bytes in this mode.
-- **Workspace overlay.** Compose a Workspace-owned writable layer over a source snapshot. Reads see overlay changes first and then source files. Writes and deletes land in Workspace-owned state. Right for coding-agent edits where most source files are unchanged and export is the likely outcome.
-- **Product cache.** Cache source bytes in product- or Workspace-owned storage after reads, without changing the source's ownership. Useful for latency and rate limits; cache lifecycle must be explicit.
+The root `@cloudflare/workspace` API does not expose `connectArtifactsRepository`,
+so ordinary callers do not handle remotes, default branches, tokens, or
+`WorkspaceObject` metadata registration.
 
-The prototype only implements eager import. The other modes are real future work. The important boundary is ownership: importing makes bytes Workspace-owned; mounting keeps bytes source-owned; overlay writes are Workspace-owned.
+## Artifacts changes the import center
 
-## Internal R2 is not a source
+Before Workspace used Artifacts as its durable authority, eager source import
+looked like this:
 
-A product can build an "external R2 source adapter" that imports from a user's R2 bucket. That is not the same thing as the internal R2 bucket Workspace uses for its own content storage.
+```text
+source adapter streams every file -> Workspace writes bytes into its own store
+```
 
-- **Internal R2 (`WORKSPACE_BLOBS`).** Workspace's content store. Lifecycle owned by Workspace. Should be treated as private implementation detail; products shouldn't read or write it directly.
-- **External R2 source.** A bucket the product owns. Lifecycle owned by the product. Workspace reads through an adapter, same as any other source.
+That should no longer be the default for sources Artifacts can capture.
 
-The fact that both happen to be R2 is incidental. The boundary is who owns the lifecycle.
+For GitHub, the better shape is:
 
-## Export is the inverse
+```text
+GitHub source lifecycle -> Artifacts capture/import -> Workspace work surface
+```
 
-The same shape works in reverse. A product can:
+The source is still GitHub from the product's point of view. But once the repo
+is opened in Workspace, Workspace operates over an Artifacts-backed file
+authority. That avoids making Workspace reimplement Git tree storage or stream
+large repositories through a Worker unnecessarily.
 
-- Generate a patch from a Workspace working copy or overlay and open a GitHub PR.
-- Upload a Workspace revision's files to a Hugging Face model repo.
-- Sync a directory in current files to an S3 prefix.
-- Hand a Workspace revision tree to Artifacts as a Git push.
+## Streaming tree sources
 
-None of that is Workspace core. Workspace exposes the file state; product adapters do the export. Same direction-of-dependency rule as import.
+Not every source can be captured as an Artifacts-backed authority. Uploads,
+generated files, archives, and small external stores may still stream entries
+into a working copy.
 
-## What this means for products
+That path should use bounded tree writes:
 
-A coding agent, a data-science agent, a publishing pipeline, a generated-app preview — each one will need at least one source adapter, sometimes several. The pattern is consistent:
+```ts
+await copy.files.writeTree("/", entries);
+```
 
-1. The product resolves a source snapshot (commit SHA, revision id, manifest).
-2. The product imports files into a Workspace file copy, or mounts a stable source snapshot beside a Workspace-owned working copy/overlay.
-3. The agent (or user) edits the Workspace-owned working copy/overlay.
-4. The product exports the result somewhere — back to the source, to a different destination, or nowhere.
-5. The product decides retention.
+where `entries` is an iterable or async iterable. The implementation should
+chunk by entry count and byte size. It should not buffer an entire large source
+in memory.
 
-Workspace's job is the durable file-state part of steps 2 and 3: represent imported Workspace-owned files, provide working copies or overlays, and preserve edits until the product applies or discards them. Mounted source snapshots and export in step 4 are product/source-adapter work over Workspace-compatible file authorities. Steps 1 and 5 are firmly product territory.
+Streaming tree writes are materialization into Workspace state. They are not a
+generic source-overlay engine.
 
-## See also
+## No Workspace-managed source overlays
 
-- [`product-model.md`](./product-model.md) — what Workspace is conceptually.
-- [`product-boundaries.md`](./product-boundaries.md) — what stays out.
-- [`runtime-projections.md`](./runtime-projections.md) — how sources, file authorities, mounted views, and runtime projections relate.
-- [`known-limitations.md`](./known-limitations.md) — including the current eager-import/R2-storage assumptions, which get in the way of source-backed mounted views.
+Earlier design notes described source snapshots mounted under Workspace-owned
+overlays. That remains a useful way to reason about some product experiences,
+but it should not push Workspace toward managing path-level overlay entries,
+tombstones, or fallback reads itself.
+
+While Artifacts is the durable file authority, Workspace should lean on
+Artifacts repositories, commits, refs, and future direct file APIs. If a future
+lazy source-view feature is needed, it should be designed around Artifacts and
+source-adapter capabilities, not by rebuilding Git/tree semantics inside
+WorkspaceObject.
+
+## Provenance
+
+Products may want to remember where files came from:
+
+- adapter id;
+- source identity;
+- source version;
+- source path;
+- import time.
+
+That is provenance. It is useful for display, export, and debugging. It is not
+auto-sync.
+
+Workspace should not watch GitHub, S3, Hugging Face, or any other source for
+changes. A product that wants refresh, compare, or export behavior builds that
+above Workspace with source adapters.
+
+## Export
+
+Export is the inverse of import and remains product/source-adapter behavior.
+Examples:
+
+- create a GitHub pull request from a working copy;
+- upload current files to a Hugging Face model repository;
+- sync selected files to S3;
+- publish generated assets elsewhere.
+
+Workspace exposes file state. Source adapters decide how to speak to external
+systems.
+
+## Boundaries
+
+Source adapters should not turn Workspace into:
+
+- a Git branch manager;
+- a PR system;
+- an S3 sync engine;
+- a Hugging Face lifecycle manager;
+- a source-overlay/tombstone store;
+- a background auto-sync service.
+
+They should consume Workspace capabilities and preserve the dependency
+direction: source adapters depend on Workspace, not the other way around.

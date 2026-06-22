@@ -1,265 +1,242 @@
 # Product API
 
-This doc describes the user-facing API we want product code (and agent tools) to see for today's Workspace-owned file trees. The current-files, file-copy, filesystem mount/reconciliation, and scoped file layers exist today. See [`architecture.md`](./architecture.md) for how the lower layers work, and `examples/photo-agent-demo` for the proving ground.
+This doc describes the Workspace API surface that callers use today. Anything
+that is not built yet is marked. [`known-limitations.md`](./known-limitations.md)
+lists current prototype gaps.
 
-For the conceptual model behind these names, see [`product-model.md`](./product-model.md). For the broader mounted-view direction — source snapshots, runtime-local mounts, overlays, and runtime adapters — see [`runtime-projections.md`](./runtime-projections.md).
+For concepts, see [`product-model.md`](./product-model.md). For implementation,
+see [`architecture.md`](./architecture.md). For runtime-specific APIs, see
+[`runtime-adapters.md`](./runtime-adapters.md).
 
-## Current product shape
+## Bind once, get named workspaces
 
-A product or agent author should be able to read Workspace code and follow it without knowing about Durable Objects, RPC stubs, sessions, loopback entrypoints, or projection internals. For a Workspace-owned tree, they should see:
-
-```
-current files
-  → file copy
-  → attach to a runtime
-  → reconcile changes
-  → apply or discard
-```
+A product binds Workspace to the Cloudflare authorities it uses, then gets named
+Workspace handles.
 
 ```ts
-const workspace = Workspace.get(env.WORKSPACES, "family-photo");
+const workspaces = Workspace.bind({
+  artifacts: env.ARTIFACTS,
+  objects: env.WORKSPACE_OBJECTS,
+});
 
-const write = await workspace.files.write("/photos/original.jpg", imageBytes);
-if (Result.isError(write)) return write;
-
-const copyResult = await workspace.files.copy("crop-square");
-if (Result.isError(copyResult)) return copyResult;
-const copy = copyResult.value;
-
-const mountResult = await copy.files.attach(sandbox, "/workspace");
-if (Result.isError(mountResult)) return mountResult;
-const mount = mountResult.value;
-
-const result = await sandbox.exec(
-  "convert photos/original.jpg -gravity center -crop 1024x1024+0+0 +repage photos/current",
-  { cwd: mount.path },
-);
-
-const reconcile = await mount.reconcile();
-if (Result.isError(reconcile)) return reconcile;
-
-const apply = await copy.apply(); // or: await copy.discard();
-if (Result.isError(apply)) return apply;
+const workspace = workspaces.get("my-project");
 ```
 
-The intent is intentionally boring. Product code says what it wants; the lower layers handle the plumbing. Expected Workspace failures are `Result` values, not thrown exceptions or raw RPC DTOs.
+`get` returns a handle to a durable named work surface. It should not force
+product code to choose between `open`, `create`, or `openOrCreate`. Underlying
+state can be created when an operation needs it.
 
-## Vocabulary
+Artifacts and Durable Object bindings are visible at the infrastructure edge.
+They should not leak through normal product logic as repository remotes,
+default branches, tokens, or manual metadata registration.
 
-| Term          | Meaning                                                   |
-| ------------- | --------------------------------------------------------- |
-| Workspace     | The durable file-state resource.                          |
-| Current files | The Workspace's live, durable file tree.                  |
-| File copy     | An isolated, durable, mutable copy of current files.      |
-| Mount         | A way for a runtime to access a file copy.                |
-| Reconcile     | Bring Workspace-owned mounted file changes back into the file copy. |
-| Apply         | Make a file copy become the current files.                |
-| Discard       | Throw away a file copy without changing current files.    |
-| Scoped files  | Limited file access granted to delegated code.            |
+## Current files
 
-We avoid implementation terms (session, RPC result, stub disposal, loopback, projection, mount host) at the surface. They can exist underneath.
-
-## Current files and file copies
-
-`workspace.files` is the current tree.
+`workspace.files` is the accepted current file tree.
 
 ```ts
-await workspace.files.read(path); // Result<Uint8Array, WorkspaceCurrentFileError>
-await workspace.files.write(path, bytes); // Result<void, WorkspaceCurrentFileError>
-await workspace.files.list(path);
-await workspace.files.stat(path);
-await workspace.files.delete(path);
+const read = await workspace.files.read("/README.md");
+const write = await workspace.files.write("/notes/todo.md", bytes);
+const entries = await workspace.files.list("/");
+const stat = await workspace.files.stat("/README.md");
+const deleted = await workspace.files.delete("/notes/todo.md");
 ```
 
-`workspace.files.copy(name)` creates a durable, isolated, mutable copy initialised from the current files.
+Expected failures are `Result` values, not thrown exceptions. Callers should be
+able to handle invalid paths, missing files, directory/file mismatches, and
+stale-copy conflicts without parsing exception strings.
+
+## Working copies
+
+Working copies are siblings of current files, not just file helper methods.
+They are durable, isolated, mutable file authorities.
 
 ```ts
-const copyResult = await workspace.files.copy("agent-edit");
+const copyResult = await workspace.copies.create({
+  label: "agent-edit",
+});
 if (Result.isError(copyResult)) return copyResult;
 
 const copy = copyResult.value;
-const write = await copy.files.write("/notes/summary.md", bytes);
-if (Result.isError(write)) return write;
+await copy.files.write("/README.md", updatedReadme);
 ```
 
-A copy is durable but not live. It can outlive a request, an agent turn, or a process. Applying is a separate decision.
+Recovering a copy should be explicit:
 
-## Writing many files
+```ts
+const copyResult = await workspace.copies.get(copyId);
+```
 
-Source adapters, uploads, and anything that materialises a tree of files at once shouldn't have to call `write` per file and `mkdir` per directory. File copies can write a tree under an explicit Workspace root:
+Labels should be durable if exposed. A label that disappears after creation is
+worse than no label.
+
+## Apply and discard
+
+`apply` publishes a working copy as current. `discard` abandons it.
+
+```ts
+const applied = await copy.apply();
+if (Result.isError(applied)) return applied;
+
+const discarded = await copy.discard();
+if (Result.isError(discarded)) return discarded;
+```
+
+Apply is safe by default. If current files moved since the copy was created,
+`apply` returns `WorkspaceCopyStaleError` rather than silently overwriting
+newer current state. Explicit replacement can be added later if a real caller
+needs it.
+
+Capture from a runtime is not publication. A Sandbox command can write files,
+and a runtime adapter can capture those files into the working copy, but current
+files still do not change until `apply` succeeds.
+
+## Source adapters target a Workspace
+
+Workspace core does not expose `importGitHub`, `importS3`, or
+`initializeFromArtifacts` methods. Source-specific lifecycle belongs in source
+adapters.
+
+The product-level shape is:
+
+```ts
+import { createGitHubSource } from "@cloudflare/workspace-source-github";
+
+const github = createGitHubSource({ artifacts: env.ARTIFACTS });
+const workspace = workspaces.get(workspaceName);
+
+await github.importRepository({
+  workspace,
+  owner: "cloudflare",
+  repo: "sandbox-sdk",
+  ref: "main",
+});
+```
+
+The GitHub adapter uses Artifacts internally to capture the repository and
+then connects that captured authority to the Workspace. Product code does not
+handle Artifacts repository metadata such as remotes, default branches, or
+tokens.
+
+Other sources would follow the same dependency direction (none are built yet):
+
+```ts
+await upload.importArchive({ workspace, file });
+await huggingFace.importSnapshot({ workspace, model, revision });
+await s3.importPrefix({ workspace, bucket, prefix });
+```
+
+Source adapters can replace or seed current files only through explicit adapter
+semantics. Workspace does not pretend all sources are in-memory file maps.
+Large source imports should remain authority-backed or streaming.
+
+## Runtime adapters receive working copies
+
+Runtime adapters are the normal way to execute against a working copy.
+
+Dynamic Worker:
+
+```ts
+import { createWorkspaceDynamicWorkerRunner } from "@cloudflare/workspace-adapter-dynamic-worker";
+
+const runner = createWorkspaceDynamicWorkerRunner(env.DYNAMIC_WORKERS);
+
+await runner.run({
+  code,
+  workspace: copy.files.scoped({ read: "/**", write: "/**" }),
+});
+```
+
+The runner takes a `ScopedWorkspaceFileCapability`. In practice the parent
+exposes a `WorkerEntrypoint` that constructs the scoped capability per call so
+the delegated Worker receives a live stub; see
+[`runtime-adapters.md`](./runtime-adapters.md) and the dynamic-worker adapter
+README for the loopback pattern.
+
+Sandbox:
+
+```ts
+import { attachWorkspaceCopyToSandbox } from "@cloudflare/workspace-adapter-sandbox";
+import { getSandbox } from "@cloudflare/sandbox";
+
+const sandbox = getSandbox(env.Sandbox, `${workspaceName}-${copy.id}`, {
+  sleepAfter: "10m",
+});
+const mount = await attachWorkspaceCopyToSandbox({
+  copy,
+  sandbox,
+  path: "/workspace",
+});
+if (Result.isError(mount)) return mount;
+
+const result = await sandbox.exec("npm test", { cwd: mount.value.path });
+const capture = await mount.value.capture();
+```
+
+The Sandbox SDK owns execution mechanics. The Workspace adapter owns attaching
+and capturing the working copy. Workspace owns the file authority and the
+apply/discard boundary.
+
+Low-level scoped-file APIs are exported for adapter authors
+(`copy.files.scoped`), but product examples should lead with runtime adapters
+rather than their internal plumbing.
+
+## Scoped files
+
+Delegated code should receive scoped file access, not Workspace identity.
+
+```ts
+const files = copy.files.scoped({
+  read: "/src/**",
+  write: ["/src/**", "/test/**"],
+});
+```
+
+Inside delegated code:
+
+```ts
+await env.WORKSPACE.readFile("/src/index.ts");
+await env.WORKSPACE.writeFile("/test/index.test.ts", bytes);
+await env.WORKSPACE.list("/src");
+await env.WORKSPACE.stat("/src/index.ts");
+```
+
+A scoped capability has no `apply`, no `discard`, no arbitrary Workspace lookup,
+and no source/export authority.
+
+## Writing trees
+
+Bulk tree writes are still useful for generated files, uploads, and source
+adapters that stream entries rather than hand Workspace an authority-backed
+source.
+
+The target shape is on working-copy files:
 
 ```ts
 await copy.files.writeTree("/generated", entries);
 ```
 
-The root is an absolute Workspace directory path. Entry paths are relative to that root. Entries may be an array, a sync iterable, or an async iterable, so source adapters can yield files as they discover them instead of buffering the whole tree.
+Entries may be arrays, sync iterables, or async iterables. Implementations must
+chunk by entry count and byte size rather than buffering a full tree.
+
+This is materialization into a working copy, not a general source-overlay
+engine. If a source can be captured as an Artifacts-backed authority, prefer
+that over streaming every byte through a Worker.
+
+## Source adapter adoption seam
+
+Source adapters that create or import Artifacts repositories connect that
+repository to a Workspace through a narrow internal seam exported under
+`@cloudflare/workspace/source-adapter`:
 
 ```ts
-const copyResult = await workspace.files.copy("github-import");
-if (Result.isError(copyResult)) return copyResult;
+import { connectArtifactsRepository } from "@cloudflare/workspace/source-adapter";
 
-const copy = copyResult.value;
-const imported = await copy.files.writeTree("/repo", githubSource.files());
-if (Result.isError(imported)) {
-  await copy.discard();
-  return imported;
-}
-
-const applied = await copy.apply();
-if (Result.isError(applied)) return applied;
+await connectArtifactsRepository(workspace, { repository, defaultBranch });
 ```
 
-Workspace validates and writes bounded batches into the copy. A batch is all-or-nothing, but the whole source stream is staged in the copy over time. Sources yield plain file entries. If reading the source stream fails, `writeTree` returns `WorkspaceTreeSourceError`; discard the copy. Current files are unchanged until `apply()` succeeds.
-
-Absolute entry paths, traversal segments, empty segments, and NUL bytes are rejected. Parent directories are created implicitly. Directories remain explicit underneath: writing `src/index.ts` under `/repo` ensures `/repo` and `/repo/src` exist after the call. Existing files may be overwritten. If a source yields the same path more than once, the later entry wins. Omitted files are left alone; this is materialisation, not sync, diff, or replace.
-
-Batches are bounded by entry count and accumulated content bytes before they cross the Worker RPC boundary. A single entry larger than the batch byte limit returns `WorkspaceTreeEntryTooLargeError`. Blob bytes may already have been written to the internal content store before a later metadata conflict is detected; unreferenced blobs are handled by the same future garbage-collection path as other overwritten content.
-
-Bulk import is the natural integration point for source adapters — see [`sources.md`](./sources.md).
-
-## Filesystem mounts and reconciliation
-
-Mounts are the current stepping stone for making file copies usable from a runtime. For Sandboxes and containers, that means files appear under a local path like `/workspace`.
-
-```ts
-const mountResult = await copy.files.attach(sandbox, "/workspace");
-if (Result.isError(mountResult)) return mountResult;
-
-const mount = mountResult.value;
-await sandbox.exec("npm test", { cwd: mount.path });
-const reconcile = await mount.reconcile();
-if (Result.isError(reconcile)) return reconcile;
-```
-
-`reconcile()` is the mount's responsibility, not the copy's. It records execution-local file changes back into the file copy.
-
-This distinction exists because not every runtime is a live mount. Today's Sandbox integration materialises files into the container and reads changes back on reconcile. A future native mount might make reconcile automatic or unnecessary — but the product-level model stays the same: execution changes become file-copy state before they become current Workspace state.
-
-This mount API is narrower than the mounted-view model in [`runtime-projections.md`](./runtime-projections.md). It does not yet express source bases, runtime-local child mounts, overlays, refresh, or generation checks.
-
-Reconcile is not publication. Reconciled files are still isolated in the copy.
-
-## Apply and discard
-
-`apply()` is the only publication path from a file copy to current files.
-
-```ts
-const applied = await copy.apply();
-if (Result.isError(applied)) return applied;
-```
-
-After apply, current Workspace files reflect the copy; a recovery point can be created.
-
-`discard()` abandons a file copy without changing current files.
-
-```ts
-const discarded = await copy.discard();
-if (Result.isError(discarded)) return discarded;
-```
-
-Two different boundaries, two different verbs:
-
-```
-reconcile: runtime projection changes become durable in the copy
-apply:     this copy becomes current Workspace files
-```
-
-Reconcile is runtime-adapter plumbing. Apply should reflect product or user intent.
-
-## Scoped files for delegated code
-
-Delegated code (Dynamic Workers, plugins, generated code) should usually get a scoped file capability, not Workspace identity.
-
-```ts
-const files = copy.files.scoped({
-  read: "/input/**",
-  write: "/output/**",
-});
-
-await dynamicWorker.run({
-  code,
-  env: { WORKSPACE: files },
-});
-```
-
-Inside the delegated code:
-
-```ts
-await env.WORKSPACE.readFile("/input/data.json");
-await env.WORKSPACE.writeFile("/output/result.json", bytes);
-await env.WORKSPACE.list("/input");
-await env.WORKSPACE.stat("/input/data.json");
-```
-
-A scoped file capability should expose familiar file operations and nothing more. No Workspace identity, no arbitrary lookup, no apply/discard, no revision management.
-
-## Two audiences, one API
-
-Platform developers use the primitives directly:
-
-```ts
-const copyResult = await workspace.files.copy("edit");
-if (Result.isError(copyResult)) return copyResult;
-
-const copy = copyResult.value;
-const mountResult = await copy.files.attach(sandbox, "/workspace");
-if (Result.isError(mountResult)) return mountResult;
-
-const mount = mountResult.value;
-const result = await sandbox.exec(command, { cwd: mount.path });
-const reconcile = await mount.reconcile();
-if (Result.isError(reconcile)) return reconcile;
-
-const applied = await copy.apply();
-if (Result.isError(applied)) return applied;
-```
-
-Agents get tool-shaped versions of the same model:
-
-```
-open file copy
-attach copy to sandbox
-run sandbox command
-reconcile sandbox changes
-inspect copy files
-apply copy
-discard copy
-```
-
-Tool descriptions should stay concrete:
-
-```
-Reconcile files changed under /workspace in the Sandbox into the active file copy.
-This keeps the result for preview or further edits, but does not change current Workspace files.
-```
-
-## What product code shouldn't need to do
-
-Out of the happy path:
-
-- managing Durable Object session lifetimes,
-- handling `beginSession` / `getSession` directly,
-- reading `session.info()` to figure out state,
-- branching on raw RPC result shapes,
-- disposing RPC stubs,
-- knowing about loopback entrypoint transport,
-- constructing scoped capability plumbing by hand,
-- understanding Sandbox mount-host internals,
-- creating parent directories before every `writeFile`.
-
-These details belong in lower layers. They shouldn't be the first thing a product developer or agent author sees.
-
-## Boundary rules
-
-- Workspace does not run commands.
-- Workspace does not own Sandbox, container, or Dynamic Worker lifecycle.
-- A runtime does not decide when a copy becomes current.
-- Reconcile does not imply apply.
-- Apply should be explicit and product-visible.
-- Products choose their own user-facing language. A photo app may say "draft"; a code product may say "preview". Workspace stays generic underneath.
-
-## Current gap
-
-The prototype now exposes current files, durable file copies, filesystem mounts, reconciliation, scoped file capabilities, `apply()`, and `discard()` through this product-facing layer.
-
-Future implementation should be judged by whether code like `examples/photo-agent-demo` can express runtime delegation in these terms without exposing raw Workspace machinery.
+Normal product logic stays on `workspaces.get(name)` and the Workspace
+file/copy APIs above. It does not handle remotes, default branches, or
+repository tokens. The `/source-adapter` export exists so adapter packages can
+bridge Artifacts repositories into a Workspace without leaking that plumbing
+into the root API.

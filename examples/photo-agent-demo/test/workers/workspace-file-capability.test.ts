@@ -1,21 +1,33 @@
-import { env, exports } from "cloudflare:workers";
-import { Result } from "better-result";
-import { describe, expect, it } from "vitest";
-import { Workspace } from "@cloudflare/workspace";
+import { env } from "cloudflare:test";
+import { exports } from "cloudflare:workers";
+import { afterEach, describe, expect, it } from "vitest";
+import { FakeArtifactsWorkspaceDriver, resetFakeArtifactsWorkspace } from "../fake-artifacts-workspace";
 
 const photoBytes = new TextEncoder().encode("photo");
 
 describe("WorkspaceFileCapability", () => {
-  it("adapts a photo draft into a scoped WorkerEntrypoint binding", async () => {
+  afterEach(() => resetFakeArtifactsWorkspace());
+
+  it("adapts an Artifacts-backed photo draft into a scoped WorkerEntrypoint binding", async () => {
     const workspaceName = `photo-workspace-file-capability-${crypto.randomUUID()}`;
-    const workspace = Workspace.get(env.WORKSPACES, workspaceName);
-    const copy = await workspace.files.copy("photo-draft");
-    if (Result.isError(copy)) throw new Error("copy failed");
-    await copy.value.files.mkdir("/photos");
-    await copy.value.files.write("/photos/current", photoBytes);
+    const draftEditId = `${workspaceName}-copy`;
+    new FakeArtifactsWorkspaceDriver({ [workspaceName]: {} })
+      .install()
+      .seedWorkingCopy(workspaceName, draftEditId, { "/photos/current": photoBytes });
+    const object = env.WORKSPACE_OBJECTS.getByName(workspaceName);
+    await object.recordCurrentRepository({
+      repository: workspaceName,
+      remote: `https://git.example/${workspaceName}.git`,
+      defaultBranch: "main",
+    });
+    await object.recordCopy({
+      copyId: draftEditId,
+      createdAt: 100,
+      baseRevisionId: `revision-${workspaceName}-0`,
+    });
 
     const capability = exports.WorkspaceFileCapability({
-      props: { workspaceName, draftEditId: copy.value.id },
+      props: { workspaceName, draftEditId },
     });
 
     await expect(capability.readFile("/photos/current")).resolves.toEqual({ status: "ok", value: photoBytes });

@@ -1,0 +1,32 @@
+@source "../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
+@import "@cloudflare/kumo/styles/tailwind";
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    color-scheme: light;
+    font-family: "Space Grotesk", "DM Sans", ui-sans-serif, system-ui, sans-serif;
+    background: #fbfaf6;
+  }
+
+  body {
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
+    background: #fbfaf6;
+  }
+
+  button {
+    font: inherit;
+  }
+
+  code,
+  pre,
+  kbd,
+  samp,
+  .font-mono {
+    font-family:
+      "Space Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+      "Liberation Mono", "Courier New", monospace;
+  }
+}

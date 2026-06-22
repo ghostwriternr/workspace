@@ -41,7 +41,7 @@ The adapter defaults delegated workers to:
 
 ## Usage
 
-Product code creates or recovers a Workspace file copy, exposes a concrete loopback `WorkerEntrypoint` for the scoped file capability, then passes that entrypoint stub to the runner.
+Product code creates or recovers a Workspace working copy, exposes a concrete loopback `WorkerEntrypoint` for the scoped file capability, then passes that entrypoint stub to the runner.
 
 ```ts
 import { Result } from "better-result";
@@ -49,7 +49,7 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import {
   Workspace,
   type ScopedWorkspaceFileCapability,
-  type ScopedWorkspaceRpcResult,
+  type ScopedWorkspaceCapabilityResult,
 } from "@cloudflare/workspace";
 import { createWorkspaceDynamicWorkerRunner } from "@cloudflare/workspace-adapter-dynamic-worker";
 
@@ -78,9 +78,13 @@ export class WorkspaceFiles extends WorkerEntrypoint<Env, { workspaceName: strin
     return capability.value.stat(path);
   }
 
-  private async capability(): Promise<ScopedWorkspaceRpcResult<ScopedWorkspaceFileCapability>> {
-    const workspace = Workspace.get(this.env.WORKSPACES, this.ctx.props.workspaceName);
-    const copy = await workspace.files.getCopy(this.ctx.props.copyId);
+  private async capability(): Promise<ScopedWorkspaceCapabilityResult<ScopedWorkspaceFileCapability>> {
+    const workspaces = Workspace.bind({
+      artifacts: this.env.ARTIFACTS,
+      objects: this.env.WORKSPACE_OBJECTS,
+    });
+    const workspace = workspaces.get(this.ctx.props.workspaceName);
+    const copy = await workspace.copies.get(this.ctx.props.copyId);
     if (Result.isError(copy)) return { status: "error", error: copy.error };
 
     return {

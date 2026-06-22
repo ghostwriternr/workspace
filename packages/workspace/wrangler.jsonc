@@ -1,17 +1,10 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "workspace",
-  "main": "src/index.ts",
-  "compatibility_date": "2026-05-22",
+  "main": "src/workers.ts",
+  "compatibility_date": "2026-06-10",
   "durable_objects": {
-    "bindings": [
-      { "name": "WORKSPACES", "class_name": "WorkspaceObject" }
-    ]
+    "bindings": [{ "name": "WORKSPACE_OBJECTS", "class_name": "WorkspaceObject" }]
   },
-  "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["WorkspaceObject"] }
-  ],
-  "r2_buckets": [
-    { "binding": "WORKSPACE_BLOBS", "bucket_name": "workspace-blobs" }
-  ]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["WorkspaceObject"] }]
 }

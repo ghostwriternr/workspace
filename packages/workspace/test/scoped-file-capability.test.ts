@@ -1,13 +1,13 @@
 import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
-import { createWorkspaceFileCapability } from "../src/workspace/projections/scoped-file-capability";
+import { createWorkspaceFileCapability } from "../src/projections/scoped-file-capability";
 
 const photoBytes = new TextEncoder().encode("photo");
 const noteBytes = new TextEncoder().encode("note");
 
 describe("scoped Workspace file capability", () => {
-  it("returns RpcResult values for allowed reads", async () => {
+  it("returns capability result values for allowed reads", async () => {
     const workingCopy = new FakeWorkingCopy({
       "/": { type: "directory" },
       "/photos": { type: "directory" },
@@ -23,7 +23,7 @@ describe("scoped Workspace file capability", () => {
     await expect(capability.readFile("/photos/current")).resolves.toEqual({ status: "ok", value: photoBytes });
   });
 
-  it("returns RpcResult access errors for denied reads", async () => {
+  it("returns capability result access errors for denied reads", async () => {
     const capability = createWorkspaceFileCapability({
       files: new FakeWorkingCopy({ "/": { type: "directory" } }),
       root: "/",
@@ -123,11 +123,11 @@ describe("scoped Workspace file capability", () => {
       write: ["/notes/**"],
     });
 
-    expect("commit" in capability).toBe(false);
+    expect("apply" in capability).toBe(false);
     expect("discard" in capability).toBe(false);
-    expect("beginSession" in capability).toBe(false);
-    expect("getSession" in capability).toBe(false);
-    expect("getRevision" in capability).toBe(false);
+    expect("copy" in capability).toBe(false);
+    expect("getCopy" in capability).toBe(false);
+    expect("snapshot" in capability).toBe(false);
     expect("getByName" in capability).toBe(false);
     expect("delete" in capability).toBe(false);
   });
