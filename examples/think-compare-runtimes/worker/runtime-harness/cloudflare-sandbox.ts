@@ -5,7 +5,7 @@ import type { RawSandboxFactory } from "./raw-sandbox-host";
 type GetSandbox = <T extends Sandbox<any>>(
   binding: DurableObjectNamespace<T>,
   id: string,
-  options: { sleepAfter: "10m" },
+  options: { sleepAfter: string },
 ) => T;
 
 export function createRawSandboxFactory<T extends Sandbox<any>>(

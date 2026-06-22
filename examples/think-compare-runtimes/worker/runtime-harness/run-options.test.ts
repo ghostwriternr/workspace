@@ -33,7 +33,7 @@ describe("createComparisonRunOptions", () => {
       exitCode: 0,
     });
 
-    expect(calls[0]).toEqual({ id: "raw-sandbox-0", sandboxOptions: { sleepAfter: "10m" } });
+    expect(calls[0]).toEqual({ id: "raw-sandbox-0", sandboxOptions: { sleepAfter: "2m" } });
     expect(calls).toContainEqual(["exec", "npm run check", { cwd: "/workspace" }]);
   });
 

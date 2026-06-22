@@ -60,6 +60,7 @@ export function createRawSandboxRuntime(host: RawSandboxHost): RawSandboxRuntime
       await ensureFixtureAvailable();
       const path = toProjectPath(input.path);
       await host.writeFile(path, input.contents);
+      await verifyShellCanSeeFile(host, path);
       return { path };
     },
 
@@ -74,6 +75,7 @@ export function createRawSandboxRuntime(host: RawSandboxHost): RawSandboxRuntime
       }
 
       await host.writeFile(path, contents.replace(input.oldText, input.newText));
+      await verifyShellCanSeeFile(host, path);
       return { path, replacements: 1 };
     },
 
@@ -95,6 +97,17 @@ function toProjectPath(path: string): string {
 
   if (normalized === projectRoot || normalized.startsWith(`${projectRoot}/`)) return normalized;
   return `${projectRoot}${normalized}`;
+}
+
+async function verifyShellCanSeeFile(host: RawSandboxHost, path: string): Promise<void> {
+  const result = await host.exec(`test -f ${shellQuote(path)}`, { cwd: projectRoot });
+  if (result.exitCode !== 0) {
+    throw new Error(`Sandbox shell could not see written file: ${path}`);
+  }
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 function countMatches(contents: string, needle: string): number {

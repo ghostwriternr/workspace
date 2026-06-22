@@ -15,14 +15,15 @@ interface RawSandboxClient {
 
 export type RawSandboxFactory = (
   sandboxId: string,
-  options: { sleepAfter: "10m" },
+  options: { sleepAfter: string },
 ) => RawSandboxClient;
 
 export function createRawSandboxHostForLease(
   factory: RawSandboxFactory,
   lease: RawSandboxLease,
+  options: { sleepAfter?: string } = {},
 ): RawSandboxHost {
-  const sandbox = factory(lease.id, { sleepAfter: "10m" });
+  const sandbox = factory(lease.id, { sleepAfter: options.sleepAfter ?? "2m" });
 
   return {
     async writeFile(path, contents) {

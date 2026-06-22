@@ -35,7 +35,7 @@ describe("createRawSandboxHostForLease", () => {
     });
 
     expect(calls).toEqual([
-      { id: "raw-0", options: { sleepAfter: "10m" } },
+      { id: "raw-0", options: { sleepAfter: "2m" } },
       ["writeFile", "/workspace/README.md", "hello"],
       ["readFile", "/workspace/README.md"],
       ["exec", "npm run check", { cwd: "/workspace" }],

@@ -1,20 +1,23 @@
 import { usePartySocket } from "partysocket/react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { RunEvent } from "../shared/events";
-import { compareFixture, fixtureManifest } from "../shared/fixture";
 import { applyRunMessage, type RunMessage } from "../shared/run-messages";
 import { buildDashboardModel } from "./dashboard-model";
+import { RuntimeWing } from "./runtime-wing";
 import { startComparisonRunFromApi } from "./run-api";
 import "./styles.css";
+import { TopBar } from "./top-bar";
+
+type StartState = "idle" | "starting" | "running" | "failed";
 
 export function App() {
   const [runId, setRunId] = useState<string | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
+  const [startState, setStartState] = useState<StartState>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [starting, setStarting] = useState(false);
+  const [nowIso, setNowIso] = useState(() => new Date().toISOString());
   const activeRunIdRef = useRef<string | null>(null);
-  const dashboard = useMemo(() => buildDashboardModel(events, new Date().toISOString()), [events]);
 
   usePartySocket({
     prefix: "api/runs",
@@ -29,110 +32,96 @@ export function App() {
     },
   });
 
+  const dashboard = useMemo(() => buildDashboardModel(events, nowIso), [events, nowIso]);
+  const runLabel = runStatusLabel(startState, dashboard.run.status, dashboard.run.elapsedLabel);
+  const actionLabel =
+    startState === "starting"
+      ? "STARTING"
+      : startState === "running" && dashboard.run.status === "running"
+        ? "STOP RUN"
+        : runId
+          ? dashboard.run.actionLabel
+          : "START RUN";
+  const startDisabled = startState === "starting";
+
+  useEffect(() => {
+    if (dashboard.run.status !== "running" && startState !== "running") return;
+
+    setNowIso(new Date().toISOString());
+    const timer = setInterval(() => {
+      setNowIso(new Date().toISOString());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [dashboard.run.status, startState]);
+
+  async function handleRunAction() {
+    if (startState === "running" && dashboard.run.status === "running") {
+      stopRun();
+      return;
+    }
+    await startRun();
+  }
+
   async function startRun() {
     activeRunIdRef.current = null;
     setRunId(null);
     setEvents([]);
-    setStarting(true);
+    setStartState("starting");
     setError(null);
+    setNowIso(new Date().toISOString());
+
     try {
-      const run = await startComparisonRunFromApi();
-      activeRunIdRef.current = run.runId;
-      setRunId(run.runId);
-      setEvents(run.events);
-    } catch (runError) {
-      setError(runError instanceof Error ? runError.message : String(runError));
-    } finally {
-      setStarting(false);
+      const session = await startComparisonRunFromApi();
+      activeRunIdRef.current = session.runId;
+      setRunId(session.runId);
+      setEvents(session.events);
+      setStartState("running");
+    } catch (cause) {
+      setStartState("failed");
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
+  function stopRun() {
+    const stoppedRunId = activeRunIdRef.current ?? runId;
+    activeRunIdRef.current = null;
+    setRunId(null);
+    setEvents([]);
+    setStartState("idle");
+    setError(null);
+    setNowIso(new Date().toISOString());
+
+    if (stoppedRunId) {
+      void fetch(`/api/runs/${encodeURIComponent(stoppedRunId)}/stop`, { method: "POST" });
     }
   }
 
   return (
-    <main className="app-shell">
-      <header className="hero">
-        <p className="eyebrow">Fixed-task demo</p>
-        <h1>Think Runtime Comparison</h1>
-        <p className="hero-copy">
-          Same task. Same model. Same project path. Similar coding tools. Different state
-          authority.
-        </p>
-        <button className="start-button" type="button" onClick={() => void startRun()} disabled={starting}>
-          {starting ? "Starting…" : dashboard.run.actionLabel}
-        </button>
-        {runId ? <p className="run-id">Run {runId}</p> : null}
-        {error ? <p className="error-banner">{error}</p> : null}
-      </header>
+    <main className="flex h-screen flex-col overflow-hidden bg-[#FBFAF6] text-[#111111]">
+      <TopBar
+        actionLabel={actionLabel}
+        disabled={startDisabled}
+        error={error}
+        onStart={handleRunAction}
+        runId={runId}
+        runLabel={runLabel}
+      />
 
-      <section className="task-card" aria-labelledby="task-title">
-        <div>
-          <p className="eyebrow">Task</p>
-          <h2 id="task-title">{compareFixture.task.title}</h2>
-          <p>{compareFixture.task.brief}</p>
-        </div>
-        <pre>{fixtureManifest()}</pre>
-      </section>
-
-      <section className="runtime-grid" aria-label="Runtime comparison">
-        <RuntimeWing
-          title="Workspace-backed"
-          subtitle="@cloudflare/workspace + Dynamic Workers + Sandbox SDK"
-          status={dashboard.runtimes.workspace.status}
-          container={dashboard.runtimes.workspace.container}
-          bullets={[
-            "Workspace is the durable file authority",
-            "Dynamic Workers run lightweight JavaScript",
-            "Sandbox SDK provides shell execution when needed",
-          ]}
-        />
-        <RuntimeWing
-          title="Raw Sandbox"
-          subtitle="@cloudflare/sandbox"
-          status={dashboard.runtimes.sandbox.status}
-          container={dashboard.runtimes.sandbox.container}
-          bullets={[
-            "Sandbox filesystem is the working environment",
-            "File tools call Sandbox file APIs directly",
-            "Shell commands run in the same runtime-local state",
-          ]}
-        />
+      <section className="grid min-h-0 flex-1 lg:grid-cols-2" aria-label="Runtime comparison">
+        <RuntimeWing events={events} runtime="workspace" telemetry={dashboard.runtimes.workspace} />
+        <RuntimeWing events={events} runtime="sandbox" telemetry={dashboard.runtimes.sandbox} />
       </section>
     </main>
   );
 }
 
-interface RuntimeWingProps {
-  title: string;
-  subtitle: string;
-  status: string;
-  container: string;
-  bullets: string[];
-}
-
-function RuntimeWing({ title, subtitle, status, container, bullets }: RuntimeWingProps) {
-  return (
-    <article className="runtime-wing">
-      <div>
-        <p className="eyebrow">Runtime</p>
-        <h2>{title}</h2>
-        <p className="subtitle">{subtitle}</p>
-      </div>
-      <dl className="telemetry-grid">
-        <div>
-          <dt>Status</dt>
-          <dd>{status}</dd>
-        </div>
-        <div>
-          <dt>Sandbox</dt>
-          <dd>{container}</dd>
-        </div>
-      </dl>
-      <ul>
-        {bullets.map((bullet) => (
-          <li key={bullet}>{bullet}</li>
-        ))}
-      </ul>
-    </article>
-  );
+function runStatusLabel(startState: StartState, status: string, elapsedLabel: string): string {
+  if (startState === "starting") return "STARTING";
+  if (startState === "failed" || status === "failed") return `FAILED · ${elapsedLabel}`;
+  if (status === "completed") return `DONE · ${elapsedLabel}`;
+  if (status === "running") return `RUN · ${elapsedLabel}`;
+  return "IDLE";
 }
 
 function messageBelongsToRun(message: RunMessage, runId: string): boolean {

@@ -5,6 +5,8 @@ export function runtimeSystemPrompt(runtime: RuntimeId): string {
   const shared = [
     "You are an expert coding agent working on a small documentation repository.",
     "The project root is /workspace.",
+    "Use tools immediately; do not spend the turn drafting a long plan in reasoning.",
+    "Keep reasoning brief and move to read/write/edit/shell calls quickly.",
     "Inspect the existing files before editing.",
     "Use read for exact file contents, edit for precise replacements, write for new files or full rewrites, and shell to run validation.",
     "Keep changes focused on the task and stop after validation passes.",
@@ -35,8 +37,13 @@ export function runtimeTaskPrompt(): string {
     "Acceptance criteria:",
     ...fixture.task.acceptanceCriteria.map((criterion) => `- ${criterion}`),
     "",
-    "Before editing, inspect the feature brief, style guide, navigation metadata, README, and example Worker.",
-    "After editing, run npm run check from /workspace and repair any validation failures.",
-    "Finish with a concise summary of changed files and verification.",
+    "Required order:",
+    "1. Read the feature brief, style guide, navigation metadata, README, example Worker, and package.json.",
+    "2. Write docs/smart-request-policies.md with the TypeScript Worker example and x-bypass-token header.",
+    "3. Edit site/navigation.json to add smart-request-policies.",
+    "4. Edit README.md so maintainers can find docs/smart-request-policies.md.",
+    "5. Do not run npm run check until after docs/smart-request-policies.md, site/navigation.json, and README.md have all been updated.",
+    "6. Run npm run check from /workspace and repair any validation failures.",
+    "7. Finish with a concise summary of changed files and verification.",
   ].join("\n");
 }

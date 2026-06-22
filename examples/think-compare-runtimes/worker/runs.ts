@@ -70,16 +70,18 @@ export async function runComparison(input: {
   if (!input.skipRunStarted) {
     await recorder.record({ runtime: "both", kind: "run_started", title: "Run started", detail: compareFixture.task.title });
   }
-  await recordWorkspaceWing(recorder, {
-    createRuntime: options.createWorkspaceRuntime ?? (options.runWorkspaceTurn ? undefined : () => defaultWorkspaceRuntime),
-    runTurn: options.runWorkspaceTurn ?? runScriptedWorkspaceTurn,
-    pool: options.workspaceSandboxPool ?? defaultPool("workspace-default"),
-  });
-  await recordSandboxWing(recorder, {
-    createRuntime: options.createSandboxRuntime ?? (options.runSandboxTurn ? undefined : () => defaultSandboxRuntime),
-    runTurn: options.runSandboxTurn ?? runScriptedSandboxTurn,
-    pool: options.rawSandboxPool ?? defaultPool("sandbox-default"),
-  });
+  await Promise.all([
+    recordWorkspaceWing(recorder, {
+      createRuntime: options.createWorkspaceRuntime ?? (options.runWorkspaceTurn ? undefined : () => defaultWorkspaceRuntime),
+      runTurn: options.runWorkspaceTurn ?? runScriptedWorkspaceTurn,
+      pool: options.workspaceSandboxPool ?? defaultPool("workspace-default"),
+    }),
+    recordSandboxWing(recorder, {
+      createRuntime: options.createSandboxRuntime ?? (options.runSandboxTurn ? undefined : () => defaultSandboxRuntime),
+      runTurn: options.runSandboxTurn ?? runScriptedSandboxTurn,
+      pool: options.rawSandboxPool ?? defaultPool("sandbox-default"),
+    }),
+  ]);
   await recorder.record({ runtime: "both", kind: "run_completed", title: "Run completed", detail: "Both runtime wings reached terminal state." });
 }
 
@@ -99,7 +101,7 @@ async function recordWorkspaceWing(
   try {
     const firstTurnEvent = recorder.events.length;
     await input.runTurn({ runId: recorder.runId, lease, runtime, recorder });
-    if (!hasRuntimeFailure(recorder.events.slice(firstTurnEvent))) {
+    if (!hasRuntimeFailure(recorder.events.slice(firstTurnEvent), "workspace")) {
       await recorder.record({ runtime: "workspace", kind: "runtime_completed", title: "Workspace result ready", detail: "Durable Workspace result is ready for review." });
     }
   } catch (error) {
@@ -126,7 +128,7 @@ async function recordSandboxWing(
   try {
     const firstTurnEvent = recorder.events.length;
     await input.runTurn({ runId: recorder.runId, lease, runtime, recorder });
-    if (!hasRuntimeFailure(recorder.events.slice(firstTurnEvent))) {
+    if (!hasRuntimeFailure(recorder.events.slice(firstTurnEvent), "sandbox")) {
       await recorder.record({ runtime: "sandbox", kind: "runtime_completed", title: "Raw Sandbox result ready", detail: "Runtime-local Sandbox result is ready for review." });
     }
   } catch (error) {
@@ -233,8 +235,8 @@ const defaultSandboxRuntime: SandboxComparisonRuntime = {
   },
 };
 
-function hasRuntimeFailure(events: RunEvent[]): boolean {
-  return events.some((event) => event.kind === "runtime_failed");
+function hasRuntimeFailure(events: RunEvent[], runtime: "workspace" | "sandbox"): boolean {
+  return events.some((event) => event.runtime === runtime && event.kind === "runtime_failed");
 }
 
 function errorMessage(error: unknown): string {

@@ -38,6 +38,16 @@ describe("createRawSandboxRuntime", () => {
     expect(host.readText("/workspace/docs/new.md")).toBe("# Smart Request Policies\n");
   });
 
+  test("verifies writes are visible to shell commands before reporting success", async () => {
+    const host = new FakeSandboxHost([], { shellCannotSeeWrites: true });
+    const runtime = createRawSandboxRuntime(host);
+    await runtime.seedFixture();
+
+    await expect(
+      runtime.write({ path: "docs/new.md", contents: "# New docs\n" }),
+    ).rejects.toThrow("Sandbox shell could not see written file: /workspace/docs/new.md");
+  });
+
   test("verifies the seeded fixture is readable at the shared project path", async () => {
     const host = new FakeSandboxHost([], { dropWrites: true });
     const runtime = createRawSandboxRuntime(host);
@@ -72,7 +82,7 @@ class FakeSandboxHost implements RawSandboxHost {
 
   constructor(
     entries: [string, string][] = [],
-    private readonly options: { dropWrites?: boolean } = {},
+    private readonly options: { dropWrites?: boolean; shellCannotSeeWrites?: boolean } = {},
   ) {
     for (const [path, contents] of entries) this.files.set(path, contents);
   }
@@ -92,6 +102,11 @@ class FakeSandboxHost implements RawSandboxHost {
   }
 
   async exec(command: string, options: { cwd: string }): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+    if (command.startsWith("test -f ")) {
+      const path = command.slice("test -f ".length).replace(/^'|'$/g, "").replace(/'\\''/g, "'");
+      const visible = !this.options.shellCannotSeeWrites && this.files.has(path);
+      return { exitCode: visible ? 0 : 1, stdout: "", stderr: "" };
+    }
     return { exitCode: 0, stdout: command === "npm run check" ? "checked\n" : "", stderr: "" };
   }
 

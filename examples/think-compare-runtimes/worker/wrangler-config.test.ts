@@ -7,11 +7,19 @@ const workerSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8"
 describe("wrangler config", () => {
   test("binds the comparison runtime resources", () => {
     expect(config.assets.run_worker_first).toEqual(expect.arrayContaining(["/api/*", "/health"]));
-    expect(config.vars).toMatchObject({ SANDBOX_TRANSPORT: "rpc" });
+    expect(config.vars).toMatchObject({
+      CONTAINER_SLEEP_AFTER: "2m",
+      SANDBOX_TRANSPORT: "rpc",
+    });
     expect(config.containers).toEqual([
       expect.objectContaining({
-        class_name: "Sandbox",
+        class_name: "WorkspaceSandbox",
         image: "./Dockerfile",
+        instance_type: "standard-1",
+      }),
+      expect.objectContaining({
+        class_name: "Sandbox",
+        image: "./Dockerfile.sandbox",
         instance_type: "standard-1",
       }),
     ]);
@@ -26,6 +34,7 @@ describe("wrangler config", () => {
     expect(config.durable_objects.bindings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "Sandbox", class_name: "Sandbox" }),
+        expect.objectContaining({ name: "WorkspaceSandbox", class_name: "WorkspaceSandbox" }),
         expect.objectContaining({ name: "WORKSPACE_OBJECTS", class_name: "WorkspaceObject" }),
         expect.objectContaining({ name: "CompareRun", class_name: "CompareRun" }),
         expect.objectContaining({ name: "WorkspaceRuntimeAgent", class_name: "WorkspaceRuntimeAgent" }),
@@ -45,6 +54,12 @@ describe("wrangler config", () => {
         tag: "v3",
         new_sqlite_classes: expect.arrayContaining(["CompareRun"]),
       }),
+      expect.objectContaining({
+        tag: "v4",
+        new_sqlite_classes: expect.arrayContaining(["WorkspaceSandbox"]),
+      }),
     ]);
+    expect(workerSource).toContain("class WorkspaceSandbox extends BaseWorkspaceSandbox");
+    expect(workerSource).toContain("class Sandbox extends RawSandbox");
   });
 });

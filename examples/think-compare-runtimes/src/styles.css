@@ -1,160 +1,32 @@
-:root {
-  color: #f6efe5;
-  background: #130f0c;
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
+@source "../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
+@import "@cloudflare/kumo/styles/tailwind";
+@import "tailwindcss";
 
-body {
-  margin: 0;
-}
-
-.app-shell {
-  min-height: 100vh;
-  padding: 48px;
-  background:
-    radial-gradient(circle at top left, rgba(246, 144, 67, 0.24), transparent 36rem),
-    radial-gradient(circle at bottom right, rgba(99, 102, 241, 0.18), transparent 34rem),
-    #130f0c;
-}
-
-.hero,
-.task-card,
-.runtime-wing {
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 28px;
-  background: rgba(255, 255, 255, 0.06);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
-}
-
-.hero {
-  margin: 0 auto 24px;
-  max-width: 1180px;
-  padding: 36px;
-}
-
-.hero h1,
-.task-card h2,
-.runtime-wing h2 {
-  margin: 0;
-}
-
-.hero h1 {
-  font-size: clamp(2.5rem, 6vw, 5.5rem);
-  letter-spacing: -0.08em;
-}
-
-.hero-copy {
-  max-width: 760px;
-  color: rgba(246, 239, 229, 0.78);
-  font-size: 1.1rem;
-}
-
-.start-button {
-  margin-top: 18px;
-  padding: 12px 18px;
-  border: 0;
-  border-radius: 999px;
-  background: #f59e0b;
-  color: #1f1303;
-  cursor: pointer;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-}
-
-.start-button:disabled {
-  cursor: wait;
-  opacity: 0.7;
-}
-
-.error-banner {
-  max-width: 720px;
-  margin: 16px 0 0;
-  padding: 12px 14px;
-  border: 1px solid rgba(248, 113, 113, 0.4);
-  border-radius: 16px;
-  background: rgba(127, 29, 29, 0.28);
-  color: #fecaca;
-}
-
-.eyebrow {
-  margin: 0 0 10px;
-  color: #f59e0b;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.task-card {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(320px, 1fr);
-  gap: 24px;
-  margin: 0 auto 24px;
-  max-width: 1180px;
-  padding: 28px;
-}
-
-.task-card p,
-.runtime-wing li,
-.subtitle {
-  color: rgba(246, 239, 229, 0.76);
-}
-
-pre {
-  overflow: auto;
-  margin: 0;
-  padding: 18px;
-  border-radius: 18px;
-  background: rgba(0, 0, 0, 0.34);
-  color: #fee2b3;
-  white-space: pre-wrap;
-}
-
-.runtime-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
-  max-width: 1180px;
-  margin: 0 auto;
-}
-
-.runtime-wing {
-  padding: 28px;
-}
-
-.telemetry-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin: 24px 0;
-}
-
-.telemetry-grid div {
-  padding: 14px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.telemetry-grid dt {
-  color: rgba(246, 239, 229, 0.54);
-  font-size: 0.75rem;
-  text-transform: uppercase;
-}
-
-.telemetry-grid dd {
-  margin: 4px 0 0;
-  font-size: 1.2rem;
-  font-weight: 800;
-}
-
-@media (max-width: 820px) {
-  .app-shell {
-    padding: 20px;
+@layer base {
+  :root {
+    color-scheme: light;
+    font-family: "Space Grotesk", "DM Sans", ui-sans-serif, system-ui, sans-serif;
+    background: #fbfaf6;
   }
 
-  .task-card,
-  .runtime-grid {
-    grid-template-columns: 1fr;
+  body {
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
+    background: #fbfaf6;
+  }
+
+  button {
+    font: inherit;
+  }
+
+  code,
+  pre,
+  kbd,
+  samp,
+  .font-mono {
+    font-family:
+      "Space Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+      "Liberation Mono", "Courier New", monospace;
   }
 }

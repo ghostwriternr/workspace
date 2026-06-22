@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { startComparisonRun } from "./runs";
+import { runComparison, startComparisonRun } from "./runs";
 
 describe("startComparisonRun", () => {
   test("emits ordered terminal events for both runtime wings", async () => {
@@ -52,14 +52,14 @@ describe("startComparisonRun", () => {
 
     expect(calls).toEqual([
       "workspace.lease",
+      "sandbox.lease",
       "workspace.runtime:workspace-lease",
+      "sandbox.runtime:raw-lease",
       "workspace.think-turn",
       "workspace.seed",
-      "workspace.release:workspace-lease",
-      "sandbox.lease",
-      "sandbox.runtime:raw-lease",
       "sandbox.think-turn",
       "sandbox.seed",
+      "workspace.release:workspace-lease",
       "sandbox.release:raw-lease",
     ]);
     expect(run.events).toEqual(
@@ -72,6 +72,37 @@ describe("startComparisonRun", () => {
         expect.objectContaining({ runtime: "sandbox", kind: "agent_message", detail: "sandbox done" }),
       ]),
     );
+  });
+
+  test("starts both runtime wings before either turn finishes", async () => {
+    const recorder = new TestRecorder("compare-parallel", fixedClock());
+    const workspaceGate = deferred<void>();
+    const comparison = runComparison({
+      runId: recorder.runId,
+      recorder,
+      options: {
+        runWorkspaceTurn: async ({ recorder }) => {
+          await recorder.record({ runtime: "workspace", kind: "agent_message", title: "Workspace turn entered", detail: "workspace entered" });
+          await workspaceGate.promise;
+        },
+        runSandboxTurn: async ({ recorder }) => {
+          await recorder.record({ runtime: "sandbox", kind: "agent_message", title: "Sandbox turn entered", detail: "sandbox entered" });
+        },
+      },
+    });
+
+    await eventually(() =>
+      expect(recorder.events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ runtime: "workspace", kind: "runtime_started" }),
+          expect.objectContaining({ runtime: "sandbox", kind: "runtime_started" }),
+          expect.objectContaining({ runtime: "sandbox", title: "Sandbox turn entered" }),
+        ]),
+      ),
+    );
+
+    workspaceGate.resolve();
+    await comparison;
   });
 
   test("lets injected Think turns own runtime construction", async () => {
@@ -198,6 +229,55 @@ function fakePool(prefix: "workspace" | "raw", calls: string[]) {
       calls.push(`${prefix === "workspace" ? "workspace" : "sandbox"}.release:${lease.id}`);
     },
   };
+}
+
+class TestRecorder {
+  readonly events: import("../shared/events").RunEvent[] = [];
+
+  constructor(
+    readonly runId: string,
+    private readonly now: () => string,
+  ) {}
+
+  async record(input: import("./runs").RunEventInput) {
+    const event = {
+      ...input,
+      id: `${this.runId}:${this.events.length}`,
+      runId: this.runId,
+      sequence: this.events.length,
+      timestamp: this.now(),
+    };
+    this.events.push(event);
+    return event;
+  }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+async function eventually(assertion: () => void): Promise<void> {
+  const deadline = Date.now() + 200;
+  let lastError: unknown;
+
+  while (Date.now() < deadline) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  }
+
+  if (lastError) throw lastError;
+  assertion();
 }
 
 function fixedClock() {

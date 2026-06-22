@@ -1,4 +1,5 @@
-import { WorkspaceSandbox, WorkspaceContainerProxy } from "@cloudflare/workspace-adapter-sandbox/workers";
+import { Sandbox as RawSandbox } from "@cloudflare/sandbox";
+import { WorkspaceSandbox as BaseWorkspaceSandbox, WorkspaceContainerProxy } from "@cloudflare/workspace-adapter-sandbox/workers";
 import { getServerByName, Server } from "partyserver";
 
 import { compareFixture } from "../shared/fixture";
@@ -6,7 +7,7 @@ import { handleRequest } from "./http";
 import { createLiveComparisonRunOptions } from "./runtime-harness/run-options";
 import { RunEventSink, type RunSession } from "./run-session";
 import type { RunEvent } from "../shared/events";
-import { runComparison, type StartComparisonRunOptions } from "./runs";
+import { runComparison, type RunEventInput, type StartComparisonRunOptions } from "./runs";
 
 export { WorkspaceObject } from "@cloudflare/workspace/workers";
 export { WorkspaceFileCapability } from "./workspace-file-capability";
@@ -15,7 +16,9 @@ export { WorkspaceContainerProxy as ContainerProxy };
 
 const EVENTS_KEY = "events";
 
-export class Sandbox extends WorkspaceSandbox<Env> {}
+export class WorkspaceSandbox extends BaseWorkspaceSandbox<Env> {}
+
+export class Sandbox extends RawSandbox<Env> {}
 
 export class CompareRun extends Server<Env> {
   static override options = { hibernate: true };
@@ -55,6 +58,11 @@ export class CompareRun extends Server<Env> {
       this.env.WorkspaceRuntimeAgent.getByName(`${this.name}:workspace`).cancelAllChats?.(),
       this.env.SandboxRuntimeAgent.getByName(`${this.name}:sandbox`).cancelAllChats?.(),
     ]);
+  }
+
+  async recordRuntimeEvent(input: RunEventInput): Promise<void> {
+    await this.#started;
+    await this.#sink.append(input);
   }
 
   async #run(): Promise<void> {

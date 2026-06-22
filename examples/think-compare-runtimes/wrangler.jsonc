@@ -5,6 +5,7 @@
   "compatibility_date": "2026-06-10",
   "compatibility_flags": ["nodejs_compat", "experimental"],
   "vars": {
+    "CONTAINER_SLEEP_AFTER": "2m",
     "SANDBOX_TRANSPORT": "rpc"
   },
   "assets": {
@@ -17,8 +18,14 @@
   "worker_loaders": [{ "binding": "DYNAMIC_WORKERS" }],
   "containers": [
     {
-      "class_name": "Sandbox",
+      "class_name": "WorkspaceSandbox",
       "image": "./Dockerfile",
+      "instance_type": "standard-1",
+      "max_instances": 10
+    },
+    {
+      "class_name": "Sandbox",
+      "image": "./Dockerfile.sandbox",
       "instance_type": "standard-1",
       "max_instances": 10
     }
@@ -26,6 +33,7 @@
   "durable_objects": {
     "bindings": [
       { "name": "Sandbox", "class_name": "Sandbox" },
+      { "name": "WorkspaceSandbox", "class_name": "WorkspaceSandbox" },
       { "name": "WORKSPACE_OBJECTS", "class_name": "WorkspaceObject" },
       { "name": "CompareRun", "class_name": "CompareRun" },
       { "name": "WorkspaceRuntimeAgent", "class_name": "WorkspaceRuntimeAgent" },
@@ -35,7 +43,8 @@
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Sandbox", "WorkspaceObject"] },
     { "tag": "v2", "new_sqlite_classes": ["WorkspaceRuntimeAgent", "SandboxRuntimeAgent"] },
-    { "tag": "v3", "new_sqlite_classes": ["CompareRun"] }
+    { "tag": "v3", "new_sqlite_classes": ["CompareRun"] },
+    { "tag": "v4", "new_sqlite_classes": ["WorkspaceSandbox"] }
   ],
   "observability": { "enabled": true },
   "upload_source_maps": true

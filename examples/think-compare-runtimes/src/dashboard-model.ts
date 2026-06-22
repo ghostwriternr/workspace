@@ -1,10 +1,11 @@
 import type { ExecutionTarget, RunEvent, RuntimeId } from "../shared/events";
+import { execObservationFacts, factsForRuntime, type RunEventFact } from "./run-event-facts";
 import { deriveRunSummary, type OverallRunStatus, type RuntimeRunStatus } from "./run-state";
 
 type ContainerState = "warm" | "acquired" | "released";
 type ValidationStatus = "not-run" | "passed" | "failed";
 
-interface RuntimeDashboardModel {
+export interface RuntimeDashboardModel {
   id: RuntimeId;
   status: RuntimeRunStatus;
   elapsedLabel: string;
@@ -44,8 +45,12 @@ export function buildDashboardModel(events: RunEvent[], nowIso: string | null): 
     runtimes: Object.fromEntries(
       runtimeIds.map((runtime) => {
         const runtimeSummary = summary.runtimes[runtime];
-        const runtimeEvents = events.filter((event) => event.runtime === runtime || event.runtime === "both");
-        const execs = executionTargets(runtimeEvents);
+        const facts = factsForRuntime(events, runtime, "runtimeOnly");
+        const execs = execObservationFacts(facts);
+        const dynamicWorkerExecs = execs.filter(
+          (fact) => fact.executionTarget === "dynamic-worker",
+        ).length;
+        const sandboxExecs = execs.filter((fact) => isSandboxTarget(fact.executionTarget)).length;
 
         return [
           runtime,
@@ -53,17 +58,18 @@ export function buildDashboardModel(events: RunEvent[], nowIso: string | null): 
             id: runtime,
             status: runtimeSummary.status,
             elapsedLabel: formatDuration(
-              runtimeSummary.elapsedMs ?? runningElapsedMs(runtimeSummary.startedAt, runtimeSummary.completedAt, nowIso),
+              runtimeSummary.elapsedMs ??
+                runningElapsedMs(runtimeSummary.startedAt, runtimeSummary.completedAt, nowIso),
             ),
-            toolCalls: runtimeEvents.filter(isToolCall).length,
-            fileOps: runtimeEvents.filter(isFileToolCall).length,
+            toolCalls: facts.filter((fact) => fact.phase === "call" && fact.tool !== null).length,
+            fileOps: facts.filter(isFileCall).length,
             execCalls: execs.length,
-            dynamicWorkerExecs: execs.filter((target) => target === "dynamic-worker").length,
-            sandboxExecs: execs.filter((target) => target === "workspace-sandbox" || target === "raw-sandbox").length,
-            validationStatus: validationStatus(runtimeEvents),
-            container: containerState(runtimeEvents),
+            dynamicWorkerExecs,
+            sandboxExecs,
+            validationStatus: validationStatus(facts),
+            container: containerState(facts),
             error: runtimeSummary.error,
-            events: runtimeEvents,
+            events: facts.map((fact) => fact.event),
           },
         ];
       }),
@@ -79,54 +85,35 @@ function formatDuration(elapsedMs: number | null): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-function runningElapsedMs(startedAt: string | null, completedAt: string | null, nowIso: string | null): number | null {
+function runningElapsedMs(
+  startedAt: string | null,
+  completedAt: string | null,
+  nowIso: string | null,
+): number | null {
   if (!startedAt || completedAt || !nowIso) return null;
   const elapsed = Date.parse(nowIso) - Date.parse(startedAt);
   return Number.isNaN(elapsed) ? null : Math.max(0, elapsed);
 }
 
-function isToolCall(event: RunEvent): boolean {
-  return event.kind === "tool_call" || event.kind === "agent_tool_call";
+function isFileCall(fact: RunEventFact): boolean {
+  return fact.phase === "call" && (fact.tool === "read" || fact.tool === "write" || fact.tool === "edit");
 }
 
-function isFileToolCall(event: RunEvent): boolean {
-  if (!isToolCall(event)) return false;
-  const detail = parseDetail(event.detail);
-  const name = detail["name"];
-  return name === "read" || name === "write" || name === "edit";
+function validationStatus(facts: RunEventFact[]): ValidationStatus {
+  const latestValidation = execObservationFacts(facts)
+    .filter((fact) => fact.validationCommand)
+    .at(-1);
+  if (!latestValidation) return "not-run";
+  return latestValidation.failed ? "failed" : "passed";
 }
 
-function executionTargets(events: RunEvent[]): ExecutionTarget[] {
-  return events.flatMap((event) => {
-    if (!isToolCall(event)) return [];
-    const detail = parseDetail(event.detail);
-    const target = detail["executionTarget"];
-    return target === "dynamic-worker" || target === "workspace-sandbox" || target === "raw-sandbox" ? [target] : [];
-  });
-}
-
-function validationStatus(events: RunEvent[]): ValidationStatus {
-  const validations = events
-    .filter((event) => event.kind === "tool_result" || event.kind === "agent_tool_result")
-    .map((event) => parseDetail(event.detail))
-    .filter((detail) => detail["validationCommand"] === true || detail["command"] === "npm run check");
-  const latest = validations.at(-1);
-
-  if (!latest) return "not-run";
-  return latest["exitCode"] === 0 ? "passed" : "failed";
-}
-
-function containerState(events: RunEvent[]): ContainerState {
+function containerState(facts: RunEventFact[]): ContainerState {
+  const events = facts.map((fact) => fact.event);
   if (events.some((event) => event.kind === "container_released")) return "released";
   if (events.some((event) => event.kind === "container_acquired")) return "acquired";
   return "warm";
 }
 
-function parseDetail(detail: string): Record<string, unknown> {
-  try {
-    const value: unknown = JSON.parse(detail);
-    return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
+function isSandboxTarget(target: ExecutionTarget | null): boolean {
+  return target === "workspace-sandbox" || target === "raw-sandbox";
 }

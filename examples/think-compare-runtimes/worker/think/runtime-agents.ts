@@ -3,8 +3,11 @@ import { createWorkersAI } from "workers-ai-provider";
 import type { ToolSet } from "ai";
 import { getSandbox } from "@cloudflare/sandbox";
 
-import { createRuntimeThinkTools, type RuntimeThinkToolRecorder } from "./runtime-tools";
+import { createRuntimeThinkTools } from "./runtime-tools";
 import { runtimeSystemPrompt, runtimeTaskPrompt } from "./prompts";
+import { RuntimeAgentRecorder, type RuntimeEventStreamer } from "./runtime-agent-recorder";
+import { RUNTIME_AGENT_CHAT_RECOVERY, RUNTIME_AGENT_MAX_STEPS } from "./runtime-agent-config";
+import { completionSummaryAfterValidatedTurnFailure, hasSuccessfulValidation } from "./runtime-completion";
 import { KIMI_TURN_ATTEMPT_TIMEOUT_MS, KIMI_TURN_MAX_ATTEMPTS, isRetryableThinkTurnError, thinkTurnRetryDelayMs, withRuntimeSetupTimeout } from "./runtime-retry";
 import type { RuntimeId } from "../../shared/events";
 import type { RunEventInput } from "../runs";
@@ -24,7 +27,8 @@ type RuntimeThinkEnv = Env & { AI: Ai };
 
 abstract class RuntimeComparisonAgent extends Think<RuntimeThinkEnv> {
   override workspace = disabledThinkWorkspace;
-  maxSteps = 24;
+  override chatRecovery = RUNTIME_AGENT_CHAT_RECOVERY;
+  maxSteps = RUNTIME_AGENT_MAX_STEPS;
 
   #activeRecorder: RuntimeAgentRecorder | undefined;
   #activeTools: ToolSet = {};
@@ -53,10 +57,10 @@ abstract class RuntimeComparisonAgent extends Think<RuntimeThinkEnv> {
   }
 
   protected async runWithTools(
+    recorder: RuntimeAgentRecorder,
     runtimeTools: Parameters<typeof createRuntimeThinkTools>[0]["runtimeTools"],
   ): Promise<RunEventInput[]> {
     await this.__unsafe_ensureInitialized();
-    const recorder = new RuntimeAgentRecorder(this.runtime);
     await withRuntimeSetupTimeout(
       runtimeTools.seedFixture(),
       60_000,
@@ -96,15 +100,27 @@ abstract class RuntimeComparisonAgent extends Think<RuntimeThinkEnv> {
         title: "Think turn complete",
         detail: text,
       });
-      return recorder.events;
+      await recorder.flush();
+      return [];
     } catch (error) {
+      if (hasSuccessfulValidation(recorder.events)) {
+        recorder.record({
+          runtime: this.runtime,
+          kind: "agent_message",
+          title: "Think turn complete",
+          detail: completionSummaryAfterValidatedTurnFailure(error),
+        });
+        await recorder.flush();
+        return [];
+      }
       recorder.record({
         runtime: this.runtime,
         kind: "runtime_failed",
         title: "Think turn failed",
         detail: errorMessage(error),
       });
-      return recorder.events;
+      await recorder.flush();
+      return [];
     } finally {
       this.#activeRecorder = undefined;
       this.#activeTools = {};
@@ -224,16 +240,23 @@ export class WorkspaceRuntimeAgent extends RuntimeComparisonAgent {
   readonly runtime = "workspace" as const;
 
   async runComparison(input: RuntimeAgentInput): Promise<RunEventInput[]> {
+    const recorder = createLiveRuntimeRecorder(this.env, input.runId, this.runtime);
+    recorder.record({
+      runtime: this.runtime,
+      kind: "runtime_note",
+      title: "Preparing Workspace runtime",
+      detail: "Opening Workspace, seeding current files, and creating the working copy.",
+    });
     const options = await createWorkspaceRunOptionsFromBindings({
       artifacts: this.env.ARTIFACTS,
       objects: this.env.WORKSPACE_OBJECTS,
       dynamicWorkers: this.env.DYNAMIC_WORKERS,
-      sandboxForLease: (lease) => getSandbox(this.env.Sandbox, lease.id, { sleepAfter: "10m" }) as WorkspaceSandboxClient,
+      sandboxForLease: (lease) => getSandbox(this.env.WorkspaceSandbox, lease.id, { sleepAfter: containerSleepAfter(this.env) }) as WorkspaceSandboxClient,
       workspaceForWorkingCopy: (workingCopyId) => workspaceFileCapability(this.env.SELF, workingCopyId),
     });
     const runtime = await options.createWorkspaceRuntime?.({ id: input.leaseId });
     if (!runtime) throw new Error("Workspace runtime dependencies were not created.");
-    return this.runWithTools(runtime);
+    return this.runWithTools(recorder, runtime);
   }
 }
 
@@ -254,23 +277,41 @@ export class SandboxRuntimeAgent extends RuntimeComparisonAgent {
   readonly runtime = "sandbox" as const;
 
   async runComparison(input: RuntimeAgentInput): Promise<RunEventInput[]> {
+    const recorder = createLiveRuntimeRecorder(this.env, input.runId, this.runtime);
+    recorder.record({
+      runtime: this.runtime,
+      kind: "runtime_note",
+      title: "Preparing raw Sandbox runtime",
+      detail: "Opening the Sandbox session and preparing the fixture filesystem.",
+    });
     const runtime = createRawSandboxRuntime(
-      createRawSandboxHostForLease(createRawSandboxFactory(this.env.Sandbox), { id: input.leaseId }),
+      createRawSandboxHostForLease(createRawSandboxFactory(this.env.Sandbox), { id: input.leaseId }, {
+        sleepAfter: containerSleepAfter(this.env),
+      }),
     );
-    return this.runWithTools(runtime);
+    return this.runWithTools(recorder, runtime);
   }
 }
 
-class RuntimeAgentRecorder implements RuntimeThinkToolRecorder {
-  readonly events: RunEventInput[] = [];
+interface CompareRunEventStream {
+  recordRuntimeEvent(input: RunEventInput): Promise<void>;
+}
 
-  constructor(private readonly defaultRuntime: RuntimeId) {}
+function containerSleepAfter(env: { CONTAINER_SLEEP_AFTER?: string }): string {
+  return env.CONTAINER_SLEEP_AFTER ?? "2m";
+}
 
-  record(input: RunEventInput): RunEventInput {
-    const event = { ...input, runtime: input.runtime ?? this.defaultRuntime };
-    this.events.push(event);
-    return event;
-  }
+function createLiveRuntimeRecorder(env: Env, runId: string, runtime: RuntimeId): RuntimeAgentRecorder {
+  return new RuntimeAgentRecorder(runtime, compareRunEventStreamer(env, runId));
+}
+
+function compareRunEventStreamer(env: Env, runId: string): RuntimeEventStreamer {
+  const run = env.CompareRun.get(env.CompareRun.idFromName(runId)) as unknown as CompareRunEventStream;
+  return {
+    recordRuntimeEvent(input) {
+      return run.recordRuntimeEvent(input);
+    },
+  };
 }
 
 function collectAssistantText(messages: Array<{ role?: string; parts?: Array<unknown> }>): string {
